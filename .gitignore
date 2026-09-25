@@ -1,7 +1,7 @@
 # will have compiled files and executables
 debug/
 target/
-vendor/
+/vendor/
 
 # Editor configuration
 .vscode/
