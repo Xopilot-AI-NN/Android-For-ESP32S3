@@ -1,0 +1,4 @@
+ZEPHYR_BOOT_V1
+version=0.1.0
+entry=BOOT.RHA
+sha256=32cc7bb96c19180653af7e7b82e2cc5ec0544e763bba07a3da701669489fbaa7

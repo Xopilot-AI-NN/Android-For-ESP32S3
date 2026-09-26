@@ -1,46 +1,40 @@
 [package]
-edition      = "2024"
-name         = "bootloader"
+name = "zephyr-watch-bootloader"
+version = "1.2.0"
+edition = "2024"
 rust-version = "1.88"
-version      = "0.1.0"
 
 [[bin]]
 name = "bootloader"
-path = "./src/main.rs"
+path = "src/main.rs"
+
+[features]
+default = ["rhai-runtime", "display-st7789"]
+rhai-runtime = ["dep:rhai"]
+display-ssd1306 = []
+display-st7789 = []
 
 [dependencies]
-esp-hal = { version = "~1.0.0", features = ["esp32s3", "unstable"] }
-
-embedded-alloc = "0.7.0"
-esp-bootloader-esp-idf = { version = "0.4.0", features = ["esp32s3"] }
-
-critical-section = "1.2.0"
-esp-alloc = "0.9.0"
-esp-backtrace = { version = "0.18.1", features = [
-  "esp32s3",
-  "panic-handler",
-  "println",
-] }
-esp-println = { version = "0.16.1", features = ["esp32s3"] }
-
-rhai = { path = "./rhai", default-features = false, features = ["no_std", "only_i32", "no_float", "no_index", "no_object"] }
-
-[patch.crates-io]
-esp-rom-sys = { path = "./vendor/esp-rom-sys" }
-
-# [patch."https://gitlab.com/jD91mZM2/no-std-compat.git"]
-# no-std-compat = { path = "./vendor/no-std-compat" }
+esp-hal = { version = "=1.0.0", features = ["esp32s3", "unstable"] }
+esp-backtrace = { version = "=0.18.1", features = ["esp32s3", "panic-handler", "println"] }
+esp-println = { version = "=0.16.1", features = ["esp32s3"] }
+esp-alloc = "=0.9.0"
+esp-bootloader-esp-idf = { version = "=0.4.0", features = ["esp32s3"] }
+embedded-hal = "=1.0.0"
+embedded-hal-bus = "=0.3.0"
+embedded-sdmmc = { version = "=0.10.0", default-features = false }
+sha2 = { version = "=0.10.9", default-features = false }
+rhai = { version = "=1.26.1", optional = true, default-features = false, features = ["no_std", "only_i32", "no_float", "no_index", "no_object"] }
 
 [profile.dev]
-# Rust debug is too slow.
-# For debug builds always builds with some optimization
 opt-level = "s"
 
 [profile.release]
-codegen-units    = 1     # LLVM can perform better optimizations using a single thread
-debug            = 2
+codegen-units = 1
+debug = 1
 debug-assertions = false
-incremental      = false
-lto              = true
-opt-level        = 'z'
-overflow-checks  = false
+incremental = false
+lto = true
+opt-level = "z"
+overflow-checks = false
+panic = "abort"
