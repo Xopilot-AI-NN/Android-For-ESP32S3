@@ -1,1 +1,1 @@
-{"package":"com.android.systemui","label":"System UI","runtime":"rhai","api":1,"system":true}
+{"package":"com.android.systemui","label":"System UI","runtime":"rhai","api":37,"system":true,"characteristics":"watch","role":"systemui"}

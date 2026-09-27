@@ -1,5 +1,5 @@
 <manifest version="1.0" type="framework">
-    <hal format="zephyr-rhai">
+    <hal format="aosp-wear-rhai">
         <name>android.framework.runtime</name>
         <version>1</version>
     </hal>

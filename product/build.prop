@@ -4,3 +4,6 @@ ro.product.model=AOSP Wear OS
 ro.product.name=aosp_wear
 ro.product.device=aosp_wear
 ro.product.marketname=AOSP Wear OS
+ro.product.characteristics=watch
+ro.wear.launcher=expressive
+ro.wear.dynamic_color=true

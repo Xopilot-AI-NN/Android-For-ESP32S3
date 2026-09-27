@@ -1,10 +1,14 @@
-# Zephyr Android Firmware 0.6
+# AOSP Wear OS Firmware 0.7
 
-AOSP-like Rhai userspace for **Zephyr Watch / ESP32-S3-Zero-N4R2**.
+AOSP/Wear-shaped Rhai userspace for ESP32-S3-Zero-N4R2.
 
-Current build includes Android-style GPT/A-B images, AVB development verification,
-liblp `super`, Rhai system services, ZPager, native Material 3 Expressive SystemUI,
-Wi-Fi/BLE connectivity and wireless ADB bring-up.
+The build emits Android-style boot images, GPT/A-B metadata, AVB development descriptors,
+liblp `super`, system/vendor/product/odm/system_ext logical partitions, and the complete
+raw disk image used by both microSD and USB-PC block boot.
+
+The runtime includes an expanded Wear Material 3 Expressive SystemUI, launcher, notifications,
+Quick Settings, Settings/Display/Connectivity/System pages, widgets, media and clock surfaces.
+Native Wi-Fi/BLE and wireless ADB are driven by the Rust boot/runtime layer.
 
 Build and verify:
 

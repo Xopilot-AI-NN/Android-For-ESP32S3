@@ -1,1 +1,1 @@
-{"package":"com.android.launcher","label":"Launcher","runtime":"rhai","api":1,"system":true}
+{"package":"com.android.launcher.compat","label":"Launcher Compatibility","runtime":"rhai","api":37,"system":true,"characteristics":"watch"}

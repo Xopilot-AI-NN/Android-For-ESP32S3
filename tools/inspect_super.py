@@ -48,11 +48,11 @@ def main():
         assert target_type==0 and target_source==0
         parts[name]=(target_data*SECTOR,sectors*SECTOR)
     required={
-      'system_a':'framework/zephyr-framework.rhai',
-      'vendor_a':'etc/zephyr/vendor_runtime.rhai',
-      'product_a':'etc/zephyr/product_runtime.rhai',
-      'odm_a':'etc/zephyr/odm_runtime.rhai',
-      'system_ext_a':'etc/zephyr/system_ext_runtime.rhai',
+      'system_a':'framework/aosp-wear-framework.rhai',
+      'vendor_a':'etc/aosp_wear/vendor_runtime.rhai',
+      'product_a':'etc/aosp_wear/product_runtime.rhai',
+      'odm_a':'etc/aosp_wear/odm_runtime.rhai',
+      'system_ext_a':'etc/aosp_wear/system_ext_runtime.rhai',
     }
     for part,path in required.items():
         start,size=parts[part]

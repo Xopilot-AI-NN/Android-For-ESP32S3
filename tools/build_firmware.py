@@ -97,7 +97,7 @@ def prepare_partition_tree(partition: str, staging: Path) -> Path:
     shutil.copytree(src, dst)
     if partition == "system":
         bundle = bundle_framework(src)
-        (dst / "framework" / "zephyr-framework.rhai").write_bytes(bundle)
+        (dst / "framework" / "aosp-wear-framework.rhai").write_bytes(bundle)
         shutil.rmtree(dst / "framework" / "src")
     return dst
 
@@ -112,7 +112,7 @@ def android_boot_v4(ramdisk: bytes, version: str) -> bytes:
     struct.pack_into("<I", header, 40, 4)
     cmdline = (
         f"androidboot.hardware=esp32s3 androidboot.product=aosp_wear "
-        f"androidboot.slot_suffix=_a androidboot.zephyr.version={version}"
+        f"androidboot.slot_suffix=_a androidboot.aosp_wear.version={version}"
     ).encode()
     header[44:44 + min(len(cmdline), 1535)] = cmdline[:1535]
     struct.pack_into("<I", header, 1580, 0)
@@ -125,7 +125,7 @@ def vendor_boot_v4(version: str) -> bytes:
     header[0:8] = b"VNDRBOOT"
     struct.pack_into("<I", header, 8, 4)
     struct.pack_into("<I", header, 12, 4096)
-    cmdline = f"androidboot.hardware=esp32s3 androidboot.zephyr.version={version}".encode()
+    cmdline = f"androidboot.hardware=esp32s3 androidboot.aosp_wear.version={version}".encode()
     header[28:28 + min(len(cmdline), 2047)] = cmdline[:2047]
     header[2080:2096] = b"aosp-wear\0\0\0\0\0\0\0"
     struct.pack_into("<I", header, 2096, 2128)
@@ -150,7 +150,7 @@ def avb_hash_descriptor(partition_name: str, image: bytes, salt: bytes) -> bytes
 def vbmeta_image(images: dict[str, bytes], rollback_index: int = 0) -> bytes:
     descriptors = bytearray()
     for name, image in images.items():
-        salt = hashlib.sha256(("zephyr:" + name).encode()).digest()
+        salt = hashlib.sha256(("aosp-wear:" + name).encode()).digest()
         descriptors += avb_hash_descriptor(name, image, salt)
     aux_size = align_up(len(descriptors), 64)
     aux = bytes(descriptors) + bytes(aux_size - len(descriptors))
@@ -201,8 +201,8 @@ def lp_metadata(entries: list[dict], super_size: int) -> bytes:
     partitions = bytearray()
     extents = bytearray()
     groups = [
-        ("zephyr_dynamic_partitions_a", 0, 48 * MIB),
-        ("zephyr_dynamic_partitions_b", 0, 48 * MIB),
+        ("aosp_wear_dynamic_partitions_a", 0, 48 * MIB),
+        ("aosp_wear_dynamic_partitions_b", 0, 48 * MIB),
     ]
     for i, e in enumerate(entries):
         partitions += struct.pack(
@@ -376,7 +376,7 @@ def write_sd_image(output: Path, size_mib: int, blobs: dict[str, bytes], version
         raise RuntimeError("disk image too small")
     parts.append(("userdata", cursor, backup_entries_lba - 1))
 
-    disk_guid = uuid.uuid5(DISK_NAMESPACE, f"zephyr-android-{version}")
+    disk_guid = uuid.uuid5(DISK_NAMESPACE, f"aosp-wear-android-{version}")
     primary, entries, backup, backup_entries = gpt_headers(total_lba, parts, disk_guid)
     by_name = {name: (first, last) for name, first, last in parts}
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -437,7 +437,7 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     version = (ROOT / "VERSION").read_text().strip()
 
-    with tempfile.TemporaryDirectory(prefix="zephyr-fw-") as tmp_s:
+    with tempfile.TemporaryDirectory(prefix="aosp-wear-fw-") as tmp_s:
         staging = Path(tmp_s)
         partition_payloads: dict[str, bytes] = {}
         for part in ("system", "system_ext", "vendor", "product", "odm"):
@@ -473,7 +473,7 @@ def main() -> None:
     for name, data in blobs.items():
         (out / name).write_bytes(data)
 
-    sd = out / "zephyr-watch-sd.img"
+    sd = out / "aosp-wear-sd.img"
     write_sd_image(sd, args.disk_size_mib, blobs, version)
 
     manifest_files = [
@@ -498,10 +498,10 @@ def main() -> None:
     framework_size = len(bundle_framework(ROOT / "system"))
     init_size = (ROOT / "ramdisk" / "init.rhai").stat().st_size
     component_size = sum((ROOT / p).stat().st_size for p in (
-        "vendor/etc/zephyr/vendor_runtime.rhai",
-        "odm/etc/zephyr/odm_runtime.rhai",
-        "system_ext/etc/zephyr/system_ext_runtime.rhai",
-        "product/etc/zephyr/product_runtime.rhai",
+        "vendor/etc/aosp_wear/vendor_runtime.rhai",
+        "odm/etc/aosp_wear/odm_runtime.rhai",
+        "system_ext/etc/aosp_wear/system_ext_runtime.rhai",
+        "product/etc/aosp_wear/product_runtime.rhai",
     ))
     bundle_estimate = framework_size + init_size + component_size + 512
     print(f"AOSP Wear OS / Android 17 QPR1 ({version})")

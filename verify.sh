@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-BOOTLOADER_DIR="${ZEPHYR_BOOTLOADER_DIR:-$ROOT/../Bootloader}"
+BOOTLOADER_DIR="${AOSP_WEAR_BOOTLOADER_DIR:-${ZEPHYR_BOOTLOADER_DIR:-$ROOT/../Bootloader}}"
 OUT="$ROOT/out/target/product/zero"
 
 cd "$ROOT"
@@ -16,7 +16,7 @@ bash -n build.sh
 python tools/inspect_super.py "$OUT/super.img"
 
 if [[ -f "$BOOTLOADER_DIR/tools/inspect_android_sd.py" ]]; then
-  python "$BOOTLOADER_DIR/tools/inspect_android_sd.py" "$OUT/zephyr-watch-sd.img"
+  python "$BOOTLOADER_DIR/tools/inspect_android_sd.py" "$OUT/aosp-wear-sd.img"
 else
   echo 'NOTE: Bootloader image inspector not found; skipping whole-disk inspection.' >&2
 fi
@@ -31,10 +31,10 @@ for f in \
   system/framework/src/40_input_manager.rhai \
   system/framework/src/50_surfaceflinger_systemui.rhai \
   system/framework/src/60_system_server.rhai \
-  vendor/etc/zephyr/vendor_runtime.rhai \
-  odm/etc/zephyr/odm_runtime.rhai \
-  system_ext/etc/zephyr/system_ext_runtime.rhai \
-  product/etc/zephyr/product_runtime.rhai
+  vendor/etc/aosp_wear/vendor_runtime.rhai \
+  odm/etc/aosp_wear/odm_runtime.rhai \
+  system_ext/etc/aosp_wear/system_ext_runtime.rhai \
+  product/etc/aosp_wear/product_runtime.rhai
   do
     [[ -s "$f" ]] || { echo "Missing runtime component: $f" >&2; exit 1; }
   done

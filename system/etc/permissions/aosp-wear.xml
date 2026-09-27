@@ -1,0 +1,6 @@
+<permissions>
+    <feature name="android.hardware.type.watch" />
+    <feature name="android.hardware.wifi" />
+    <feature name="android.hardware.bluetooth_le" />
+    <feature name="by.xopilot.hardware.crown" />
+</permissions>
