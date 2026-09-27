@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline integrity checker for Zephyr Watch Android-style microSD images."""
+"""Offline integrity checker for AOSP Wear OS Android-style microSD images."""
 from __future__ import annotations
 
 import argparse

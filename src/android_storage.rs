@@ -1,8 +1,11 @@
 extern crate alloc;
 
 use alloc::{string::String, string::ToString};
+#[cfg(not(feature = "pc-block-boot"))]
 use embedded_hal::{delay::DelayNs, spi::SpiDevice};
-use embedded_sdmmc::{BlockDevice, SdCard};
+use embedded_sdmmc::BlockDevice;
+#[cfg(not(feature = "pc-block-boot"))]
+use embedded_sdmmc::SdCard;
 
 use crate::{
     android_boot,
@@ -25,6 +28,23 @@ pub enum AndroidBootError {
     Lp(lp::LpError),
     Cpio(cpio::CpioError),
     RuntimeBundleTooLarge,
+}
+
+
+impl core::fmt::Display for AndroidBootError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Card => f.write_str("card I/O error"),
+            Self::Gpt(e) => write!(f, "GPT error: {:?}", e),
+            Self::BootControl => f.write_str("boot-control error"),
+            Self::MissingSlot => f.write_str("no bootable slot"),
+            Self::Avb(e) => write!(f, "AVB error: {:?}", e),
+            Self::BootImage(e) => write!(f, "boot-image error: {:?}", e),
+            Self::Lp(e) => write!(f, "liblp error: {:?}", e),
+            Self::Cpio(e) => write!(f, "CPIO error: {:?}", e),
+            Self::RuntimeBundleTooLarge => f.write_str("runtime bundle too large"),
+        }
+    }
 }
 
 pub struct SystemImage {
@@ -113,6 +133,7 @@ fn append_component(bundle: &mut String, marker: &str, text: &str) -> Result<(),
     Ok(())
 }
 
+#[cfg(not(feature = "pc-block-boot"))]
 pub fn load_system<SPI, DELAY, PostInit>(
     spi: SPI,
     delay: DELAY,

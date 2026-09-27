@@ -1,4 +1,4 @@
-//! Managed storage-backed page store for Zephyr Android.
+//! Managed storage-backed page store for AOSP Wear OS.
 //!
 //! This is deliberately not presented as transparent MMU swap: ESP32-S3 has
 //! no Linux-style virtual-memory pager.  Instead the framework/runtime can
@@ -89,12 +89,6 @@ impl PageStore {
         Ok(len)
     }
 
-    pub fn clear<D: BlockDevice>(&self, dev: &D, slot: u32) -> Result<(), PageStoreError> {
-        if slot >= self.slots { return Err(PageStoreError::BadSlot); }
-        let zero = [0u8; 512];
-        gpt::write_partition(dev, self.part, self.slot_offset(slot), &zero)
-            .map_err(PageStoreError::Gpt)
-    }
 
     pub fn write_i32<D: BlockDevice>(&self, dev: &D, slot: u32, tag: u32, value: i32) -> Result<(), PageStoreError> {
         self.write(dev, slot, tag, &value.to_le_bytes())

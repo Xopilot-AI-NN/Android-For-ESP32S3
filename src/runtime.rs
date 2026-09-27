@@ -40,9 +40,6 @@ impl RuntimeFrame {
         if let Self::Material(frame) = self { frame.set_swap_pages(pages); }
     }
 
-    pub fn screen(&self) -> Option<u8> {
-        match self { Self::Material(frame) => Some(frame.screen), Self::Legacy(_) => None }
-    }
 
     fn parse(raw: &str) -> Result<Self, RuntimeError> {
         if let Some(frame) = MaterialFrame::parse(raw) {
@@ -88,8 +85,8 @@ impl Runtime {
         engine.set_max_call_levels(16);
 
         engine.register_fn("boot_version", || 2_i32);
-        engine.register_fn("android_api_level", || 1_i32);
-        engine.register_fn("runtime_abi", || "zephyr-rhai-aosp-v5-m3".to_string());
+        engine.register_fn("android_api_level", || 37_i32);
+        engine.register_fn("runtime_abi", || "aosp-wear-android17-qpr1-rhai-v6-m3e".to_string());
         engine.register_fn("m3_scene", |
             screen: i32, cursor: i32, brightness: i32, dnd: i32, airplane: i32,
             theme: i32, locked: i32, wifi: i32, bt: i32, adb: i32, notes: i32

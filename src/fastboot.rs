@@ -18,7 +18,7 @@ pub fn run<D: BootDisplay>(
     let _ = display.fastboot();
     write_hello(&mut tx);
     write_ui_fastboot(&mut tx);
-    write_line(&mut tx, "INFOZephyr Watch fastboot+ ready");
+    write_line(&mut tx, "INFOAOSP Wear OS fastboot+ ready");
     write_line(&mut tx, "OKAY");
 
     let mut line = [0u8; 128];
@@ -84,7 +84,7 @@ fn handle_command(tx: &mut UsbSerialJtagTx<'_, Blocking>, cmd: &str, delay: &Del
         }
         "devices" => write_line(tx, "OKAYZW-ESP32S3\tfastboot"),
         "getvar:version" => write_line(tx, concat!("OKAY", env!("CARGO_PKG_VERSION"))),
-        "getvar:product" => write_line(tx, "OKAYZephyr Watch"),
+        "getvar:product" => write_line(tx, "OKAYAOSP Wear OS"),
         "getvar:slot-count" => write_line(tx, "OKAY2"),
         "getvar:has-slot:boot" => write_line(tx, "OKAYyes"),
         "getvar:has-slot:init_boot" => write_line(tx, "OKAYyes"),
@@ -94,7 +94,7 @@ fn handle_command(tx: &mut UsbSerialJtagTx<'_, Blocking>, cmd: &str, delay: &Del
         "getvar:all" => {
             for s in [
                 concat!("INFOversion:", env!("CARGO_PKG_VERSION")),
-                "INFOproduct:Zephyr Watch",
+                "INFOproduct:AOSP Wear OS",
                 "INFOboard:ESP32-S3-Zero-N4R2",
                 "INFOsecure:no",
                 "INFOslots:a,b",
@@ -135,9 +135,9 @@ fn handle_command(tx: &mut UsbSerialJtagTx<'_, Blocking>, cmd: &str, delay: &Del
 
 fn write_hello(tx: &mut UsbSerialJtagTx<'_, Blocking>) {
     #[cfg(feature = "display-st7789")]
-    write_line(tx, "@ZWUI|HELLO|2|240|280|Zephyr Watch|ESP32-S3-Zero-N4R2");
+    write_line(tx, "@ZWUI|HELLO|2|240|280|AOSP Wear OS|ESP32-S3-Zero-N4R2");
     #[cfg(feature = "display-ssd1306")]
-    write_line(tx, "@ZWUI|HELLO|2|128|64|Zephyr Watch|ESP32-S3-Zero-N4R2");
+    write_line(tx, "@ZWUI|HELLO|2|128|64|AOSP Wear OS|ESP32-S3-Zero-N4R2");
 }
 
 fn write_ui_fastboot(tx: &mut UsbSerialJtagTx<'_, Blocking>) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Zephyr Watch USB Desktop Display v3.0.
+"""AOSP Wear OS USB Desktop Display v3.1.
 
 When usb_block_server.py is active, this viewer NEVER opens /dev/ttyACM*.
 It attaches to the block server through a local Unix socket, so opening or
@@ -361,7 +361,7 @@ class WatchViewer:
         self.last_pong = 0.0
         self.connected = False
 
-        root.title("Zephyr Watch — Live ESP32-S3")
+        root.title("AOSP Wear OS — Android 17 QPR1 — Live ESP32-S3")
         root.minsize(620, 650)
 
         outer = ttk.Frame(root, padding=14)
@@ -514,77 +514,157 @@ class WatchViewer:
         except ValueError:
             return
         t = self.m3_palette(theme)
+        t["bg"] = "#000000"
         self.canvas.delete("all")
-        self.m3_rr(0, 0, 240, 280, 34, t["bg"], outline="#4a4d52")
+        self.m3_rr(0, 0, 240, 280, 34, t["bg"], outline="#35363a")
 
         def text(x, y, value, size=12, color=None, bold=False, center=False):
             px, py = self.p(x, y)
-            self.canvas.create_text(px, py, text=value, fill=color or t["on"],
+            self.canvas.create_text(
+                px, py, text=value, fill=color or t["on"],
                 font=("Sans", max(8, int(size*self.scale)), "bold" if bold else "normal"),
-                anchor="n" if center else "nw")
+                anchor="n" if center else "nw"
+            )
 
-        def appbar(title):
-            self.m3_rr(10, 8, 220, 34, 17, t["surface"])
-            self.m3_circle(28, 25, 7, t["primary"])
-            text(43, 16, title, 12, bold=True)
+        def title(value):
+            text(120, 13, value, 12, t["on"], True, True)
 
-        def status_icons():
-            self.m3_circle(18,18,5,t["primary"] if wifi else t["high"]); text(29,12,"W",8,t["primary"] if wifi else t["outline"],bold=True)
-            self.m3_circle(59,18,5,t["primary"] if bt else t["high"]); text(70,12,"B",8,t["primary"] if bt else t["outline"],bold=True)
+        def status():
+            x = 18
+            if wifi:
+                self.m3_circle(x,16,4,t["primary"]); x += 13
+            if bt:
+                self.m3_circle(x,16,3,t["primary"]); x += 12
+            if dnd:
+                self.m3_circle(x,16,3,t["muted"]); x += 12
             if adb:
-                self.m3_rr(91,10,31,16,8,t["pc"]); text(97,12,"ADB",7,t["on_pc"],bold=True)
-            text(181,12,"USB",8,t["muted"])
+                self.m3_rr(x-1,9,28,14,7,t["pc"]); text(x+4,10,"ADB",7,t["on_pc"],True)
+            self.m3_rr(192,9,30,14,7,t["high"]); text(197,10,"USB",7,t["muted"])
 
-        def card(y, label, selected):
-            x,w,h,r = (8,224,46,22) if selected else (13,214,40,17)
-            bg=t["pc"] if selected else t["surface"]; fg=t["on_pc"] if selected else t["on"]
-            self.m3_rr(x,y,w,h,r,bg); self.m3_circle(x+21,y+h/2,9 if selected else 7,t["primary"] if selected else t["high"])
-            text(x+39,y+10,label,11,fg,bold=selected); text(x+w-20,y+8,"›",15,fg)
+        def row(y, label, selected):
+            x,w,h,r = (5,230,50,25) if selected else (17,206,42,21)
+            bg=t["pc"] if selected else t["surface"]
+            fg=t["on_pc"] if selected else t["on"]
+            self.m3_rr(x,y,w,h,r,bg)
+            self.m3_circle(x+25,y+h/2,12 if selected else 9,t["primary"] if selected else t["high"])
+            size = 8 if len(label) > 10 else 11
+            text(x+46,y+(13 if len(label) > 10 else (11 if selected else 9)),label,size,fg,selected)
 
         def toggle(x,y,on):
-            self.m3_rr(x,y,42,24,12,t["primary"] if on else t["high"])
+            bg=t["primary"] if on else t["high"]
+            self.m3_rr(x,y,42,24,12,bg)
             self.m3_circle(x+(30 if on else 12),y+12,8,t["on_primary"] if on else t["muted"])
+
+        def qbutton(cx,cy,label,on,selected):
+            if selected:
+                self.m3_circle(cx,cy,31,t["pc"])
+            self.m3_circle(cx,cy,25 if selected else 24,t["primary"] if on else t["high"])
+            self.m3_circle(cx,cy-2,7,t["on_primary"] if on else t["on"])
+            text(cx,cy+32,label,7,t["on_pc"] if selected else t["muted"],True,True)
 
         hour=(mins//60)%24; minute=mins%60; clock=f"{hour:02d}:{minute:02d}"
 
         if screen == 0:
-            status_icons(); text(120,69,clock,34,t["on"],bold=True,center=True); text(120,120,"ZEPHYR WATCH",9,t["muted"],center=True)
-            self.m3_circle(120,158,22,t["pc"]); self.m3_rr(112,146,16,22,7,t["primary"]); self.m3_rr(115,141,10,15,5,t["primary"])
+            status()
+            text(120,58,clock,37,t["on"],True,True)
+            text(120,112,"AOSP WEAR OS",8,t["muted"],False,True)
+            self.m3_circle(120,145,14,t["high"])
+            self.m3_rr(115,140,10,10,3,t["muted"])
             if notes:
-                self.m3_rr(34,194,172,42,21,t["surface"]); text(52,204,"1 NOTIFICATION",9,t["on"],bold=True); self.m3_circle(188,215,7,t["primary"])
-            text(120,253,"PRESS CROWN TO UNLOCK",8,t["outline"],center=True)
+                self.m3_rr(31,176,178,47,23,t["surface"])
+                self.m3_circle(55,199,10,t["pc"])
+                text(76,185,"ANDROID SYSTEM",8,t["on"],True)
+                text(76,202,"1 NOTIFICATION",7,t["muted"])
+            else:
+                text(120,191,"NO NOTIFICATIONS",7,t["outline"],False,True)
+            text(120,249,"PRESS CROWN",7,t["outline"],False,True)
+
         elif screen == 1:
-            status_icons(); text(120,59,clock,34,t["primary"],bold=True,center=True); text(120,111,"ZEPHYR",8,t["muted"],center=True)
-            self.m3_rr(18,143,96,58,25,t["pc"] if notes else t["surface"]); text(33,154,"MESSAGES",8,t["on_pc"] if notes else t["on"],bold=True); text(33,175,"1 NEW" if notes else "CLEAR",12,t["primary"] if notes else t["muted"],bold=True)
-            self.m3_rr(126,143,96,58,25,t["surface"]); text(143,154,"QUICK",8,t["on"],bold=True); text(143,175,"DND" if dnd else "READY",12,t["primary"] if dnd else t["muted"],bold=True)
-            self.m3_rr(46,215,148,30,15,t["secondary"]); text(120,222,"CROWN: APPS",8,t["on"],bold=True,center=True); text(120,256,"LEFT MESSAGES  RIGHT QUICK",7,t["outline"],center=True)
+            status()
+            text(120,51,clock,37,t["on"],True,True)
+            text(120,105,"ANDROID 17 QPR1",8,t["muted"],False,True)
+            for cx, on, label in ((50,wifi,"WIFI"),(120,bt,"BT"),(190,adb,"ADB")):
+                self.m3_rr(cx-31,145,62,54,27,t["surface"])
+                self.m3_circle(cx,163,8,t["primary"] if on else t["high"])
+                text(cx,179,label if on else "OFF",7,t["primary"] if on else t["muted"],True,True)
+            if notes:
+                self.m3_circle(120,224,6,t["primary"]); self.m3_circle(120,224,2,t["on_primary"])
+            text(120,250,"DND  CROWN FOR APPS" if dnd else "CROWN FOR APPS",7,t["outline"],False,True)
+
         elif screen == 2:
-            appbar("APPS"); labels=("MESSAGES","SETTINGS","CLOCK","CONNECT","ABOUT"); cur=min(cursor,4); start=1 if cur>=4 else 0
-            for row in range(4): i=start+row; card(52+row*52,labels[i],cur==i)
+            text(120,10,"APPS",8,t["muted"],False,True)
+            labels=("MESSAGES","SETTINGS","CLOCK","CONNECT","SYSTEM")
+            cur=min(cursor,4); start=min(max(cur-2,0),2) if cur>=2 else 0
+            for r in range(3):
+                i=min(4,start+r); row(49+r*67,labels[i],i==cur)
+            text(120,256,"ROTATE  PRESS",7,t["outline"],False,True)
+
         elif screen == 3:
-            appbar("MESSAGES"); self.m3_rr(12,56,216,88,28,t["pc"]); self.m3_circle(38,83,12,t["primary"]); text(58,67,"SYSTEM",12,t["on_pc"],bold=True); text(58,94,"ZEPHYR IS READY",8,t["on_pc"]); text(58,112,"PHONE LINK WAITING",7,t["muted"])
-            self.m3_rr(12,156,216,66,25,t["surface"]); text(31,169,"CHATS",12,t["on"],bold=True); text(31,196,"NO PHONE SYNC YET",8,t["muted"]); text(120,251,"CROWN: BACK",8,t["outline"],center=True)
+            title("NOTIFICATIONS")
+            if notes:
+                self.m3_rr(12,55,216,104,34,t["surface"])
+                self.m3_circle(43,84,13,t["pc"])
+                text(66,70,"ANDROID SYSTEM",8,t["muted"])
+                text(66,89,"DEVICE IS READY",11,t["on"],True)
+                text(66,118,"ANDROID 17 QPR1",7,t["primary"],True)
+                self.m3_rr(20,172,200,58,29,t["surface"])
+                self.m3_circle(47,201,10,t["primary"] if adb else t["high"])
+                text(69,187,"WIRELESS DEBUG",8,t["on"],True)
+                text(69,204,"ADB AVAILABLE" if adb else "ADB OFF",7,t["muted"])
+            else:
+                self.m3_circle(120,119,28,t["surface"]); self.m3_circle(120,119,8,t["pc"])
+                text(120,161,"ALL CAUGHT UP",8,t["muted"],False,True)
+            text(120,256,"CROWN  BACK",7,t["outline"],False,True)
+
         elif screen == 4:
-            appbar("QUICK"); tiles=((12,52,"WIFI",wifi),(124,52,"BT",bt),(12,112,"ADB",adb),(124,112,"DND",dnd))
-            for i,(x,y,label,on) in enumerate(tiles):
-                sel=cursor==i; self.m3_rr(x,y,104,52,25 if sel else 20,t["pc"] if sel or on else t["surface"]); self.m3_circle(x+22,y+20,9,t["primary"] if on else t["high"]); text(x+39,y+10,label,9,t["on_pc"] if sel or on else t["on"],bold=True); text(x+39,y+28,"ON" if on else "OFF",7,t["muted"])
-            sel=cursor==4; self.m3_rr(8 if sel else 12,174,224 if sel else 216,34,17,t["pc"] if sel or airplane else t["surface"]); text(29,182,"AIRPLANE",9,t["on_pc"] if sel or airplane else t["on"],bold=True); text(181,182,"ON" if airplane else "OFF",8,t["muted"])
-            sel=cursor==5; self.m3_rr(8 if sel else 12,218,224 if sel else 216,44,20,t["pc"] if sel else t["surface"]); text(26,226,"BRIGHT",8,t["on_pc"] if sel else t["on"]); self.m3_rr(92,235,116,8,4,t["high"]); active=int(108*brightness/100); self.m3_rr(92,235,active+8,8,4,t["primary"]); self.m3_circle(96+active,239,7,t["primary"])
+            text(120,7,clock,12,t["on"],True,True)
+            qbutton(58,72,"WIFI",wifi,cursor==0); qbutton(182,72,"BT",bt,cursor==1)
+            qbutton(58,157,"ADB",adb,cursor==2); qbutton(182,157,"DND",dnd,cursor==3)
+            qbutton(58,225,"AIR",airplane,cursor==4); qbutton(182,225,"LIGHT",True,cursor==5)
+            self.m3_rr(161,269,42,4,2,t["high"])
+            self.m3_rr(161,269,max(3,int(42*brightness/100)),4,2,t["primary"])
+
         elif screen == 5:
-            appbar("SETTINGS"); labels=("BRIGHTNESS","THEME","CONNECT","ABOUT","BACK"); cur=min(cursor,4); start=1 if cur>=4 else 0
-            for row in range(4):
-                i=start+row; y=52+row*52; card(y,labels[i],cur==i)
-                if i==0: text(170,y+14,f"{brightness}%",8,t["muted"])
-                if i==1: text(158,y+14,("GREEN","BLUE","PURPLE","CORAL")[theme%4],7,t["muted"])
+            title("SETTINGS")
+            labels=("DISPLAY","THEME","CONNECTIVITY","SYSTEM","BACK")
+            cur=min(cursor,4); start=max(0,cur-2) if cur>=3 else 0
+            for r in range(3):
+                i=min(4,start+r); y=57+r*64; row(y,labels[i],i==cur)
+                if i==0:
+                    self.m3_rr(145,y+22,60,8,4,t["high"]); self.m3_rr(145,y+22,max(8,int(60*brightness/100)),8,4,t["primary"])
+                if i==1:
+                    name=("GREEN","BLUE","PURPLE","CORAL")[theme%4]
+                    text(159,y+19,name,7,t["muted"])
+            text(120,256,"ROTATE  PRESS",7,t["outline"],False,True)
+
         elif screen == 6:
-            appbar("CLOCK"); self.m3_rr(12,58,216,158,34,t["surface"]); text(120,86,clock,34,t["primary"],bold=True,center=True); text(120,145,"UPTIME CLOCK",8,t["muted"],center=True); self.m3_rr(48,178,144,26,13,t["secondary"]); text(120,184,"RTC / NTP READY",7,t["on"],center=True); text(120,248,"CROWN: BACK",8,t["outline"],center=True)
+            text(120,54,clock,37,t["on"],True,True)
+            text(120,111,"CLOCK",8,t["muted"],False,True)
+            self.m3_rr(36,151,168,55,27,t["surface"])
+            self.m3_circle(61,178,9,t["pc"])
+            text(82,164,"TIME SOURCE",7,t["muted"])
+            text(82,182,"RTC / NTP READY",8,t["primary"],True)
+            text(120,256,"CROWN  BACK",7,t["outline"],False,True)
+
         elif screen == 7:
-            appbar("CONNECT"); labels=("WIFI","BLUETOOTH","WADB","AIRPLANE","BACK"); vals=(wifi,bt,adb,airplane,False); cur=min(cursor,4); start=1 if cur>=4 else 0
-            for row in range(4):
-                i=start+row; y=52+row*52; card(y,labels[i],cur==i)
-                if i<4: toggle(171,y+9,vals[i])
+            title("CONNECTIVITY")
+            labels=("WIFI","BLUETOOTH","WIRELESS ADB","AIRPLANE","BACK")
+            vals=(wifi,bt,adb,airplane,False)
+            cur=min(cursor,4); start=max(0,cur-2) if cur>=3 else 0
+            for r in range(3):
+                i=min(4,start+r); y=57+r*64; row(y,labels[i],i==cur)
+                if i<4: toggle(174,y+13,vals[i])
+            text(120,256,"ROTATE  PRESS",7,t["outline"],False,True)
+
         else:
-            appbar("ABOUT"); self.m3_rr(12,56,216,194,32,t["surface"]); self.m3_circle(120,91,25,t["pc"]); text(120,75,"Z",28,t["primary"],bold=True,center=True); text(120,126,"ZEPHYR ANDROID",12,t["on"],bold=True,center=True); text(120,154,"VERSION 0.4.0",8,t["muted"],center=True); self.m3_rr(31,178,178,27,13,t["secondary"]); text(120,185,"ESP32-S3 / RHAI",7,t["on"],center=True); text(120,212,"PSRAM 2M / SWAP 32M",7,t["muted"],center=True); text(120,231,"PAGER ACTIVE" if swap_pages else "PAGER READY",7,t["primary"] if swap_pages else t["outline"],center=True); text(120,257,"AVB ORANGE",7,t["error"],center=True)
+            title("SYSTEM")
+            self.m3_circle(120,75,30,t["pc"]); text(120,58,"A",27,t["primary"],True,True)
+            text(120,114,"AOSP WEAR OS",12,t["on"],True,True)
+            text(120,142,"ANDROID 17 QPR1",8,t["primary"],True,True)
+            self.m3_rr(25,166,190,34,17,t["surface"]); text(120,175,"ESP32-S3 / API 37",8,t["on"],False,True)
+            text(120,213,"PSRAM 2M / SWAP 32M",7,t["muted"],False,True)
+            text(120,233,"PAGER ACTIVE" if swap_pages else "PAGER READY",7,t["primary"] if swap_pages else t["outline"],False,True)
+            text(120,254,"USERDEBUG / AVB ORANGE",7,t["error"],False,True)
 
     def append_log(self, text: str):
         self.log.configure(state="normal")
@@ -665,7 +745,17 @@ def main() -> int:
 
     root = tk.Tk()
     WatchViewer(root, link, max(1.0, args.scale))
-    root.mainloop()
+    try:
+        root.mainloop()
+    except KeyboardInterrupt:
+        # Ctrl+C is a normal development exit, not an error.
+        try:
+            link.close()
+        finally:
+            try:
+                root.destroy()
+            except tk.TclError:
+                pass
     return 0
 
 

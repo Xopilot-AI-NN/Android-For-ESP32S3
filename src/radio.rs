@@ -1,4 +1,4 @@
-//! Native ESP32-S3 connectivity services for Zephyr Android.
+//! Native ESP32-S3 connectivity services for AOSP Wear OS.
 //!
 //! Wi-Fi uses esp-radio for the 802.11 station and smoltcp for DHCP/TCP.
 //! Bluetooth exposes a real BLE controller: the watch advertises itself and can
@@ -23,7 +23,9 @@ static RADIO: StaticCell<Controller<'static>> = StaticCell::new();
 
 const MIN_WIFI_INTERNAL_FREE: usize = 32 * 1024;
 const MIN_BLE_INTERNAL_FREE: usize = 24 * 1024;
-const WIFI_CONNECT_TIMEOUT_MS: u64 = 15_000;
+const WIFI_CONNECT_TIMEOUT_MS: u64 = 30_000;
+const WIFI_RECONNECT_BACKOFF_MS: u64 = 5_000;
+const WIFI_DRIVER_SETTLE_MS: u32 = 150;
 const BLE_SCAN_MS: u64 = 6_000;
 
 fn internal_free_bytes() -> usize {
@@ -74,6 +76,7 @@ pub struct RadioServices {
     saved_wifi: Option<WifiCredentials>,
     wifi_connect_started: Option<u64>,
     wifi_reconnect_at: u64,
+    wifi_failures: u8,
     wifi_aps: HVec<WifiAp, 10>,
     ble_devices: HVec<BleDevice, 10>,
     ble_scanning_until: Option<u64>,
@@ -119,6 +122,7 @@ impl RadioServices {
             saved_wifi: None,
             wifi_connect_started: None,
             wifi_reconnect_at: 0,
+            wifi_failures: 0,
             wifi_aps: HVec::new(),
             ble_devices: HVec::new(),
             ble_scanning_until: None,
@@ -152,11 +156,26 @@ impl RadioServices {
                 }
                 self.wifi_connect_started = None;
                 self.wifi_reconnect_at = 0;
+                self.wifi_failures = 0;
             } else if let Some(start) = self.wifi_connect_started {
                 if now.saturating_sub(start) > WIFI_CONNECT_TIMEOUT_MS {
-                    println!("radio: wifi association timeout; retry scheduled");
+                    self.wifi_failures = self.wifi_failures.saturating_add(1);
+                    println!(
+                        "radio: wifi association timeout (attempt {}); retry scheduled",
+                        self.wifi_failures
+                    );
+                    // Keep the STA driver running for the first retries.  esp-radio's
+                    // own stress path reconnects repeatedly without destroying the
+                    // controller, and this also matches the path that proved stable
+                    // with the phone hotspot in Zephyr 0.4/0.5.
+                    let _ = self.wifi.disconnect();
+                    if self.wifi_failures >= 3 {
+                        println!("radio: three failed associations; doing one hard STA reset");
+                        self.reset_wifi_station();
+                        self.wifi_failures = 0;
+                    }
                     self.wifi_connect_started = None;
-                    self.wifi_reconnect_at = now + 3_000;
+                    self.wifi_reconnect_at = now + WIFI_RECONNECT_BACKOFF_MS;
                     self.net.set_link_state(LinkState::LinkUp);
                 }
             } else {
@@ -166,7 +185,7 @@ impl RadioServices {
                     self.wifi_reconnect_at = now + 1_500;
                 }
                 if self.saved_wifi.is_some() && now >= self.wifi_reconnect_at {
-                    self.wifi_reconnect_at = now + 5_000;
+                    self.wifi_reconnect_at = now + WIFI_RECONNECT_BACKOFF_MS;
                     if let Some(credentials) = self.saved_wifi {
                         println!("radio: reconnecting saved Wi-Fi profile");
                         let _ = self.connect_wifi(credentials);
@@ -256,7 +275,11 @@ impl RadioServices {
                 for ap in aps.iter() {
                     let mut ssid = HString::<32>::new();
                     push_safe_text(&mut ssid, ap.ssid.as_str());
-                    let _ = self.wifi_aps.push(WifiAp { ssid, rssi: ap.signal_strength, channel: ap.channel });
+                    let _ = self.wifi_aps.push(WifiAp {
+                        ssid,
+                        rssi: ap.signal_strength,
+                        channel: ap.channel,
+                    });
                 }
                 println!("radio: scan found {} AP(s)", self.wifi_aps.len());
                 for ap in self.wifi_aps.iter() {
@@ -286,6 +309,17 @@ impl RadioServices {
             return false;
         }
 
+        if self.saved_wifi == Some(credentials) && self.wifi.is_connected().unwrap_or(false) {
+            self.wifi_requested = true;
+            println!("radio: already associated with {}; keeping current link", ssid);
+            return true;
+        }
+
+        // Proven-good ESP32-S3 path from Zephyr 0.4: let the Espressif
+        // station driver perform its own AP selection.  Scans remain available
+        // for UI/diagnostics, but we deliberately do not pin BSSID/channel here.
+        // Phone hotspots can rotate/reconfigure their BSSID while remaining on
+        // the same SSID and pinning the scan result made association fragile.
         let _ = self.wifi.disconnect();
         let config = ModeConfig::Client(
             ClientConfig::default()
@@ -298,10 +332,11 @@ impl RadioServices {
         }
         if !matches!(self.wifi.is_started(), Ok(true)) {
             if let Err(e) = self.wifi.start() {
-                println!("radio: restart failed: {:?}", e);
+                println!("radio: wifi start before association failed: {:?}", e);
                 return false;
             }
         }
+
         match self.wifi.connect() {
             Ok(()) => {
                 self.saved_wifi = Some(credentials);
@@ -309,14 +344,37 @@ impl RadioServices {
                 self.wifi_connect_started = Some(now_ms());
                 self.wifi_reconnect_at = 0;
                 self.net.set_link_state(LinkState::Associating);
-                println!("radio: associating with {}", ssid);
+                println!("radio: associating with {} (driver AP selection)", ssid);
                 true
             }
             Err(e) => {
                 println!("radio: connect request failed: {:?}", e);
+                self.wifi_connect_started = None;
+                self.wifi_reconnect_at = now_ms() + WIFI_RECONNECT_BACKOFF_MS;
                 false
             }
         }
+    }
+
+    fn reset_wifi_station(&mut self) {
+        let delay = Delay::new();
+        let _ = self.wifi.disconnect();
+        delay.delay_millis(WIFI_DRIVER_SETTLE_MS);
+
+        if matches!(self.wifi.is_started(), Ok(true)) {
+            if let Err(e) = self.wifi.stop() {
+                println!("radio: wifi stop during reset failed: {:?}", e);
+            }
+            for _ in 0..100 {
+                if !matches!(self.wifi.is_started(), Ok(true)) {
+                    break;
+                }
+                delay.delay_millis(10);
+            }
+        }
+
+        let _ = self.wifi.set_config(&ModeConfig::None);
+        self.net.reset();
     }
 
     pub fn disconnect_wifi(&mut self) {
@@ -330,6 +388,7 @@ impl RadioServices {
         self.wifi_requested = false;
         self.wifi_connect_started = None;
         self.wifi_reconnect_at = 0;
+        self.wifi_failures = 0;
         self.net.reset();
         println!("radio: wifi disabled");
     }
@@ -337,13 +396,16 @@ impl RadioServices {
     pub fn format_wifi_status<const N: usize>(&self, out: &mut HString<N>) {
         let _ = write!(out, "enabled={} state={:?} aps={}", self.wifi_requested as u8, self.net.link_state(), self.wifi_aps.len());
         if let Some(ip) = self.net.ip() { let _ = write!(out, " ip={}", ip); }
+        if matches!(self.net.link_state(), LinkState::Online) {
+            if let Ok(rssi) = self.wifi.rssi() { let _ = write!(out, " rssi={}", rssi); }
+        }
         if let Some(c) = self.saved_wifi {
             if let Some(ssid) = c.ssid() {
                 let _ = out.push_str(" saved=");
                 push_safe_text(out, ssid);
             }
         }
-        let _ = write!(out, " wadb={} tcp5555={}", self.net.wadb_active() as u8, self.net.wadb_seen_client() as u8);
+        let _ = write!(out, " wadb={} listener={} client={}", self.net.wadb_active() as u8, self.net.wadb_active() as u8, self.net.wadb_seen_client() as u8);
     }
 
     pub fn format_wifi_scan<const N: usize>(&self, out: &mut HString<N>) {
@@ -418,7 +480,7 @@ impl RadioServices {
         if !hci_command(ble, 0x2006, &params) { return; }
 
         let mut data = [0u8; 32];
-        let name = b"Zephyr Watch";
+        let name = b"AOSP Wear OS";
         let ad_len = 3 + 2 + name.len();
         data[0] = ad_len as u8;
         data[1..4].copy_from_slice(&[2, 0x01, 0x06]);
@@ -428,7 +490,7 @@ impl RadioServices {
         if !hci_command(ble, 0x2008, &data) { return; }
         if hci_command(ble, 0x200a, &[1]) {
             self.ble_advertising = true;
-            println!("radio: BLE advertising as 'Zephyr Watch'");
+            println!("radio: BLE advertising as 'AOSP Wear OS'");
         }
     }
 

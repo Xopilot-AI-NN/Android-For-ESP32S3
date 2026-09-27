@@ -1,6 +1,6 @@
 [package]
 name = "zephyr-watch-bootloader"
-version = "1.7.0"
+version = "1.9.3"
 edition = "2024"
 rust-version = "1.88"
 

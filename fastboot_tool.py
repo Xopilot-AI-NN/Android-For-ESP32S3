@@ -65,7 +65,7 @@ def transact(port: str, command: str, baud: int, timeout: float) -> int:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Zephyr Watch fastboot+ serial client")
+    ap = argparse.ArgumentParser(description="AOSP Wear OS fastboot+ serial client")
     ap.add_argument("command", nargs="+", help="wire command, e.g. getvar:all")
     ap.add_argument("--port", "-p")
     ap.add_argument("--baud", "-b", type=int, default=115200)

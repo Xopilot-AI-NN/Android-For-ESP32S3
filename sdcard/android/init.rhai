@@ -1,4 +1,4 @@
-// Zephyr Watch early userspace entrypoint.
+// AOSP Wear OS early userspace entrypoint.
 // Return 0 to mark the boot hand-off successful.
 let api = boot_version();
 let w = device_width();

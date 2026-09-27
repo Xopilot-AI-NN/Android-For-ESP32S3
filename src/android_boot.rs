@@ -26,8 +26,8 @@ pub enum BootImageError {
 
 #[derive(Clone, Debug)]
 pub struct BootImageInfo {
-    pub header_version: u32,
-    pub os_version: u32,
+    pub _header_version: u32,
+    pub _os_version: u32,
     pub ramdisk_offset: u64,
     pub ramdisk_size: u32,
     pub cmdline_version: String,
@@ -50,7 +50,7 @@ pub fn validate_boot<D: BlockDevice>(dev: &D, part: Partition) -> Result<BootIma
     if ramdisk_offset + ramdisk_size as u64 > part.size_bytes() { return Err(BootImageError::InvalidLayout); }
     let cmdline_version = cmdline_value(&header[44..1580], b"androidboot.zephyr.version=")
         .unwrap_or_else(|| "0.0.0-dev".to_string());
-    Ok(BootImageInfo { header_version, os_version, ramdisk_offset, ramdisk_size, cmdline_version })
+    Ok(BootImageInfo { _header_version: header_version, _os_version: os_version, ramdisk_offset, ramdisk_size, cmdline_version })
 }
 
 pub fn validate_vendor_boot<D: BlockDevice>(dev: &D, part: Partition) -> Result<(), BootImageError> {

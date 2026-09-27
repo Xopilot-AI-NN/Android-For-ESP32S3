@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a sparse Android-like microSD image for Zephyr Watch.
+"""Build a sparse Android-like microSD image for AOSP Wear OS.
 
 The generated card uses a real GPT and A/B physical boot partitions:
   misc, metadata, boot_a/b, init_boot_a/b, vendor_boot_a/b, vbmeta_a/b,
@@ -84,10 +84,10 @@ def vendor_boot_v4(version: str) -> bytes:
     struct.pack_into("<I", header, 16, 0)  # kernel_addr
     struct.pack_into("<I", header, 20, 0)  # ramdisk_addr
     struct.pack_into("<I", header, 24, 0)  # vendor_ramdisk_size
-    cmdline = f"androidboot.hardware=esp32s3 androidboot.product=zephyr_watch androidboot.zephyr.version={version}".encode()
+    cmdline = f"androidboot.hardware=esp32s3 androidboot.product=aosp_wear androidboot.zephyr.version={version}".encode()
     header[28:28 + min(len(cmdline), 2047)] = cmdline[:2047]
     struct.pack_into("<I", header, 2076, 0)  # tags_addr
-    header[2080:2096] = b"zephyr-watch\0\0\0\0"
+    header[2080:2096] = b"aosp-wear\0\0\0\0\0\0\0"
     struct.pack_into("<I", header, 2096, 2128)
     struct.pack_into("<I", header, 2100, 0)  # dtb_size
     struct.pack_into("<Q", header, 2104, 0)  # dtb_addr
@@ -130,7 +130,7 @@ def vbmeta_image(images: dict[str, bytes], rollback_index: int = 0) -> bytes:
     struct.pack_into(">Q", header, 104, len(descriptors))
     struct.pack_into(">Q", header, 112, rollback_index)
     struct.pack_into(">I", header, 120, 0)
-    release = b"avbtool-compatible zephyr dev"
+    release = b"avbtool-compatible aosp-wear dev"
     header[128:128 + len(release)] = release
     return bytes(header) + aux
 

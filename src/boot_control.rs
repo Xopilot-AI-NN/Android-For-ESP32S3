@@ -95,7 +95,6 @@ impl BootControl {
         self.store(dev, misc)
     }
 
-    pub fn current_slot(&self) -> Slot { self.current }
 
     fn default_state() -> Self {
         Self {

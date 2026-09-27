@@ -1,15 +1,19 @@
+#[cfg(not(feature = "pc-block-boot"))]
 use esp_hal::{
     Blocking,
     usb_serial_jtag::{UsbSerialJtagRx, UsbSerialJtagTx},
 };
 
+#[cfg(not(feature = "pc-block-boot"))]
 use crate::{
     config,
     display::{BootDisplay, DisplayError},
     runtime::RuntimeFrame,
 };
 
+#[cfg(not(feature = "pc-block-boot"))]
 const EVENT_QUEUE_CAP: usize = 8;
+#[cfg(not(feature = "pc-block-boot"))]
 const CONTROL_LINE_CAP: usize = 256;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -111,6 +115,7 @@ pub enum DesktopEvent {
 }
 
 /// Non-blocking parser for the PC -> board control channel.
+#[cfg(not(feature = "pc-block-boot"))]
 pub struct DesktopInput<'d> {
     rx: UsbSerialJtagRx<'d, Blocking>,
     line: [u8; CONTROL_LINE_CAP],
@@ -120,6 +125,7 @@ pub struct DesktopInput<'d> {
     tail: usize,
 }
 
+#[cfg(not(feature = "pc-block-boot"))]
 impl<'d> DesktopInput<'d> {
     pub fn new(rx: UsbSerialJtagRx<'d, Blocking>) -> Self {
         Self {
@@ -229,6 +235,7 @@ fn decode_bt_address(src: &str) -> Option<[u8; 6]> {
 /// The USB side intentionally uses non-blocking byte writes. The watch must
 /// boot even if no PC is connected or the viewer is closed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[cfg(not(feature = "pc-block-boot"))]
 pub enum DesktopSurface {
     #[cfg(feature = "display-st7789")]
     St7789,
@@ -236,12 +243,14 @@ pub enum DesktopSurface {
     Ssd1306,
 }
 
+#[cfg(not(feature = "pc-block-boot"))]
 pub struct DesktopMirror<'d, D> {
     inner: D,
     tx: UsbSerialJtagTx<'d, Blocking>,
     surface: DesktopSurface,
 }
 
+#[cfg(not(feature = "pc-block-boot"))]
 impl<'d, D> DesktopMirror<'d, D> {
     pub fn new(inner: D, tx: UsbSerialJtagTx<'d, Blocking>, surface: DesktopSurface) -> Self {
         let mut this = Self { inner, tx, surface };
@@ -291,18 +300,7 @@ impl<'d, D> DesktopMirror<'d, D> {
 }
 
 
-fn u8_ascii(value: u8, out: &mut [u8; 3]) -> &str {
-    let value = value.min(100);
-    let (start, len) = if value >= 100 {
-        out[0] = b'1'; out[1] = b'0'; out[2] = b'0'; (0, 3)
-    } else if value >= 10 {
-        out[1] = b'0' + value / 10; out[2] = b'0' + value % 10; (1, 2)
-    } else {
-        out[2] = b'0' + value; (2, 1)
-    };
-    core::str::from_utf8(&out[start..start + len]).unwrap_or("0")
-}
-
+#[cfg(not(feature = "pc-block-boot"))]
 impl<D: BootDisplay> BootDisplay for DesktopMirror<'_, D> {
     fn boot_logo(&mut self) -> Result<(), DisplayError> {
         let result = self.inner.boot_logo();

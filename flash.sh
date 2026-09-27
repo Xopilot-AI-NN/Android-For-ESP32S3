@@ -10,7 +10,7 @@ if [[ -f "$HOME/export-esp.sh" ]]; then
   source "$HOME/export-esp.sh"
 fi
 
-# v0.4 developer default: one command means the complete configuration.
+# v0.6 developer default: one command means the complete configuration.
 # No flags are required:
 #   ST7789 + PC block storage + Rhai userspace + native Wi-Fi/BLE radio.
 # Environment variables remain available only as escape hatches.
@@ -37,7 +37,7 @@ FEATURES="rhai-runtime,display-${DISPLAY_NAME}"
 FLAGS=(--no-default-features --features "$FEATURES")
 
 BOOT_VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
-echo "== Zephyr Watch one-shot flash =="
+echo "== AOSP Wear OS / Android 17 QPR1 one-shot flash =="
 echo "Bootloader : v${BOOT_VERSION}"
 echo "Display    : ${DISPLAY_NAME}"
 echo "Storage    : ${STORAGE_NAME}"

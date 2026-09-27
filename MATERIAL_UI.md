@@ -1,27 +1,21 @@
-# Zephyr Material UI / Remote Scene v4
+# Zephyr Material UI v0.6
 
-`Runtime State ABI v5` carries:
+The SystemUI renderer is native Rust/RGB565 while Rhai owns navigation and state.
+The physical ST7789 framebuffer lives in PSRAM; the PC viewer mirrors the same semantic scene.
 
-```text
-screen cursor brightness dnd airplane theme locked wifi bt adb notifications
-```
-
-Rhai owns navigation/policy. Rust renders the physical ST7789 RGB565 surface
-from the compact Material scene and stores its framebuffer in PSRAM. The PC
-viewer mirrors the semantic scene over protocol v4:
+Runtime scene ABI:
 
 ```text
 @ZWUI|M3|screen|cursor|brightness|dnd|airplane|theme|locked|wifi|bt|adb|notes|time_minutes|swap_pages
 ```
 
-SystemUI flow in v0.3:
+v0.6 follows the Wear OS 6 / Material 3 Expressive visual language used on current Pixel Watch:
 
-```text
-Lock screen -> Watch face -> Launcher
-                |    |        |
-             Messages Quick   Settings / Clock / Connect / About
-```
+- true-black AMOLED-style background;
+- watch-face color drives the system accent;
+- large centered clock;
+- pill/glanceable controls that stretch toward the display edges;
+- expressive selected rows and quick-settings tiles;
+- lock screen -> watch face -> app list / notifications / quick settings.
 
-The lock/watchface time is centered. Battery telemetry is deliberately not
-invented: development builds display `USB` until a real battery gauge HAL is
-wired.
+The development ST7789 is rectangular 240x280, so geometry is adapted rather than pretending it is a round Pixel Watch panel.

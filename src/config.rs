@@ -1,10 +1,12 @@
-//! Board configuration for ESP32-S3-Zero-N4R2 used by Zephyr Watch.
+//! Board configuration for ESP32-S3-Zero-N4R2 used by AOSP Wear OS.
 //!
 //! GPIO routing is intentionally expressed with typed `p.GPIOx` handles in
 //! `main.rs`; numeric `PIN_*` constants cannot configure esp-hal pins and can
 //! easily drift out of sync with the actual wiring.
 
-pub const PRODUCT: &str = "Zephyr Watch";
+pub const PRODUCT: &str = "AOSP Wear OS";
+pub const DEVICE: &str = "aosp_wear";
+pub const MANUFACTURER: &str = "AOSP";
 pub const MODEL: &str = "ESP32-S3-Zero-N4R2";
 pub const BOOTLOADER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -24,9 +26,13 @@ pub const TFT_MADCTL: u8 = 0x00; // RGB portrait; use 0x08 if panel needs BGR
 // microSD / SPI2: MISO=GPIO7, CLK=GPIO8, MOSI=GPIO9, CS=GPIO10.
 // Encoder / button: A=GPIO11, B=GPIO12, power/crown=GPIO13.
 // GPIO21 is reserved for a future board status LED/runtime.
+#[cfg(not(feature = "pc-block-boot"))]
 pub const SD_INIT_KHZ: u32 = 400;
+#[cfg(not(feature = "pc-block-boot"))]
 pub const SD_DATA_MHZ: u32 = 20;
 pub const MAX_SCRIPT_BYTES: usize = 24 * 1024;
 pub const MAX_RUNTIME_BUNDLE_BYTES: usize = 32 * 1024;
+#[cfg(not(feature = "pc-block-boot"))]
 pub const BOOT_SPLASH_MS: u32 = 950;
+#[cfg(not(feature = "pc-block-boot"))]
 pub const BOOT_KEY_SAMPLE_MS: u32 = 450;

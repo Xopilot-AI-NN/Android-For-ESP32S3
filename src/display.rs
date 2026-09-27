@@ -16,6 +16,7 @@ pub trait BootDisplay {
             }
         }
     }
+    #[cfg(not(feature = "pc-block-boot"))]
     fn fastboot(&mut self) -> Result<(), DisplayError> {
         self.status("FASTBOOT MODE", "USB: READY", "PWR: REBOOT", "CMD: HELP")
     }
@@ -284,13 +285,12 @@ mod tft {
         }
 
         fn mark(&mut self) -> Result<(), DisplayError> {
-            // Four-color Zephyr mark inspired by the clean Pixel Watch boot composition,
-            // deliberately not a copy of Google's G artwork.
+            // Four-color AOSP development mark; deliberately uses no Google/Wear OS asset.
             self.fill_rect(91, 62, 29, 10, BLUE)?;
             self.fill_rect(120, 62, 29, 10, RED)?;
             self.fill_rect(91, 72, 29, 10, GREEN)?;
             self.fill_rect(120, 72, 29, 10, YELLOW)?;
-            self.text_center(91, "Z", 6, WHITE)
+            self.text_center(91, "A", 6, WHITE)
         }
 
         fn spinner(&mut self, phase: u8) -> Result<(), DisplayError> {
@@ -309,7 +309,8 @@ mod tft {
         fn boot_logo(&mut self) -> Result<(), DisplayError> {
             self.clear(BLACK)?;
             self.mark()?;
-            self.text_center(155, "ANDROID", 3, WHITE)
+            self.text_center(151, "ANDROID 17", 2, WHITE)?;
+            self.text_center(178, "AOSP WEAR OS", 2, DIM)
         }
         fn boot_progress(&mut self, label: &str, phase: u8) -> Result<(), DisplayError> {
             self.clear(BLACK)?;

@@ -87,10 +87,9 @@ impl<const W: usize, const H: usize, const BYTES: usize> Framebuffer<W, H, BYTES
     }
 
     pub fn draw_zephyr_mark(&mut self) {
-        // Pixel-Watch-like composition: one clean central mark on black.
+        // Minimal AOSP-style boot mark for the monochrome fallback panel.
         self.draw_circle(64, 25, 16, true);
-        self.draw_circle(64, 25, 15, true);
-        self.draw_text(58, 18, "Z", 2, true);
+        self.draw_text(58, 18, "A", 2, true);
     }
 
     pub fn draw_spinner(&mut self, phase: u8) {

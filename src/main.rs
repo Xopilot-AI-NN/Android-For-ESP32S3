@@ -38,10 +38,12 @@ mod gpt;
 mod config;
 mod desktop;
 mod display;
+#[cfg(not(feature = "pc-block-boot"))]
 mod fastboot;
 mod font;
 #[cfg(feature = "display-ssd1306")]
 mod framebuffer;
+#[cfg(not(feature = "pc-block-boot"))]
 mod input;
 mod lp;
 mod material;
@@ -54,14 +56,15 @@ mod radio;
 #[cfg(feature = "pc-block-boot")]
 mod usb_pc_block;
 
-use desktop::{DesktopEvent, DesktopInput, DesktopMirror, WifiCredentials};
+use desktop::{DesktopEvent, WifiCredentials};
 #[cfg(not(feature = "pc-block-boot"))]
-use desktop::DesktopSurface;
+use desktop::{DesktopInput, DesktopMirror, DesktopSurface};
 use display::BootDisplay;
 #[cfg(feature = "display-ssd1306")]
 use display::Ssd1306Display;
 #[cfg(feature = "display-st7789")]
 use display::St7789Display;
+#[cfg(not(feature = "pc-block-boot"))]
 use input::{BootKeys, BootMode};
 
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -113,7 +116,7 @@ fn main() -> ! {
     println!("heap initialized:\n{}", esp_alloc::HEAP.stats());
 
     println!("{} bootloader {}", config::PRODUCT, config::BOOTLOADER_VERSION);
-    println!("board={} target=esp32s3", config::MODEL);
+    println!("device={} manufacturer={} board={} target=esp32s3", config::DEVICE, config::MANUFACTURER, config::MODEL);
 
     #[cfg(feature = "display-ssd1306")]
     let physical_display = {
@@ -757,6 +760,7 @@ fn dispatch_with_pager<D: BlockDevice>(
     Ok(frame)
 }
 
+#[cfg(not(feature = "pc-block-boot"))]
 fn enter_fastboot<'d, D: BootDisplay>(
     mut display: DesktopMirror<'d, D>,
     input: DesktopInput<'d>,
@@ -770,6 +774,7 @@ fn enter_fastboot<'d, D: BootDisplay>(
     fastboot::run(input.into_inner(), tx, &mut physical_display, keys, delay)
 }
 
+#[cfg(not(feature = "pc-block-boot"))]
 fn sample_boot_mode<D: BootDisplay>(
     display: &mut DesktopMirror<'_, D>,
     keys: &mut BootKeys<'_>,
@@ -802,6 +807,7 @@ fn sample_boot_mode<D: BootDisplay>(
     BootMode::Normal
 }
 
+#[cfg(not(feature = "pc-block-boot"))]
 fn recovery_menu<D: BootDisplay>(
     display: &mut DesktopMirror<'_, D>,
     keys: &mut BootKeys<'_>,

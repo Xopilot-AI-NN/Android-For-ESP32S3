@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Zephyr Android Debug Bridge for the no-reset development transport.
+"""AOSP Wear OS Debug Bridge for the no-reset development transport.
 
 The local Unix bridge is still useful while bringing up real wireless ADB.  In
-v0.4 it also exposes connectivity commands so Wi-Fi/BLE can be tested without
+v0.6 it also exposes connectivity commands so Wi-Fi/BLE can be tested without
 adding temporary buttons to SystemUI.
 """
 from __future__ import annotations
@@ -56,7 +56,7 @@ def build_command(args: argparse.Namespace) -> tuple[str, str]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Zephyr Android debug bridge")
+    ap = argparse.ArgumentParser(description="AOSP Wear OS Android 17 QPR1 debug bridge")
     sub = ap.add_subparsers(dest="command", required=True)
     for name in SIMPLE_COMMANDS:
         sub.add_parser(name)

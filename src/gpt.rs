@@ -16,9 +16,6 @@ impl Partition {
     pub fn blocks(self) -> u64 { self.last_lba - self.first_lba + 1 }
     pub fn size_bytes(self) -> u64 { self.blocks() * SECTOR_SIZE as u64 }
 
-    pub fn name(&self) -> &str {
-        core::str::from_utf8(&self.name[..self.name_len as usize]).unwrap_or("?")
-    }
 
     pub fn name_eq(&self, expected: &str) -> bool {
         self.name_len as usize == expected.len()

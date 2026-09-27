@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Serve a raw Zephyr Watch GPT image over ESP32-S3 USB-Serial-JTAG.
+"""Serve a raw AOSP Wear OS GPT image over ESP32-S3 USB-Serial-JTAG.
 
 The serial device has exactly one owner: this process.  A desktop viewer attaches
 through a local Unix socket, so opening/closing the GUI never opens /dev/ttyACM*
@@ -285,7 +285,7 @@ def serve(
             ser = open_serial(port, timeout)
             interactive = False
             try:
-                print("Zephyr USB PC block server")
+                print("AOSP Wear OS USB PC block server")
                 print(f"  port : {port} (exclusive single owner, no-reset)")
                 print(f"  image: {image_path} ({size // (1024 * 1024)} MiB, {blocks} sectors)")
                 print(f"  mode : {'read-only' if read_only else 'read/write'}")
