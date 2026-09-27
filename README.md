@@ -1,37 +1,21 @@
-# AOSP-ESP32S3 / Zephyr Watch v0.3.1 fixed devkit
+# AOSP Wear for ESP32-S3 — current release 17.1.6
 
-Hotfix over v0.3.0:
+**Platform identity:** Android 17 QPR1 / API 37  
+**Project release:** 17.1.6  
+**Target:** Waveshare ESP32-S3-Zero-N4R2 + ST7789V3 240×280
 
-- fixes the missing direct `heapless` dependency used by desktop/ZADB formatting;
-- default Bootloader features now include ST7789 + PC block + Rhai + native radio services;
-- `./flash` is the normal development entry point: it builds Firmware, builds the Bootloader,
-  flashes the ESP32-S3, starts the PC block server and opens the live viewer when Tk is available;
-- no positional flags are required;
-- avoids the old X11 `$DISPLAY` variable collision by using `ZEPHYR_DISPLAY` only for overrides;
-- cleans PC-mode-only unused imports and the `PostInit` naming warning.
+17.1.6 is a radio-stability hotfix for a regression introduced by the 17.1.5 thermal experiment. Running the shared USB-PC-block + Wi-Fi runtime at 80 MHz and enabling modem power save before station bring-up could make the watch appear frozen as soon as Wi-Fi was enabled.
 
-Normal use from the repository root:
+The release restores the proven radio/USB bring-up profile while keeping the full QWERTY Wi-Fi keyboard, watch-side Wi-Fi provisioning, software RTC/SNTP, persistent settings and wireless ADB.
 
-```bash
-./flash
-```
+See [`README-v17.1.6.md`](README-v17.1.6.md) and [`WEAR_OS_PARITY.md`](WEAR_OS_PARITY.md).
 
-Or from `Bootloader/`:
+## Build / flash
 
 ```bash
 ./flash
 ```
 
-Optional escape hatches (not required):
+## Thermal note
 
-```bash
-ZEPHYR_SKIP_FIRMWARE_BUILD=1 ./flash
-ZEPHYR_DISPLAY=ssd1306 ./flash
-ZEPHYR_STORAGE=sd ZEPHYR_RADIO=off ./flash
-```
-
-Default feature set:
-
-```text
-rhai-runtime,display-st7789,pc-block-boot,radio-services
-```
+The aggressive 80 MHz default is disabled in 17.1.6 because stability takes priority on the USB-PC storage build. Wi-Fi still fully stops when disabled and no background scan runs. Further thermal work should use adaptive/post-association policies rather than reducing the entire runtime clock during radio bring-up.
