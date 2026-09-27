@@ -1,0 +1,20 @@
+# Zephyr Android init model (documentation/source of truth for Rhai init)
+on early-init
+    setprop ro.hardware esp32s3
+    setprop ro.boot.dynamic_partitions true
+
+on init
+    start servicemanager
+    start surfaceflinger
+
+on late-init
+    start system_server
+
+service servicemanager /system/framework/servicemanager.rhai
+    class core
+
+service surfaceflinger /system/framework/surfaceflinger.rhai
+    class core
+
+service system_server /system/framework/system_server.rhai
+    class main

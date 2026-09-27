@@ -1,0 +1,2 @@
+ro.system_ext.zephyr.security=avb-development
+ro.system_ext.zephyr.framework_api=1

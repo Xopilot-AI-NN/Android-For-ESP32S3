@@ -1,0 +1,4 @@
+<config>
+    <allow-in-power-save-except-idle package="com.android.systemui" />
+    <allow-in-power-save package="by.xopilot.clock" />
+</config>

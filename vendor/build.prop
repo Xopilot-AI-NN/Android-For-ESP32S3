@@ -1,0 +1,5 @@
+ro.vendor.product.cpu.abilist=xtensa-lx7
+ro.hardware=esp32s3
+ro.vendor.zephyr.hal.version=1
+ro.vendor.display.primary=st7789v3
+ro.vendor.storage.primary=microsd
