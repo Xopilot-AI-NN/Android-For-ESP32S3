@@ -1,4 +1,11 @@
-# Project release 17.1.6 radio stability hotfix
+# Project release 17.2.1 Wi-Fi / browser remote
+
+- ESP32-S3 maximum CPU clock retained (240 MHz on ESP32-S3 via `CpuClock::max()`).
+- Wi-Fi credentials are committed only after successful association.
+- Physical Wi-Fi password entry now shows the actual entered tail to catch encoder overshoot.
+- Added an ESP-hosted HTTP remote at `http://<watch-ip>/` with crown, Back/Home and swipe controls.
+
+# Project release 17.2.1 radio stability hotfix
 
 - Fixed Wi-Fi-enable freezes caused by the 17.1.5 80 MHz/pre-association power-save experiment.
 - Restored the proven transport-safe CPU/radio bring-up while retaining the full QWERTY Wi-Fi keyboard.
@@ -108,9 +115,16 @@ run on a machine with the project's Rust toolchain installed.
 - Removed `--:--` from normal watch surfaces: an unsynchronised software clock ticks locally and is visibly marked as syncing.
 - Persisted RTC automatic/manual mode and timezone separately from Activity state.
 
-## 17.1.6
+## 17.2.1
 
 - Fixed a regression where enabling Wi-Fi could freeze the watch on USB-PC block builds.
 - Reverted the experimental 80 MHz CPU clock used by 17.1.5 to the previously stable maximum clock while the shared USB/radio runtime is active.
 - Removed pre-association modem power-save configuration from Wi-Fi initialization; radio bring-up now follows the proven 17.1.4 path.
 - Kept the 17.1.5 full QWERTY password keyboard and 17.1.3+ software RTC/SNTP behavior unchanged.
+
+## 17.2.1 UI adaptation
+
+- Wear-style bubble/grid and list launcher modes.
+- Encoder-first Back/Home semantics; no touchscreen dependency.
+- Phone-keyboard visual adaptation for Wi-Fi password entry.
+- Assistant surface reserved for a future companion application.

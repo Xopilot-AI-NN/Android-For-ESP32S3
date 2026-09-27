@@ -1,4 +1,4 @@
-# Wear OS parity boundary — release 17.1.6
+# Wear OS parity boundary — release 17.2.1
 
 This project deliberately separates **behavioral/design parity** from capabilities that cannot exist
 on an ESP32-S3. It does not claim to be Google's proprietary Wear OS image.
@@ -43,7 +43,7 @@ viewer, while crown rotation/press provides a deterministic physical-board fallb
 - DRM / Play Integrity certification.
 - Media control of a phone until a real companion media transport is implemented.
 
-The rule for 17.1.6 is: if ESP32-S3 can implement a Wear behavior, implement it; if hardware or Google
+The rule for 17.2.1 is: if ESP32-S3 can implement a Wear behavior, implement it; if hardware or Google
 proprietary infrastructure is missing, expose the limitation instead of fabricating a working state.
 
 ## Connectivity/time parity
@@ -54,4 +54,12 @@ Wall time is owned by a software RTC service. Network availability corrects the 
 
 ### Thermal/input parity
 
-Wi-Fi credential entry uses a visible QWERTY keyboard surface rather than a development-style character carousel. The experimental 80 MHz/pre-association modem-power-save profile from 17.1.5 is not enabled by default because it can destabilize the shared USB-PC-block/radio runtime; 17.1.6 uses the proven transport-safe bring-up path.
+Wi-Fi credential entry uses a visible QWERTY keyboard surface rather than a development-style character carousel. The experimental 80 MHz/pre-association modem-power-save profile from 17.1.5 is not enabled by default because it can destabilize the shared USB-PC-block/radio runtime; 17.2.1 uses the proven transport-safe bring-up path.
+
+## 17.2.1 encoder-first UI parity
+
+The project now treats the rotary crown as the only production navigation device. Modern Wear launcher references are adapted rather than copied literally: the 240×280 rectangular panel uses the same bubble/pill hierarchy and focus scaling, while navigation remains one-dimensional and deterministic. A future phone companion is expected to own pairing, richer notifications/media and assistant transport.
+
+## 17.2.1 local remote
+
+The board can now expose its current watch state and input controls over a local HTTP page once Wi-Fi is online. This is a development/companion transport, not a Google Wear OS cloud service. It uses the same runtime input events as the physical crown.
