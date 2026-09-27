@@ -106,7 +106,7 @@ impl RadioServices {
         let net = NetworkService::new(&mut wifi_device);
 
         println!(
-            "radio: ESP32-S3 Wi-Fi ready; BLE deferred (internal_free={} KiB)",
+            "radio: ESP32-S3 Wi-Fi ready; stable bring-up profile; BLE deferred (internal_free={} KiB)",
             internal_free_bytes() / 1024
         );
 
@@ -138,6 +138,12 @@ impl RadioServices {
 
     pub fn network_state(&self) -> LinkState { self.net.link_state() }
     pub fn ip_address(&self) -> Option<smoltcp::wire::Ipv4Address> { self.net.ip() }
+    pub fn take_network_time(&mut self) -> Option<u32> { self.net.take_network_time() }
+    pub fn request_network_time_sync(&mut self) { self.net.request_time_sync(); }
+    pub fn wifi_ap_count(&self) -> usize { self.wifi_aps.len() }
+    pub fn wifi_ap_info(&self, index: usize) -> Option<(&str, i8)> {
+        self.wifi_aps.get(index).map(|ap| (ap.ssid.as_str(), ap.rssi))
+    }
 
     pub fn sync_frame(&mut self, frame: &RuntimeFrame) {
         let RuntimeFrame::Material(m) = frame else { return; };
@@ -204,7 +210,11 @@ impl RadioServices {
         if enabled {
             if !self.ensure_wifi_started() { return; }
             self.wifi_requested = true;
-            let _ = self.scan_wifi();
+            // Do not perform a synchronous active scan merely because Wi-Fi
+            // was toggled on. esp-radio scanning can hold the main loop for a
+            // few seconds and, on USB-PC storage builds, starve the shared
+            // USB-Serial-JTAG transport. Wear-style network discovery is
+            // requested explicitly when the Available networks page opens.
             if let Some(credentials) = self.saved_wifi {
                 let _ = self.connect_wifi(credentials);
             }
@@ -258,10 +268,14 @@ impl RadioServices {
         self.wifi_requested = true;
         self.wifi_aps.clear();
         println!("radio: scanning Wi-Fi networks...");
+        // Keep explicit foreground discovery short enough that the crown UI
+        // and shared USB debug/storage transport remain responsive. Nearby
+        // watch/phone hotspots are normally discovered within this dwell; an
+        // empty first pass is retried below after the PHY settles.
         let scan_config = ScanConfig::default()
             .with_scan_type(ScanTypeConfig::Active {
-                min: Duration::from_millis(50),
-                max: Duration::from_millis(200),
+                min: Duration::from_millis(20),
+                max: Duration::from_millis(70),
             })
             .with_max(10);
         let mut result = self.wifi.scan_with_config(scan_config);

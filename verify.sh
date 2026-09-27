@@ -16,10 +16,10 @@ python -m py_compile \
   tools/inspect_android_sd.py
 bash -n flash.sh
 python tools/mk_android_sd.py \
-  --output out/verify/zephyr-watch-sd.img \
+  --output out/verify/aosp-wear-sd.img \
   --size-mib 256 \
   --version verify
-python tools/inspect_android_sd.py out/verify/zephyr-watch-sd.img
+python tools/inspect_android_sd.py out/verify/aosp-wear-sd.img
 
 if command -v cargo >/dev/null 2>&1; then
   if cargo +esp --version >/dev/null 2>&1; then
@@ -28,7 +28,7 @@ if command -v cargo >/dev/null 2>&1; then
     cargo +esp build --release --no-default-features --features 'rhai-runtime,display-ssd1306'
     cargo +esp build --release --no-default-features --features 'rhai-runtime,display-st7789,pc-block-boot'
     cargo +esp build --release --no-default-features --features 'rhai-runtime,display-ssd1306,pc-block-boot'
-    if [[ "${ZEPHYR_VERIFY_RADIO:-0}" == "1" ]]; then
+    if [[ "${AOSP_WEAR_VERIFY_RADIO:-${ZEPHYR_VERIFY_RADIO:-0}}" == "1" ]]; then
       cargo +esp build --release --no-default-features --features 'rhai-runtime,display-st7789,pc-block-boot,radio-services'
     fi
   else

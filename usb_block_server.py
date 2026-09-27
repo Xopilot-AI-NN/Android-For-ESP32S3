@@ -31,9 +31,9 @@ except ImportError:  # non-POSIX
 def default_viewer_socket() -> Path:
     runtime = os.environ.get("XDG_RUNTIME_DIR")
     if runtime and os.path.isdir(runtime):
-        return Path(runtime) / "zephyr-watch-viewer.sock"
+        return Path(runtime) / "aosp-wear-viewer.sock"
     uid = os.getuid() if hasattr(os, "getuid") else 0
-    return Path(f"/tmp/zephyr-watch-viewer-{uid}.sock")
+    return Path(f"/tmp/aosp-wear-viewer-{uid}.sock")
 
 
 def auto_port() -> str:
@@ -68,7 +68,14 @@ def open_serial(port: str, timeout: float):
     ser.port = port
     ser.baudrate = 115200  # ignored by native USB-Serial-JTAG
     ser.timeout = timeout
-    ser.write_timeout = 5
+    # USB-Serial-JTAG can temporarily stop accepting host OUT packets while
+    # esp-radio performs an active Wi-Fi scan. A finite pyserial write timeout
+    # used to kill the PC block server in that perfectly recoverable window,
+    # which in turn froze userspace because its backing disk disappeared.
+    # Keep the transport blocking instead: the ESP side has its own 30 s block
+    # protocol timeout and resumes draining USB as soon as the radio operation
+    # yields. Ctrl+C / device removal still tears the process down normally.
+    ser.write_timeout = None
     ser.xonxoff = False
     ser.rtscts = False
     ser.dsrdtr = False
@@ -93,7 +100,7 @@ class ViewerBridge:
         self.stop_event = threading.Event()
         self.clients: set[socket.socket] = set()
         self.clients_lock = threading.Lock()
-        self.thread = threading.Thread(target=self._run, name="zephyr-viewer-bridge", daemon=True)
+        self.thread = threading.Thread(target=self._run, name="aosp-wear-viewer-bridge", daemon=True)
 
     def start(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -250,8 +257,25 @@ def read_exact(ser, count: int, timeout_budget: int = 50) -> bytes:
     return bytes(out)
 
 
+def write_all(ser, payload: bytes) -> None:
+    """Write a complete protocol payload without treating USB backpressure as fatal.
+
+    Native ESP32-S3 USB-Serial-JTAG shares CPU/interrupt time with the radio.
+    During an active 2.4 GHz scan the host OUT endpoint can briefly apply
+    backpressure. pyserial with a finite write_timeout raises after a partial
+    transfer, which is unrecoverable for our binary block framing. Blocking
+    writes preserve framing and simply continue when the ESP starts draining.
+    """
+    sent = 0
+    while sent < len(payload):
+        n = ser.write(payload[sent:])
+        if n is None or n <= 0:
+            raise OSError("serial write returned no progress")
+        sent += n
+
+
 def send_line(ser, text: str) -> None:
-    ser.write(text.encode("ascii") + b"\r\n")
+    write_all(ser, text.encode("ascii") + b"\r\n")
     ser.flush()
 
 
@@ -368,7 +392,7 @@ def serve(
                                 continue
                             crc = zlib.crc32(payload) & 0xFFFF_FFFF
                             send_line(ser, f"@ZBLK|DATA|{byte_count}|{crc:08x}")
-                            ser.write(payload)
+                            write_all(ser, payload)
                             ser.flush()
                             continue
 
@@ -425,8 +449,8 @@ def main() -> None:
     parser.add_argument(
         "--image",
         type=Path,
-        default=Path("out/zephyr-watch-sd.img"),
-        help="raw GPT image (default: out/zephyr-watch-sd.img)",
+        default=Path("out/aosp-wear-sd.img"),
+        help="raw GPT image (default: out/aosp-wear-sd.img)",
     )
     parser.add_argument("--read-only", action="store_true", help="reject writes (A/B boot metadata then cannot update)")
     parser.add_argument("--timeout", type=float, default=0.1, help="serial polling timeout in seconds")
@@ -437,7 +461,7 @@ def main() -> None:
     if not args.image.is_file():
         raise SystemExit(
             f"image not found: {args.image}\n"
-            "Create one with: python tools/mk_android_sd.py --output out/zephyr-watch-sd.img --size-mib 256 --version dev"
+            "Create one with: python tools/mk_android_sd.py --output out/aosp-wear-sd.img --size-mib 256 --version dev"
         )
     serve(
         args.port or auto_port(),

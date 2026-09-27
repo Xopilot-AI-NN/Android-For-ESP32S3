@@ -86,7 +86,7 @@ impl<const W: usize, const H: usize, const BYTES: usize> Framebuffer<W, H, BYTES
         self.draw_text(x, y, text, scale, on);
     }
 
-    pub fn draw_zephyr_mark(&mut self) {
+    pub fn draw_aosp_mark(&mut self) {
         // Minimal AOSP-style boot mark for the monochrome fallback panel.
         self.draw_circle(64, 25, 16, true);
         self.draw_text(58, 18, "A", 2, true);

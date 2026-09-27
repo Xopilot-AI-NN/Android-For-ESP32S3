@@ -69,7 +69,7 @@ def android_boot_v4(ramdisk: bytes, version: str) -> bytes:
     struct.pack_into("<I", header, 16, 0)  # os_version
     struct.pack_into("<I", header, 20, 1584)
     struct.pack_into("<I", header, 40, 4)
-    cmdline = f"androidboot.hardware=esp32s3 androidboot.zephyr.version={version}".encode()
+    cmdline = f"androidboot.hardware=esp32s3 androidboot.aosp_wear.version={version}".encode()
     header[44:44 + min(len(cmdline), 1535)] = cmdline[:1535]
     struct.pack_into("<I", header, 1580, 0)  # signature_size
     image = bytes(header) + ramdisk
@@ -84,7 +84,7 @@ def vendor_boot_v4(version: str) -> bytes:
     struct.pack_into("<I", header, 16, 0)  # kernel_addr
     struct.pack_into("<I", header, 20, 0)  # ramdisk_addr
     struct.pack_into("<I", header, 24, 0)  # vendor_ramdisk_size
-    cmdline = f"androidboot.hardware=esp32s3 androidboot.product=aosp_wear androidboot.zephyr.version={version}".encode()
+    cmdline = f"androidboot.hardware=esp32s3 androidboot.product=aosp_wear androidboot.aosp_wear.version={version}".encode()
     header[28:28 + min(len(cmdline), 2047)] = cmdline[:2047]
     struct.pack_into("<I", header, 2076, 0)  # tags_addr
     header[2080:2096] = b"aosp-wear\0\0\0\0\0\0\0"
@@ -115,7 +115,7 @@ def avb_hash_descriptor(partition_name: str, image: bytes, salt: bytes) -> bytes
 def vbmeta_image(images: dict[str, bytes], rollback_index: int = 0) -> bytes:
     descriptors = bytearray()
     for name, image in images.items():
-        salt = hashlib.sha256(("zephyr:" + name).encode()).digest()
+        salt = hashlib.sha256(("aosp-wear:" + name).encode()).digest()
         descriptors += avb_hash_descriptor(name, image, salt)
     aux_size = align_up(len(descriptors), 64)
     aux = bytes(descriptors) + bytes(aux_size - len(descriptors))
@@ -207,7 +207,7 @@ def mib(n: int) -> int:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--output", default="out/zephyr-watch-sd.img")
+    ap.add_argument("--output", default="out/aosp-wear-sd.img")
     ap.add_argument("--size-mib", type=int, default=512)
     ap.add_argument("--version", default="0.2.0")
     ap.add_argument("--init", default="sdcard/android/init.rhai")
@@ -246,7 +246,7 @@ def main():
         raise SystemExit("image too small for partition layout")
     parts.append(("userdata", cursor, backup_start - 1))
 
-    disk_guid = uuid.uuid5(DISK_NAMESPACE, f"zephyr-watch-{args.version}")
+    disk_guid = uuid.uuid5(DISK_NAMESPACE, f"aosp-wear-{args.version}")
     primary, entries, backup, backup_entries_lba = gpt_headers(total_lba, parts, disk_guid)
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)

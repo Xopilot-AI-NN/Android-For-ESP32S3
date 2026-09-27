@@ -5,7 +5,7 @@ The PC does not emulate the MCU or execute the bootloader.
 
 ## Board -> Host
 
-- `@ZWUI|HELLO|2|240|280|Zephyr Watch|ESP32-S3-Zero-N4R2`
+- `@ZWUI|HELLO|5|240|280|AOSP Wear OS|ESP32-S3-Zero-N4R2`
 - `@ZWUI|BOOT`
 - `@ZWUI|PROGRESS|<label>|<phase 0..7>`
 - `@ZWUI|STATUS|<title>|<line1>|<line2>|<line3>`

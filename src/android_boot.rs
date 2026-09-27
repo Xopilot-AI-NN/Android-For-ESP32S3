@@ -48,7 +48,8 @@ pub fn validate_boot<D: BlockDevice>(dev: &D, part: Partition) -> Result<BootIma
     if header_version == 4 && header_size < BOOT_HEADER_V4_SIZE { return Err(BootImageError::UnsupportedHeader); }
     let ramdisk_offset = BOOT_PAGE_SIZE + align_up(kernel_size as u64, BOOT_PAGE_SIZE);
     if ramdisk_offset + ramdisk_size as u64 > part.size_bytes() { return Err(BootImageError::InvalidLayout); }
-    let cmdline_version = cmdline_value(&header[44..1580], b"androidboot.zephyr.version=")
+    let cmdline_version = cmdline_value(&header[44..1580], b"androidboot.aosp_wear.version=")
+        .or_else(|| cmdline_value(&header[44..1580], b"androidboot.zephyr.version="))
         .unwrap_or_else(|| "0.0.0-dev".to_string());
     Ok(BootImageInfo { _header_version: header_version, _os_version: os_version, ramdisk_offset, ramdisk_size, cmdline_version })
 }

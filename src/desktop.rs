@@ -37,6 +37,15 @@ impl WifiCredentials {
         core::str::from_utf8(&self.password[..self.password_len as usize]).ok()
     }
 
+    pub fn from_parts(ssid: &str, password: &str) -> Option<Self> {
+        let sb = ssid.as_bytes(); let pb = password.as_bytes();
+        if sb.is_empty() || sb.len() > 32 || pb.len() > 64 { return None; }
+        let mut out = Self::empty();
+        out.ssid[..sb.len()].copy_from_slice(sb); out.ssid_len = sb.len() as u8;
+        out.password[..pb.len()].copy_from_slice(pb); out.password_len = pb.len() as u8;
+        Some(out)
+    }
+
     pub fn encode_page(&self, out: &mut [u8; 98]) -> usize {
         out[0] = self.ssid_len;
         out[1] = self.password_len;
@@ -99,6 +108,8 @@ pub enum DesktopEvent {
     Recovery,
     Fastboot,
     Rotate(i8),
+    Swipe(i8),
+    CompanionTime(u16),
     Power,
     AdbGetProp,
     AdbServices,
@@ -190,6 +201,10 @@ pub(crate) fn parse_event(line: &str) -> Option<DesktopEvent> {
         "@ZWIN|POWER" => return Some(DesktopEvent::Power),
         "@ZWIN|ROTATE|-1" => return Some(DesktopEvent::Rotate(-1)),
         "@ZWIN|ROTATE|1" => return Some(DesktopEvent::Rotate(1)),
+        "@ZWIN|SWIPE|UP" => return Some(DesktopEvent::Swipe(-1)),
+        "@ZWIN|SWIPE|DOWN" => return Some(DesktopEvent::Swipe(1)),
+        "@ZWIN|SWIPE|LEFT" => return Some(DesktopEvent::Swipe(-2)),
+        "@ZWIN|SWIPE|RIGHT" => return Some(DesktopEvent::Swipe(2)),
         "@ZADB|GETPROP" => return Some(DesktopEvent::AdbGetProp),
         "@ZADB|SERVICES" => return Some(DesktopEvent::AdbServices),
         "@ZADB|PACKAGES" => return Some(DesktopEvent::AdbPackages),
@@ -201,6 +216,13 @@ pub(crate) fn parse_event(line: &str) -> Option<DesktopEvent> {
         "@ZADB|BT_STATUS" => return Some(DesktopEvent::BtStatus),
         "@ZADB|BT_DISCONNECT" => return Some(DesktopEvent::BtDisconnect),
         _ => {}
+    }
+    // Explicit Wear companion debug hook. The desktop viewer never sends
+    // this automatically; production time comes from a paired companion.
+    if let Some(rest) = line.strip_prefix("@ZADB|COMPANION_TIME|") {
+        let minutes = rest.parse::<u16>().ok()?;
+        if minutes < 1440 { return Some(DesktopEvent::CompanionTime(minutes)); }
+        return None;
     }
     if let Some(rest) = line.strip_prefix("@ZADB|WIFI_CONNECT|") {
         let (ssid, password) = rest.split_once('|')?;
@@ -335,15 +357,20 @@ impl<D: BootDisplay> BootDisplay for DesktopMirror<'_, D> {
         match frame {
             RuntimeFrame::Legacy(f) => self.send_parts(&["@ZWUI", "STATUS", &f.title, &f.line1, &f.line2, &f.line3]),
             RuntimeFrame::Material(f) => {
-                let mut line = heapless::String::<160>::new();
+                let mut line = heapless::String::<256>::new();
                 let _ = core::fmt::write(&mut line, format_args!(
-                    "@ZWUI|M3|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+                    "@ZWUI|M3|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|",
                     f.screen, f.cursor, f.brightness,
                     if f.dnd { 1 } else { 0 }, if f.airplane { 1 } else { 0 }, f.theme,
                     if f.locked { 1 } else { 0 }, if f.wifi { 1 } else { 0 },
                     if f.bt { 1 } else { 0 }, if f.adb { 1 } else { 0 },
-                    f.notes, f.time_minutes, f.swap_pages,
+                    f.notes, f.time_minutes, f.swap_pages, f.timer_secs, f.stopwatch_secs,
+                    if f.alarm_enabled { 1 } else { 0 }, if f.auto_time { 1 } else { 0 },
+                    if f.time_valid { 1 } else { 0 }, f.timezone_hours,
+                    f.wifi_ap_count, f.wifi_ap_index, f.wifi_ap_rssi, f.wifi_password_len,
+                    f.wifi_editor_char, f.wifi_link_state,
                 ));
+                for &byte in &f.wifi_ap_ssid[..f.wifi_ap_ssid_len as usize] { let _ = core::fmt::write(&mut line, format_args!("{:02x}", byte)); }
                 self.send_parts(&[line.as_str()]);
             }
         }

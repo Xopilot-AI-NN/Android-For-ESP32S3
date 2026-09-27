@@ -51,6 +51,7 @@ mod material;
 mod net;
 mod page_store;
 mod runtime;
+mod rtc;
 #[cfg(feature = "radio-services")]
 mod radio;
 #[cfg(feature = "pc-block-boot")]
@@ -80,6 +81,7 @@ fn main() -> ! {
         .with_cpu_clock(CpuClock::max())
         .with_psram(esp_hal::psram::PsramConfig::default());
     let p = esp_hal::init(hal_cfg);
+    println!("thermal: transport-safe profile active; CPU=max during USB-PC/radio runtime");
 
     let (_, psram_size) = esp_hal::psram::psram_raw_parts(&p.PSRAM);
     println!("PSRAM detected: {} bytes", psram_size);
@@ -215,19 +217,48 @@ fn main() -> ! {
 
         println!("heap after Rhai startup:\n{}", esp_alloc::HEAP.stats());
         let pager = page_store::PageStore::open(session.block_device()).ok();
-        let mut pager_used: u16 = 0;
+        let mut pager_used: u32 = 0;
         if let Some(p) = pager {
             println!("zpager: {} slots / {} KiB managed backing store", p.slots(), p.capacity_bytes() / 1024);
         } else {
             println!("zpager: swap partition unavailable");
         }
+
+        // ESP32-S3 has no battery-backed wall-clock RTC.  Keep the last known
+        // Wear time as a holdover value so the watch face is still useful
+        // immediately after a reboot; a paired-phone/manual update remains the
+        // authoritative source and will replace it when available.
+        if let Some(pager) = pager.as_ref() {
+            if let Some(config) = load_rtc_config(pager, session.block_device()) {
+                rtc::restore_config(config);
+                println!("time: restored software RTC settings");
+            }
+            if let Some(minutes) = load_time_holdover(pager, session.block_device()) {
+                rtc::restore_holdover_minutes(minutes);
+                println!("time: restored last-known wall clock {:02}:{:02}", minutes / 60, minutes % 60);
+            }
+            if let Some(saved) = load_system_settings(pager, session.block_device()) {
+                let restored = (os.state() & !SYSTEM_SETTINGS_MASK) | (saved & SYSTEM_SETTINGS_MASK);
+                if let Ok(frame) = os.replace_state(restored) { first_frame = frame; }
+                println!("settings: restored persistent Wear settings");
+            }
+            if let Ok(frame) = os.render() { first_frame = frame; }
+        }
+
         #[cfg(feature = "radio-services")]
         if let (Some(radios), Some(pager)) = (radios.as_mut(), pager.as_ref()) {
             if let Some(credentials) = load_wifi_credentials(pager, session.block_device()) {
                 println!("radio: restored saved Wi-Fi profile");
                 radios.set_saved_wifi(credentials);
+                // Migrate the legacy slot-16 record to the reserved metadata
+                // range. This is idempotent and prevents Activity paging from
+                // ever overwriting credentials again.
+                let _ = save_wifi_credentials(pager, session.block_device(), credentials);
             }
         }
+        let mut persisted_settings = os.state() & SYSTEM_SETTINGS_MASK;
+        let mut persisted_time = rtc::snapshot_minutes();
+        let mut persisted_rtc_config = rtc::config_snapshot();
         first_frame.set_swap_pages(0);
         #[cfg(feature = "radio-services")]
         if let Some(radios) = radios.as_mut() { radios.sync_frame(&first_frame); }
@@ -241,6 +272,7 @@ fn main() -> ! {
         // From this point the PC server may forward viewer commands. The
         // viewer talks to the block-server bridge and never reopens ttyACM0.
         session.block_device().viewer_interactive();
+        let mut ui_refresh_ticks: u8 = 0;
 
         loop {
             if let Some(event) = session.block_device().poll_desktop_event() {
@@ -296,9 +328,9 @@ fn main() -> ! {
                             "boot=completed slot={} pager_pages={} wifi={} bt={} wadb={}",
                             session.image.slot.as_str(),
                             pager_used.count_ones(),
-                            ((os.state() >> 20) & 1),
                             ((os.state() >> 21) & 1),
                             ((os.state() >> 22) & 1),
+                            ((os.state() >> 23) & 1),
                         ));
                         #[cfg(feature = "radio-services")]
                         if let Some(radios) = radios.as_ref() {
@@ -313,7 +345,7 @@ fn main() -> ! {
                         if let Some(radios) = radios.as_mut() {
                             let ok = radios.scan_wifi();
                             if ok {
-                                let _ = set_runtime_flag(&mut os, 20, true).map(|frame| {
+                                let _ = set_runtime_flag(&mut os, 21, true).map(|frame| {
                                     let _ = display.runtime(&frame);
                                     session.block_device().viewer_runtime(&frame);
                                 });
@@ -347,7 +379,7 @@ fn main() -> ! {
                                         println!("radio: saved Wi-Fi profile to ZPager");
                                     }
                                 }
-                                if let Ok(frame) = set_runtime_flag(&mut os, 20, true) {
+                                if let Ok(frame) = set_runtime_flag(&mut os, 21, true) {
                                     let _ = display.runtime(&frame);
                                     session.block_device().viewer_runtime(&frame);
                                 }
@@ -362,7 +394,7 @@ fn main() -> ! {
                         #[cfg(feature = "radio-services")]
                         if let Some(radios) = radios.as_mut() {
                             radios.disconnect_wifi();
-                            if let Ok(frame) = set_runtime_flag(&mut os, 20, false) {
+                            if let Ok(frame) = set_runtime_flag(&mut os, 21, false) {
                                 let _ = display.runtime(&frame);
                                 session.block_device().viewer_runtime(&frame);
                             }
@@ -375,7 +407,7 @@ fn main() -> ! {
                         if let Some(radios) = radios.as_mut() {
                             let ok = radios.start_ble_scan();
                             if ok {
-                                if let Ok(frame) = set_runtime_flag(&mut os, 21, true) {
+                                if let Ok(frame) = set_runtime_flag(&mut os, 22, true) {
                                     let _ = display.runtime(&frame);
                                     session.block_device().viewer_runtime(&frame);
                                 }
@@ -403,7 +435,7 @@ fn main() -> ! {
                         #[cfg(feature = "radio-services")]
                         if let Some(radios) = radios.as_mut() {
                             if radios.connect_ble(address) {
-                                if let Ok(frame) = set_runtime_flag(&mut os, 21, true) {
+                                if let Ok(frame) = set_runtime_flag(&mut os, 22, true) {
                                     let _ = display.runtime(&frame);
                                     session.block_device().viewer_runtime(&frame);
                                 }
@@ -418,10 +450,20 @@ fn main() -> ! {
                         #[cfg(feature = "radio-services")]
                         if let Some(radios) = radios.as_mut() {
                             let ok = radios.disconnect_ble();
+                            if let Ok(frame) = set_runtime_flag(&mut os, 22, false) {
+                                let _ = display.runtime(&frame);
+                                session.block_device().viewer_runtime(&frame);
+                            }
                             session.block_device().viewer_adb_output("bt", if ok { "disconnect requested" } else { "not connected" });
                         }
                         None
                     }
+                    DesktopEvent::CompanionTime(minutes) => {
+                        rtc::set_companion_minutes(minutes);
+                        session.block_device().viewer_adb_output("time", "companion time accepted");
+                        Some(runtime::RuntimeEvent::Sync)
+                    }
+                    DesktopEvent::Swipe(direction) => Some(runtime::RuntimeEvent::Swipe(direction as i32)),
                     DesktopEvent::Rotate(delta) => Some(runtime::RuntimeEvent::Rotate(delta as i32)),
                 };
 
@@ -440,9 +482,45 @@ fn main() -> ! {
                     }
                 }
             }
+            ui_refresh_ticks = ui_refresh_ticks.wrapping_add(1);
+            if ui_refresh_ticks >= 50 {
+                ui_refresh_ticks = 0;
+                let screen = (os.state() & 0x1f) as u8;
+                if matches!(screen, 0 | 1 | 6 | 10 | 11) {
+                    if let Ok(mut frame) = os.render() {
+                        frame.set_swap_pages(pager_used.count_ones().min(255) as u8);
+                        let _ = display.runtime(&frame);
+                        session.block_device().viewer_runtime(&frame);
+                    }
+                }
+            }
             #[cfg(feature = "radio-services")]
             if let Some(radios) = radios.as_mut() {
-                radios.tick(((os.state() >> 22) & 1) != 0);
+                if let Some(mut frame) = service_radio_runtime(radios, &mut os, pager.as_ref(), session.block_device()) {
+                    frame.set_swap_pages(pager_used.count_ones().min(255) as u8);
+                    let _ = display.runtime(&frame);
+                    session.block_device().viewer_runtime(&frame);
+                }
+            }
+
+            if let Some(pager) = pager.as_ref() {
+                let settings = os.state() & SYSTEM_SETTINGS_MASK;
+                if settings != persisted_settings && save_system_settings(pager, session.block_device(), os.state()) {
+                    persisted_settings = settings;
+                    println!("settings: persistent state updated");
+                }
+                if let Some(now) = rtc::snapshot_minutes() {
+                    let changed = persisted_time != Some(now);
+                    let jumped = persisted_time.map(|old| ((now as i32 - old as i32).rem_euclid(1440)) > 1).unwrap_or(true);
+                    if changed && (jumped || now % 5 == 0) && save_time_holdover(pager, session.block_device(), now) {
+                        persisted_time = Some(now);
+                    }
+                }
+                let rtc_config = rtc::config_snapshot();
+                if rtc_config != persisted_rtc_config && save_rtc_config(pager, session.block_device(), rtc_config) {
+                    persisted_rtc_config = rtc_config;
+                    println!("time: software RTC settings updated");
+                }
             }
             delay.delay_millis(20);
         }
@@ -546,19 +624,48 @@ fn main() -> ! {
 
         println!("heap after Rhai startup:\n{}", esp_alloc::HEAP.stats());
         let pager = page_store::PageStore::open(session.block_device()).ok();
-        let mut pager_used: u16 = 0;
+        let mut pager_used: u32 = 0;
         if let Some(p) = pager {
             println!("zpager: {} slots / {} KiB managed backing store", p.slots(), p.capacity_bytes() / 1024);
         } else {
             println!("zpager: swap partition unavailable");
         }
+
+        // ESP32-S3 has no battery-backed wall-clock RTC.  Keep the last known
+        // Wear time as a holdover value so the watch face is still useful
+        // immediately after a reboot; a paired-phone/manual update remains the
+        // authoritative source and will replace it when available.
+        if let Some(pager) = pager.as_ref() {
+            if let Some(config) = load_rtc_config(pager, session.block_device()) {
+                rtc::restore_config(config);
+                println!("time: restored software RTC settings");
+            }
+            if let Some(minutes) = load_time_holdover(pager, session.block_device()) {
+                rtc::restore_holdover_minutes(minutes);
+                println!("time: restored last-known wall clock {:02}:{:02}", minutes / 60, minutes % 60);
+            }
+            if let Some(saved) = load_system_settings(pager, session.block_device()) {
+                let restored = (os.state() & !SYSTEM_SETTINGS_MASK) | (saved & SYSTEM_SETTINGS_MASK);
+                if let Ok(frame) = os.replace_state(restored) { first_frame = frame; }
+                println!("settings: restored persistent Wear settings");
+            }
+            if let Ok(frame) = os.render() { first_frame = frame; }
+        }
+
         #[cfg(feature = "radio-services")]
         if let (Some(radios), Some(pager)) = (radios.as_mut(), pager.as_ref()) {
             if let Some(credentials) = load_wifi_credentials(pager, session.block_device()) {
                 println!("radio: restored saved Wi-Fi profile");
                 radios.set_saved_wifi(credentials);
+                // Migrate the legacy slot-16 record to the reserved metadata
+                // range. This is idempotent and prevents Activity paging from
+                // ever overwriting credentials again.
+                let _ = save_wifi_credentials(pager, session.block_device(), credentials);
             }
         }
+        let mut persisted_settings = os.state() & SYSTEM_SETTINGS_MASK;
+        let mut persisted_time = rtc::snapshot_minutes();
+        let mut persisted_rtc_config = rtc::config_snapshot();
         first_frame.set_swap_pages(0);
         #[cfg(feature = "radio-services")]
         if let Some(radios) = radios.as_mut() { radios.sync_frame(&first_frame); }
@@ -569,6 +676,9 @@ fn main() -> ! {
         let _ = display.runtime(&first_frame);
 
         let mut last_power = keys.power_pressed();
+        let mut power_hold_ticks: u16 = 0;
+        let mut power_long_handled = false;
+        let mut ui_refresh_ticks: u8 = 0;
         loop {
             let rotation = keys.poll_rotation();
             if rotation != 0 {
@@ -578,13 +688,30 @@ fn main() -> ! {
                     let _ = display.runtime(&frame);
                 }
             }
+            // The board has an encoder/crown but no touch panel. Short press is
+            // therefore the focused-item action; holding the crown for about
+            // 800 ms is the always-available Wear-style Home gesture.
             let power = keys.power_pressed();
-            if power && !last_power {
-                if let Ok(frame) = dispatch_with_pager(&mut os, runtime::RuntimeEvent::Press, pager.as_ref(), session.block_device(), &mut pager_used) {
-                    #[cfg(feature = "radio-services")]
-                    if let Some(radios) = radios.as_mut() { radios.sync_frame(&frame); }
-                    let _ = display.runtime(&frame);
+            if power {
+                power_hold_ticks = power_hold_ticks.saturating_add(1);
+                if power_hold_ticks >= 40 && !power_long_handled {
+                    if let Ok(frame) = dispatch_with_pager(&mut os, runtime::RuntimeEvent::Home, pager.as_ref(), session.block_device(), &mut pager_used) {
+                        #[cfg(feature = "radio-services")]
+                        if let Some(radios) = radios.as_mut() { radios.sync_frame(&frame); }
+                        let _ = display.runtime(&frame);
+                    }
+                    power_long_handled = true;
                 }
+            } else if last_power {
+                if !power_long_handled {
+                    if let Ok(frame) = dispatch_with_pager(&mut os, runtime::RuntimeEvent::Press, pager.as_ref(), session.block_device(), &mut pager_used) {
+                        #[cfg(feature = "radio-services")]
+                        if let Some(radios) = radios.as_mut() { radios.sync_frame(&frame); }
+                        let _ = display.runtime(&frame);
+                    }
+                }
+                power_hold_ticks = 0;
+                power_long_handled = false;
             }
             last_power = power;
 
@@ -630,7 +757,7 @@ fn main() -> ! {
                         if let Some(radios) = radios.as_mut() {
                             if radios.connect_wifi(credentials) {
                                 if let Some(pager) = pager.as_ref() { let _ = save_wifi_credentials(pager, session.block_device(), credentials); }
-                                let _ = set_runtime_flag(&mut os, 20, true);
+                                let _ = set_runtime_flag(&mut os, 21, true);
                             }
                         }
                         None
@@ -638,7 +765,7 @@ fn main() -> ! {
                     DesktopEvent::WifiDisconnect => {
                         #[cfg(feature = "radio-services")]
                         if let Some(radios) = radios.as_mut() { radios.disconnect_wifi(); }
-                        let _ = set_runtime_flag(&mut os, 20, false);
+                        let _ = set_runtime_flag(&mut os, 21, false);
                         None
                     }
                     DesktopEvent::BtScan => {
@@ -665,8 +792,14 @@ fn main() -> ! {
                     DesktopEvent::BtDisconnect => {
                         #[cfg(feature = "radio-services")]
                         if let Some(radios) = radios.as_mut() { let _ = radios.disconnect_ble(); }
+                        let _ = set_runtime_flag(&mut os, 22, false);
                         None
                     }
+                    DesktopEvent::CompanionTime(minutes) => {
+                        rtc::set_companion_minutes(minutes);
+                        Some(runtime::RuntimeEvent::Sync)
+                    }
+                    DesktopEvent::Swipe(direction) => Some(runtime::RuntimeEvent::Swipe(direction as i32)),
                     DesktopEvent::Rotate(delta) => Some(runtime::RuntimeEvent::Rotate(delta as i32)),
                 };
                 if let Some(runtime_event) = runtime_event {
@@ -683,24 +816,124 @@ fn main() -> ! {
                     }
                 }
             }
+            ui_refresh_ticks = ui_refresh_ticks.wrapping_add(1);
+            if ui_refresh_ticks >= 50 {
+                ui_refresh_ticks = 0;
+                let screen = (os.state() & 0x1f) as u8;
+                if matches!(screen, 0 | 1 | 6 | 10 | 11) {
+                    if let Ok(mut frame) = os.render() {
+                        frame.set_swap_pages(pager_used.count_ones().min(255) as u8);
+                        let _ = display.runtime(&frame);
+                    }
+                }
+            }
             #[cfg(feature = "radio-services")]
             if let Some(radios) = radios.as_mut() {
-                radios.tick(((os.state() >> 22) & 1) != 0);
+                if let Some(mut frame) = service_radio_runtime(radios, &mut os, pager.as_ref(), session.block_device()) {
+                    frame.set_swap_pages(pager_used.count_ones().min(255) as u8);
+                    let _ = display.runtime(&frame);
+                }
+            }
+
+            if let Some(pager) = pager.as_ref() {
+                let settings = os.state() & SYSTEM_SETTINGS_MASK;
+                if settings != persisted_settings && save_system_settings(pager, session.block_device(), os.state()) {
+                    persisted_settings = settings;
+                    println!("settings: persistent state updated");
+                }
+                if let Some(now) = rtc::snapshot_minutes() {
+                    let changed = persisted_time != Some(now);
+                    let jumped = persisted_time.map(|old| ((now as i32 - old as i32).rem_euclid(1440)) > 1).unwrap_or(true);
+                    if changed && (jumped || now % 5 == 0) && save_time_holdover(pager, session.block_device(), now) {
+                        persisted_time = Some(now);
+                    }
+                }
+                let rtc_config = rtc::config_snapshot();
+                if rtc_config != persisted_rtc_config && save_rtc_config(pager, session.block_device(), rtc_config) {
+                    persisted_rtc_config = rtc_config;
+                    println!("time: software RTC settings updated");
+                }
             }
             delay.delay_millis(20);
         }
     }
 }
 
-const WIFI_CRED_SLOT: u32 = 16;
+
+#[cfg(feature = "radio-services")]
+fn service_radio_runtime<D: BlockDevice>(
+    radios: &mut radio::RadioServices,
+    os: &mut runtime::Runtime,
+    pager: Option<&page_store::PageStore>,
+    dev: &D,
+) -> Option<runtime::RuntimeFrame> {
+    if rtc::take_network_sync_request() { radios.request_network_time_sync(); }
+    radios.tick(((os.state() >> 23) & 1) != 0);
+    let link = match radios.network_state() {
+        net::LinkState::Down => 0,
+        net::LinkState::Associating => 1,
+        net::LinkState::LinkUp => 2,
+        net::LinkState::Dhcp => 3,
+        net::LinkState::Online => 4,
+    };
+    let mut redraw = os.set_wifi_link_state(link);
+
+    if let Some(unix) = radios.take_network_time() {
+        if rtc::set_network_unix_seconds(unix) {
+            println!("time: software RTC synchronized from Wi-Fi SNTP");
+            redraw = true;
+        }
+    }
+
+    if let Some(action) = os.take_wifi_ui_action() {
+        match action {
+            runtime::WifiUiAction::Scan => {
+                os.clear_wifi_scan();
+                if radios.scan_wifi() {
+                    for i in 0..radios.wifi_ap_count() {
+                        if let Some((ssid, rssi)) = radios.wifi_ap_info(i) { os.push_wifi_ap(ssid, rssi); }
+                    }
+                }
+                redraw = true;
+            }
+            runtime::WifiUiAction::Connect { ssid, password } => {
+                if let Some(credentials) = WifiCredentials::from_parts(ssid.as_str(), password.as_str()) {
+                    if radios.connect_wifi(credentials) {
+                        if let Some(pager) = pager { let _ = save_wifi_credentials(pager, dev, credentials); }
+                        let _ = set_runtime_flag(os, 21, true);
+                    }
+                }
+                redraw = true;
+            }
+        }
+    }
+    if redraw { os.render().ok() } else { None }
+}
+
+// Keep framework Activity pages in slots 0..31.  Older 17.1.1 builds used
+// slot 16 for Wi-Fi credentials, which collided with the Date & time Activity
+// page and could silently erase the saved network when that screen was left.
+const WIFI_CRED_SLOT: u32 = 64;
+const WIFI_CRED_LEGACY_SLOT: u32 = 16;
 const WIFI_CRED_TAG: u32 = 0x5a57_4946; // "ZWIF"
+const TIME_HOLDOVER_SLOT: u32 = 65;
+const TIME_HOLDOVER_TAG: u32 = 0x5a54_494d; // "ZTIM"
+const SYSTEM_SETTINGS_SLOT: u32 = 66;
+const SYSTEM_SETTINGS_TAG: u32 = 0x5a53_4554; // "ZSET"
+const RTC_CONFIG_SLOT: u32 = 67;
+const RTC_CONFIG_TAG: u32 = 0x5a52_5443; // "ZRTC"
+// brightness..wireless-debugging, excluding screen/cursor and notifications.
+const SYSTEM_SETTINGS_MASK: i32 = 0x00ff_fe00;
 
 fn load_wifi_credentials<D: BlockDevice>(
     pager: &page_store::PageStore,
     dev: &D,
 ) -> Option<WifiCredentials> {
     let mut raw = [0u8; 98];
-    let n = pager.read(dev, WIFI_CRED_SLOT, WIFI_CRED_TAG, &mut raw).ok()?;
+    let n = match pager.read(dev, WIFI_CRED_SLOT, WIFI_CRED_TAG, &mut raw) {
+        Ok(n) => n,
+        Err(_) => pager.read(dev, WIFI_CRED_LEGACY_SLOT, WIFI_CRED_TAG, &mut raw).ok()?,
+    };
     WifiCredentials::decode_page(&raw[..n])
 }
 
@@ -712,6 +945,32 @@ fn save_wifi_credentials<D: BlockDevice>(
     let mut raw = [0u8; 98];
     let n = credentials.encode_page(&mut raw);
     pager.write(dev, WIFI_CRED_SLOT, WIFI_CRED_TAG, &raw[..n]).is_ok()
+}
+
+
+fn load_time_holdover<D: BlockDevice>(pager: &page_store::PageStore, dev: &D) -> Option<u16> {
+    let value = pager.read_i32(dev, TIME_HOLDOVER_SLOT, TIME_HOLDOVER_TAG).ok()?;
+    if (0..1440).contains(&value) { Some(value as u16) } else { None }
+}
+
+fn save_time_holdover<D: BlockDevice>(pager: &page_store::PageStore, dev: &D, minutes: u16) -> bool {
+    pager.write_i32(dev, TIME_HOLDOVER_SLOT, TIME_HOLDOVER_TAG, (minutes % 1440) as i32).is_ok()
+}
+
+fn load_system_settings<D: BlockDevice>(pager: &page_store::PageStore, dev: &D) -> Option<i32> {
+    pager.read_i32(dev, SYSTEM_SETTINGS_SLOT, SYSTEM_SETTINGS_TAG).ok()
+}
+
+fn save_system_settings<D: BlockDevice>(pager: &page_store::PageStore, dev: &D, state: i32) -> bool {
+    pager.write_i32(dev, SYSTEM_SETTINGS_SLOT, SYSTEM_SETTINGS_TAG, state & SYSTEM_SETTINGS_MASK).is_ok()
+}
+
+fn load_rtc_config<D: BlockDevice>(pager: &page_store::PageStore, dev: &D) -> Option<i32> {
+    pager.read_i32(dev, RTC_CONFIG_SLOT, RTC_CONFIG_TAG).ok()
+}
+
+fn save_rtc_config<D: BlockDevice>(pager: &page_store::PageStore, dev: &D, config: i32) -> bool {
+    pager.write_i32(dev, RTC_CONFIG_SLOT, RTC_CONFIG_TAG, config).is_ok()
 }
 
 fn set_runtime_flag(
@@ -729,14 +988,14 @@ fn dispatch_with_pager<D: BlockDevice>(
     event: runtime::RuntimeEvent,
     pager: Option<&page_store::PageStore>,
     dev: &D,
-    used: &mut u16,
+    used: &mut u32,
 ) -> Result<runtime::RuntimeFrame, runtime::RuntimeError> {
     let old_state = os.state();
-    let old_screen = (old_state & 0x0f) as u32;
+    let old_screen = (old_state & 0x1f) as u32;
 
     let mut frame = os.dispatch(event)?;
     let new_state = os.state();
-    let new_screen = (new_state & 0x0f) as u32;
+    let new_screen = (new_state & 0x1f) as u32;
     if new_screen != old_screen {
         if let Some(pager) = pager {
             // Only evict an Activity when it actually leaves the foreground.
@@ -744,14 +1003,14 @@ fn dispatch_with_pager<D: BlockDevice>(
             // into a write-every-20ms pseudo-swap device.
             let old_tag = 0x5a50_0000u32 | old_screen;
             if pager.write_i32(dev, old_screen, old_tag, old_state).is_ok() {
-                if old_screen < 16 { *used |= 1u16 << old_screen; }
+                if old_screen < 32 { *used |= 1u32 << old_screen; }
             }
 
             let new_tag = 0x5a50_0000u32 | new_screen;
             if let Ok(saved) = pager.read_i32(dev, new_screen, new_tag) {
                 // Page-in only Activity-local cursor bits. Global settings and
                 // connectivity flags stay from the current system state.
-                let restored = (new_state & !0x00f0) | (saved & 0x00f0);
+                let restored = (new_state & !0x000001e0) | (saved & 0x000001e0);
                 if let Ok(restored_frame) = os.replace_state(restored) { frame = restored_frame; }
             }
         }
@@ -796,8 +1055,9 @@ fn sample_boot_mode<D: BootDisplay>(
                 DesktopEvent::Ping => display.pong(),
                 DesktopEvent::Fastboot | DesktopEvent::Power => return BootMode::Fastboot,
                 DesktopEvent::Recovery | DesktopEvent::Rotate(_) => return BootMode::Recovery,
+                DesktopEvent::Swipe(_) => {},
                 DesktopEvent::Normal => return BootMode::Normal,
-                DesktopEvent::AdbGetProp | DesktopEvent::AdbServices | DesktopEvent::AdbPackages | DesktopEvent::AdbDumpsys
+                DesktopEvent::CompanionTime(_) | DesktopEvent::AdbGetProp | DesktopEvent::AdbServices | DesktopEvent::AdbPackages | DesktopEvent::AdbDumpsys
                 | DesktopEvent::WifiScan | DesktopEvent::WifiStatus | DesktopEvent::WifiConnect(_) | DesktopEvent::WifiDisconnect
                 | DesktopEvent::BtScan | DesktopEvent::BtStatus | DesktopEvent::BtConnect(_) | DesktopEvent::BtDisconnect => {},
             }
@@ -846,7 +1106,8 @@ fn recovery_menu<D: BootDisplay>(
                     DesktopEvent::Fastboot => return BootMode::Fastboot,
                     DesktopEvent::Normal => return BootMode::Normal,
                     DesktopEvent::Recovery => {},
-                    DesktopEvent::AdbGetProp | DesktopEvent::AdbServices | DesktopEvent::AdbPackages | DesktopEvent::AdbDumpsys
+                    DesktopEvent::Swipe(_) => {},
+                    DesktopEvent::CompanionTime(_) | DesktopEvent::AdbGetProp | DesktopEvent::AdbServices | DesktopEvent::AdbPackages | DesktopEvent::AdbDumpsys
                 | DesktopEvent::WifiScan | DesktopEvent::WifiStatus | DesktopEvent::WifiConnect(_) | DesktopEvent::WifiDisconnect
                 | DesktopEvent::BtScan | DesktopEvent::BtStatus | DesktopEvent::BtConnect(_) | DesktopEvent::BtDisconnect => {},
                 }

@@ -1,6 +1,6 @@
-# Zephyr Watch Bootloader v1.6 — AOSP storage + Material SystemUI + ZPager
+# AOSP Wear OS Bootloader 17.1.6 — Android 17 QPR1 embedded runtime
 
-Current bring-up adds a lock-screen/watchface/launcher Material flow, a real 32 MiB GPT `swap` backing partition for explicit ZPager state paging, a no-reset ZADB developer bridge, and an optional native ESP32-S3 Wi-Fi/BLE radio build. See [`SYSTEM_V03.md`](SYSTEM_V03.md).
+Release 17.1.6 provides the Wear-parity Material 3 Expressive SystemUI flow, a real 32 MiB GPT `swap` backing partition for explicit ZPager state paging, a no-reset ZADB developer bridge, and the native ESP32-S3 Wi-Fi/BLE radio build. See [`SYSTEM_V03.md`](SYSTEM_V03.md).
 
 Quick development boot:
 
@@ -200,7 +200,7 @@ ls -l /dev/ttyACM0
 Плата → ПК:
 
 ```text
-@ZWUI|HELLO|2|240|280|Zephyr Watch|ESP32-S3-Zero-N4R2
+@ZWUI|HELLO|5|240|280|AOSP Wear OS|ESP32-S3-Zero-N4R2
 @ZWUI|BOOT
 @ZWUI|PROGRESS|CHECKING SD|0
 @ZWUI|STATUS|ANDROID|SYSTEM READY|a|LIVE USB
@@ -284,7 +284,7 @@ userdata
 
 ```bash
 python tools/mk_android_sd.py \
-  --output out/zephyr-watch-sd.img \
+  --output out/aosp-wear-sd.img \
   --size-mib 512 \
   --version 0.2.0
 ```
@@ -292,7 +292,7 @@ python tools/mk_android_sd.py \
 Проверить образ перед записью:
 
 ```bash
-python tools/inspect_android_sd.py out/zephyr-watch-sd.img
+python tools/inspect_android_sd.py out/aosp-wear-sd.img
 ```
 
 Затем образ можно записать на microSD обычным `dd`/USB Imager. Будь внимателен с выбором устройства.
@@ -364,7 +364,7 @@ a raw GPT image served by the attached PC over USB-Serial-JTAG:
 
 ```bash
 ./flash.sh st7789 pc
-python usb_block_server.py --image out/zephyr-watch-sd.img
+python usb_block_server.py --image out/aosp-wear-sd.img
 ```
 
 See `USB_PC_BOOT.md`. This development mode uses the exact same GPT/A-B/AVB boot

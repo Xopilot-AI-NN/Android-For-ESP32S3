@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 BOOTLOADER_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-FIRMWARE_DIR="${ZEPHYR_FIRMWARE_DIR:-$BOOTLOADER_DIR/../Firmware}"
+FIRMWARE_DIR="${AOSP_WEAR_FIRMWARE_DIR:-${ZEPHYR_FIRMWARE_DIR:-$BOOTLOADER_DIR/../Firmware}}"
 cd "$BOOTLOADER_DIR"
 
 if [[ -f "$HOME/export-esp.sh" ]]; then
@@ -10,25 +10,25 @@ if [[ -f "$HOME/export-esp.sh" ]]; then
   source "$HOME/export-esp.sh"
 fi
 
-# v0.6 developer default: one command means the complete configuration.
+# v0.7 developer default: one command means the complete configuration.
 # No flags are required:
 #   ST7789 + PC block storage + Rhai userspace + native Wi-Fi/BLE radio.
 # Environment variables remain available only as escape hatches.
-DISPLAY_NAME="${ZEPHYR_DISPLAY:-st7789}"
-STORAGE_NAME="${ZEPHYR_STORAGE:-pc}"
-RADIO_NAME="${ZEPHYR_RADIO:-radio}"
+DISPLAY_NAME="${AOSP_WEAR_DISPLAY:-${ZEPHYR_DISPLAY:-st7789}}"
+STORAGE_NAME="${AOSP_WEAR_STORAGE:-${ZEPHYR_STORAGE:-pc}}"
+RADIO_NAME="${AOSP_WEAR_RADIO:-${ZEPHYR_RADIO:-radio}}"
 
 case "$DISPLAY_NAME" in
   ssd1306|st7789) ;;
-  *) echo "ZEPHYR_DISPLAY must be ssd1306 or st7789" >&2; exit 2 ;;
+  *) echo "AOSP_WEAR_DISPLAY must be ssd1306 or st7789" >&2; exit 2 ;;
 esac
 case "$STORAGE_NAME" in
   sd|pc) ;;
-  *) echo "ZEPHYR_STORAGE must be sd or pc" >&2; exit 2 ;;
+  *) echo "AOSP_WEAR_STORAGE must be sd or pc" >&2; exit 2 ;;
 esac
 case "$RADIO_NAME" in
   off|radio) ;;
-  *) echo "ZEPHYR_RADIO must be off or radio" >&2; exit 2 ;;
+  *) echo "AOSP_WEAR_RADIO must be off or radio" >&2; exit 2 ;;
 esac
 
 FEATURES="rhai-runtime,display-${DISPLAY_NAME}"
@@ -48,7 +48,7 @@ echo
 # Build the Android-like userspace first so the PC-block image always matches
 # the bootloader being flashed. Set ZEPHYR_SKIP_FIRMWARE_BUILD=1 only when
 # intentionally re-flashing an unchanged image.
-if [[ "$STORAGE_NAME" == "pc" && "${ZEPHYR_SKIP_FIRMWARE_BUILD:-0}" != "1" ]]; then
+if [[ "$STORAGE_NAME" == "pc" && "${AOSP_WEAR_SKIP_FIRMWARE_BUILD:-${ZEPHYR_SKIP_FIRMWARE_BUILD:-0}}" != "1" ]]; then
   if [[ -x "$FIRMWARE_DIR/build.sh" ]]; then
     echo "== Building Firmware =="
     (cd "$FIRMWARE_DIR" && ./build.sh)
@@ -58,8 +58,8 @@ if [[ "$STORAGE_NAME" == "pc" && "${ZEPHYR_SKIP_FIRMWARE_BUILD:-0}" != "1" ]]; t
   fi
 fi
 
-DEFAULT_FIRMWARE_IMAGE="$FIRMWARE_DIR/out/target/product/zero/zephyr-watch-sd.img"
-IMAGE="${ZEPHYR_PC_IMAGE:-$DEFAULT_FIRMWARE_IMAGE}"
+DEFAULT_FIRMWARE_IMAGE="$FIRMWARE_DIR/out/target/product/zero/aosp-wear-sd.img"
+IMAGE="${AOSP_WEAR_PC_IMAGE:-${ZEPHYR_PC_IMAGE:-$DEFAULT_FIRMWARE_IMAGE}}"
 
 if [[ "$STORAGE_NAME" == "pc" && ! -f "$IMAGE" ]]; then
   echo "Firmware image was not produced: $IMAGE" >&2
@@ -104,9 +104,9 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-SOCKET="${XDG_RUNTIME_DIR:-/tmp}/zephyr-watch-viewer.sock"
+SOCKET="${XDG_RUNTIME_DIR:-/tmp}/aosp-wear-viewer.sock"
 if [[ -z "${XDG_RUNTIME_DIR:-}" ]]; then
-  SOCKET="/tmp/zephyr-watch-viewer-$(id -u).sock"
+  SOCKET="/tmp/aosp-wear-viewer-$(id -u).sock"
 fi
 
 for _ in $(seq 1 80); do

@@ -29,7 +29,7 @@ SSD1306:
 ./flash.sh ssd1306 pc
 ```
 
-The script automatically creates `out/zephyr-watch-sd.img` when it does not
+The script automatically creates `out/aosp-wear-sd.img` when it does not
 exist.
 
 ## Start the virtual disk
@@ -38,7 +38,7 @@ Do not run `espflash --monitor` at the same time because both programs would
 compete for the same USB serial device.
 
 ```bash
-python usb_block_server.py --image out/zephyr-watch-sd.img
+python usb_block_server.py --image out/aosp-wear-sd.img
 ```
 
 The server auto-detects the first `/dev/ttyACM*` or `/dev/ttyUSB*`. To select a
@@ -47,7 +47,7 @@ specific port:
 ```bash
 python usb_block_server.py \
   --port /dev/ttyACM0 \
-  --image out/zephyr-watch-sd.img
+  --image out/aosp-wear-sd.img
 ```
 
 If the bootloader reached `PC DISK ERROR` before the server connected, press the
@@ -113,7 +113,7 @@ In `pc` mode only `usb_block_server.py` opens the ESP32 serial device. It also
 creates a local Unix socket, normally:
 
 ```text
-$XDG_RUNTIME_DIR/zephyr-watch-viewer.sock
+$XDG_RUNTIME_DIR/aosp-wear-viewer.sock
 ```
 
 Start the viewer in another terminal:

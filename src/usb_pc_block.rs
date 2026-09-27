@@ -321,12 +321,18 @@ impl<'d> UsbPcBlockDevice<'d> {
             RuntimeFrame::Legacy(f) => self.viewer_status(&f.title, &f.line1, &f.line2, &f.line3),
             RuntimeFrame::Material(f) => {
                 let mut b = SmallLine::new();
-                let _ = write!(b, "@ZWUI|M3|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}\r\n",
+                let _ = write!(b, "@ZWUI|M3|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|",
                     f.screen, f.cursor, f.brightness,
                     if f.dnd { 1 } else { 0 }, if f.airplane { 1 } else { 0 }, f.theme,
                     if f.locked { 1 } else { 0 }, if f.wifi { 1 } else { 0 },
                     if f.bt { 1 } else { 0 }, if f.adb { 1 } else { 0 },
-                    f.notes, f.time_minutes, f.swap_pages);
+                    f.notes, f.time_minutes, f.swap_pages, f.timer_secs, f.stopwatch_secs,
+                    if f.alarm_enabled { 1 } else { 0 }, if f.auto_time { 1 } else { 0 },
+                    if f.time_valid { 1 } else { 0 }, f.timezone_hours,
+                    f.wifi_ap_count, f.wifi_ap_index, f.wifi_ap_rssi, f.wifi_password_len,
+                    f.wifi_editor_char, f.wifi_link_state);
+                for &byte in &f.wifi_ap_ssid[..f.wifi_ap_ssid_len as usize] { let _ = write!(b, "{:02x}", byte); }
+                let _ = write!(b, "\r\n");
                 let _ = self.link.borrow_mut().send(b.as_bytes());
             }
         }

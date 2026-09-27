@@ -86,11 +86,11 @@ impl<D: BlockDevice> BootSession<D> {
         drop(init_script);
 
         let components = [
-            ("vendor", "etc/zephyr/vendor_runtime.rhai"),
-            ("odm", "etc/zephyr/odm_runtime.rhai"),
-            ("system_ext", "etc/zephyr/system_ext_runtime.rhai"),
-            ("system", "framework/zephyr-framework.rhai"),
-            ("product", "etc/zephyr/product_runtime.rhai"),
+            ("vendor", "etc/aosp_wear/vendor_runtime.rhai"),
+            ("odm", "etc/aosp_wear/odm_runtime.rhai"),
+            ("system_ext", "etc/aosp_wear/system_ext_runtime.rhai"),
+            ("system", "framework/aosp-wear-framework.rhai"),
+            ("product", "etc/aosp_wear/product_runtime.rhai"),
         ];
 
         for (logical_base, path) in components {

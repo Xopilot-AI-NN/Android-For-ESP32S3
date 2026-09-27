@@ -21,14 +21,28 @@ pub struct MaterialFrame {
     pub adb: bool,
     pub notes: u8,
     pub time_minutes: u16,
+    pub timer_secs: u16,
+    pub stopwatch_secs: u16,
+    pub alarm_enabled: bool,
+    pub auto_time: bool,
+    pub time_valid: bool,
+    pub timezone_hours: i8,
     pub swap_pages: u8,
+    pub wifi_ap_count: u8,
+    pub wifi_ap_index: u8,
+    pub wifi_ap_ssid: [u8; 32],
+    pub wifi_ap_ssid_len: u8,
+    pub wifi_ap_rssi: i8,
+    pub wifi_password_len: u8,
+    pub wifi_editor_char: u8,
+    pub wifi_link_state: u8,
 }
 
 impl MaterialFrame {
     pub fn parse(raw: &str) -> Option<Self> {
         let mut p = raw.split('|');
         if p.next()? != "M3" { return None; }
-        let screen = p.next()?.parse::<u8>().ok()?.min(8);
+        let screen = p.next()?.parse::<u8>().ok()?.min(31);
         let cursor = p.next()?.parse::<u8>().ok()?.min(15);
         let brightness = p.next()?.parse::<u8>().ok()?.min(100);
         let dnd = p.next()? == "1";
@@ -40,10 +54,19 @@ impl MaterialFrame {
         let adb = p.next()? == "1";
         let notes = p.next()?.parse::<u8>().ok()?.min(7);
         let time_minutes = p.next()?.parse::<u16>().ok()? % 1440;
+        let timer_secs = p.next()?.parse::<u16>().ok()?.min(300);
+        let stopwatch_secs = p.next()?.parse::<u16>().ok()?.min(3599);
+        let alarm_enabled = p.next()? == "1";
+        let auto_time = p.next()? == "1";
+        let time_valid = p.next()? == "1";
+        let timezone_hours = p.next()?.parse::<i8>().ok()?.clamp(-12, 14);
         if p.next().is_some() { return None; }
         Some(Self {
             screen, cursor, brightness, dnd, airplane, theme, locked,
-            wifi, bt, adb, notes, time_minutes, swap_pages: 0,
+            wifi, bt, adb, notes, time_minutes, timer_secs, stopwatch_secs,
+            alarm_enabled, auto_time, time_valid, timezone_hours, swap_pages: 0,
+            wifi_ap_count: 0, wifi_ap_index: 0, wifi_ap_ssid: [0; 32], wifi_ap_ssid_len: 0,
+            wifi_ap_rssi: -127, wifi_password_len: 0, wifi_editor_char: 0, wifi_link_state: 0,
         })
     }
 
@@ -51,15 +74,33 @@ impl MaterialFrame {
 
     pub fn fallback(&self) -> (&'static str, &'static str, &'static str, &'static str) {
         match self.screen {
-            0 => ("LOCKED", "AOSP WEAR OS", "PRESS CROWN", ""),
-            1 => ("WATCHFACE", "CLOCK", "MESSAGES", "QUICK SETTINGS"),
-            2 => ("APPS", "MESSAGES", "SETTINGS", "CLOCK / CONNECT"),
-            3 => ("NOTIFICATIONS", "SYSTEM", "PHONE LINK", "BACK"),
-            4 => ("QUICK SETTINGS", "WIFI / BT", "ADB / DND", "BRIGHTNESS"),
-            5 => ("SETTINGS", "DISPLAY", "THEME", "CONNECTIVITY"),
-            6 => ("CLOCK", "TIME", "RTC/NTP NEXT", "BACK"),
-            7 => ("CONNECTIVITY", "WIFI", "BLUETOOTH", "WADB"),
-            _ => ("SYSTEM", "AOSP WEAR OS", "ANDROID 17 QPR1", "ESP32-S3"),
+            0 => ("LOCK", "WEAR OS", "CROWN TO UNLOCK", ""),
+            1 => ("WATCH FACE", "", "CROWN: APPS", ""),
+            2 => ("APPS", "CLOCK", "MEDIA CONTROLS", "SETTINGS"),
+            3 => ("NOTIFICATIONS", "", "", ""),
+            4 => ("QUICK SETTINGS", "WIFI / BT", "DND / AIRPLANE", "BRIGHTNESS"),
+            5 => ("SETTINGS", "CONNECTIVITY", "DISPLAY", "SYSTEM"),
+            6 => ("CLOCK", "ALARM", "TIMER", "STOPWATCH"),
+            7 => ("CONNECTIVITY", "WIFI", "BLUETOOTH", "WIRELESS DEBUG"),
+            8 => ("ABOUT", "AOSP WEAR", "ANDROID 17", "ESP32-S3"),
+            9 => ("TILES", "", "", ""),
+            10 => ("MEDIA CONTROLS", "NO ACTIVE SESSION", "", ""),
+            11 => ("CLOCK", "TIMER", "STOPWATCH", "ALARM"),
+            12 => ("WIFI", "NETWORK", "SAVED NETWORK", ""),
+            13 => ("BLUETOOTH", "PAIR NEW DEVICE", "", ""),
+            14 => ("DISPLAY", "BRIGHTNESS", "THEME", ""),
+            15 => ("SYSTEM", "DATE & TIME", "ABOUT", "DEVELOPER OPTIONS"),
+            16 => ("DATE & TIME", "AUTOMATIC TIME", "SET TIME", "TIME ZONE"),
+            17 => ("SOUND & VIBRATION", "NO AUDIO HARDWARE", "", ""),
+            18 => ("GESTURES", "CROWN NAVIGATION", "", ""),
+            19 => ("ACCESSIBILITY", "CROWN-ONLY MODE", "", ""),
+            20 => ("SECURITY", "SCREEN LOCK", "", ""),
+            21 => ("APPS & NOTIFICATIONS", "NOTIFICATIONS", "APP INFO", ""),
+            22 => ("DEVELOPER OPTIONS", "WIRELESS DEBUGGING", "BUILD", "SYSTEM"),
+            23 => ("AVAILABLE NETWORKS", "SELECT NETWORK", "", ""),
+            24 => ("WI-FI PASSWORD", "CROWN TO TYPE", "", ""),
+            25 => ("WI-FI", "CONNECTING", "", ""),
+            _ => ("WEAR OS", "ANDROID 17", "", ""),
         }
     }
 }
@@ -91,44 +132,40 @@ const fn rgb565(r: u8, g: u8, b: u8) -> u16 {
     (((r as u16) & 0xF8) << 8) | (((g as u16) & 0xFC) << 3) | ((b as u16) >> 3)
 }
 
-/// Wear OS 6 / Pixel Watch inspired AMOLED palettes.  The background stays
-/// true black while the chosen watch-face accent colors the whole system.
 fn theme(index: u8) -> Theme {
     match index % 4 {
         1 => Theme {
             bg: rgb565(0, 0, 0), surface: rgb565(16, 21, 31), surface_high: rgb565(27, 34, 47),
             primary: rgb565(174, 203, 255), on_primary: rgb565(8, 48, 88),
             primary_container: rgb565(32, 69, 111), on_primary_container: rgb565(219, 230, 255),
-            on_surface: rgb565(241, 242, 248),
-            on_surface_variant: rgb565(191, 198, 211), outline: rgb565(118, 127, 143), error: rgb565(255, 180, 171),
+            on_surface: rgb565(241, 242, 248), on_surface_variant: rgb565(191, 198, 211),
+            outline: rgb565(118, 127, 143), error: rgb565(255, 180, 171),
         },
         2 => Theme {
             bg: rgb565(0, 0, 0), surface: rgb565(24, 18, 28), surface_high: rgb565(39, 29, 45),
             primary: rgb565(224, 187, 255), on_primary: rgb565(72, 31, 97),
             primary_container: rgb565(100, 55, 128), on_primary_container: rgb565(244, 220, 255),
-            on_surface: rgb565(246, 239, 247),
-            on_surface_variant: rgb565(207, 194, 211), outline: rgb565(142, 128, 147), error: rgb565(255, 180, 171),
+            on_surface: rgb565(246, 239, 247), on_surface_variant: rgb565(207, 194, 211),
+            outline: rgb565(142, 128, 147), error: rgb565(255, 180, 171),
         },
         3 => Theme {
             bg: rgb565(0, 0, 0), surface: rgb565(29, 19, 17), surface_high: rgb565(47, 31, 27),
             primary: rgb565(255, 184, 161), on_primary: rgb565(86, 33, 16),
             primary_container: rgb565(119, 55, 34), on_primary_container: rgb565(255, 221, 211),
-            on_surface: rgb565(249, 238, 233),
-            on_surface_variant: rgb565(216, 195, 188), outline: rgb565(150, 129, 123), error: rgb565(255, 180, 171),
+            on_surface: rgb565(249, 238, 233), on_surface_variant: rgb565(216, 195, 188),
+            outline: rgb565(150, 129, 123), error: rgb565(255, 180, 171),
         },
         _ => Theme {
             bg: rgb565(0, 0, 0), surface: rgb565(14, 24, 18), surface_high: rgb565(24, 39, 29),
             primary: rgb565(126, 225, 165), on_primary: rgb565(0, 57, 29),
             primary_container: rgb565(23, 80, 49), on_primary_container: rgb565(163, 249, 194),
-            on_surface: rgb565(238, 244, 239),
-            on_surface_variant: rgb565(190, 203, 194), outline: rgb565(126, 143, 132), error: rgb565(255, 180, 171),
+            on_surface: rgb565(238, 244, 239), on_surface_variant: rgb565(190, 203, 194),
+            outline: rgb565(126, 143, 132), error: rgb565(255, 180, 171),
         },
     }
 }
 
-pub struct Surface {
-    pixels: Vec<u16>,
-}
+pub struct Surface { pixels: Vec<u16> }
 
 impl Surface {
     pub fn new() -> Self { Self { pixels: vec![0; WIDTH * HEIGHT] } }
@@ -146,7 +183,25 @@ impl Surface {
             5 => self.settings(frame, t),
             6 => self.clock(frame, t),
             7 => self.connectivity(frame, t),
-            _ => self.about(frame, t),
+            8 => self.about(frame, t),
+            9 => self.widgets(frame, t),
+            10 => self.media(frame, t),
+            11 => self.clock_tools(frame, t),
+            12 => self.wifi_page(frame, t),
+            13 => self.bluetooth_page(frame, t),
+            14 => self.display_settings(frame, t),
+            15 => self.system_page(frame, t),
+            16 => self.date_time(frame, t),
+            17 => self.sound_page(frame, t),
+            18 => self.gestures_page(frame, t),
+            19 => self.accessibility_page(frame, t),
+            20 => self.security_page(frame, t),
+            21 => self.apps_notifications_page(frame, t),
+            22 => self.developer_page(frame, t),
+            23 => self.wifi_networks(frame, t),
+            24 => self.wifi_password(frame, t),
+            25 => self.wifi_connecting(frame, t),
+            _ => self.watchface(frame, t),
         }
         Rect::FULL
     }
@@ -163,6 +218,7 @@ impl Surface {
         let y0 = y.max(0) as usize;
         let x1 = (x + w).min(WIDTH as i32).max(0) as usize;
         let y1 = (y + h).min(HEIGHT as i32).max(0) as usize;
+        if x1 <= x0 || y1 <= y0 { return; }
         for yy in y0..y1 { self.pixels[yy * WIDTH + x0..yy * WIDTH + x1].fill(c); }
     }
 
@@ -193,8 +249,200 @@ impl Surface {
         }
     }
 
+    fn ring(&mut self, cx: i32, cy: i32, r: i32, thickness: i32, c: u16) {
+        let inner = (r - thickness).max(0);
+        for y in -r..=r {
+            for x in -r..=r {
+                let d = x * x + y * y;
+                if d <= r * r && d >= inner * inner { self.pixel(cx + x, cy + y, c); }
+            }
+        }
+    }
+
+    fn line(&mut self, mut x0: i32, mut y0: i32, x1: i32, y1: i32, thickness: i32, c: u16) {
+        let dx = (x1 - x0).abs();
+        let sx = if x0 < x1 { 1 } else { -1 };
+        let dy = -(y1 - y0).abs();
+        let sy = if y0 < y1 { 1 } else { -1 };
+        let mut err = dx + dy;
+        loop {
+            self.circle(x0, y0, thickness.max(1) / 2, c);
+            if x0 == x1 && y0 == y1 { break; }
+            let e2 = 2 * err;
+            if e2 >= dy { err += dy; x0 += sx; }
+            if e2 <= dx { err += dx; y0 += sy; }
+        }
+    }
+
+    fn icon_wifi(&mut self, cx: i32, cy: i32, c: u16) {
+        // Compact Wear-style Wi-Fi glyph built from three chevrons/dot.
+        self.line(cx - 12, cy - 6, cx, cy - 12, 2, c);
+        self.line(cx, cy - 12, cx + 12, cy - 6, 2, c);
+        self.line(cx - 8, cy, cx, cy - 4, 2, c);
+        self.line(cx, cy - 4, cx + 8, cy, 2, c);
+        self.line(cx - 4, cy + 6, cx, cy + 4, 2, c);
+        self.line(cx, cy + 4, cx + 4, cy + 6, 2, c);
+        self.circle(cx, cy + 10, 2, c);
+    }
+
+    fn icon_bt(&mut self, cx: i32, cy: i32, c: u16) {
+        self.line(cx, cy - 13, cx, cy + 13, 2, c);
+        self.line(cx, cy - 13, cx + 8, cy - 5, 2, c);
+        self.line(cx + 8, cy - 5, cx - 7, cy + 7, 2, c);
+        self.line(cx - 7, cy - 7, cx + 8, cy + 5, 2, c);
+        self.line(cx + 8, cy + 5, cx, cy + 13, 2, c);
+    }
+
+    fn icon_dnd(&mut self, cx: i32, cy: i32, c: u16) {
+        self.ring(cx, cy, 12, 3, c);
+        self.round_rect(cx - 7, cy - 2, 14, 4, 2, c);
+    }
+
+    fn icon_airplane(&mut self, cx: i32, cy: i32, c: u16) {
+        self.line(cx - 13, cy, cx + 13, cy, 3, c);
+        self.line(cx + 3, cy, cx - 3, cy - 9, 3, c);
+        self.line(cx + 3, cy, cx - 3, cy + 9, 3, c);
+        self.line(cx - 7, cy, cx - 12, cy - 5, 2, c);
+        self.line(cx - 7, cy, cx - 12, cy + 5, 2, c);
+    }
+
+    fn icon_sun(&mut self, cx: i32, cy: i32, c: u16) {
+        self.ring(cx, cy, 7, 2, c);
+        for &(x0,y0,x1,y1) in &[
+            (0,-14,0,-10),(0,10,0,14),(-14,0,-10,0),(10,0,14,0),
+            (-10,-10,-7,-7),(7,7,10,10),(-10,10,-7,7),(7,-7,10,-10),
+        ] { self.line(cx+x0,cy+y0,cx+x1,cy+y1,2,c); }
+    }
+
+    fn icon_settings(&mut self, cx: i32, cy: i32, c: u16) {
+        self.ring(cx, cy, 9, 3, c);
+        self.circle(cx, cy, 3, c);
+        self.line(cx, cy-15, cx, cy-10, 3, c);
+        self.line(cx, cy+10, cx, cy+15, 3, c);
+        self.line(cx-15, cy, cx-10, cy, 3, c);
+        self.line(cx+10, cy, cx+15, cy, 3, c);
+    }
+
+    fn icon_bell(&mut self, cx: i32, cy: i32, c: u16) {
+        self.ring(cx, cy, 9, 3, c);
+        self.fill_rect(cx - 10, cy + 1, 20, 8, c);
+        self.circle(cx, cy + 12, 2, c);
+    }
+
+    fn icon_clock(&mut self, cx: i32, cy: i32, c: u16) {
+        self.ring(cx, cy, 12, 2, c);
+        self.line(cx, cy, cx, cy - 7, 2, c);
+        self.line(cx, cy, cx + 6, cy + 3, 2, c);
+    }
+
+    fn icon_media(&mut self, cx: i32, cy: i32, c: u16) {
+        // Material-style play glyph with a compact media baseline.
+        for i in 0..13 {
+            let half = if i < 7 { i } else { 12 - i };
+            self.line(cx - 6 + i, cy - half, cx - 6 + i, cy + half, 2, c);
+        }
+        self.line(cx - 11, cy + 13, cx + 11, cy + 13, 2, c);
+    }
+
+    fn icon_info(&mut self, cx: i32, cy: i32, c: u16) {
+        self.ring(cx, cy, 12, 2, c);
+        self.circle(cx, cy - 6, 2, c);
+        self.round_rect(cx - 2, cy - 1, 4, 10, 2, c);
+    }
+
+    fn icon_back(&mut self, cx: i32, cy: i32, c: u16) {
+        self.line(cx + 8, cy, cx - 8, cy, 3, c);
+        self.line(cx - 8, cy, cx - 1, cy - 7, 3, c);
+        self.line(cx - 8, cy, cx - 1, cy + 7, 3, c);
+    }
+
+    fn icon_lock(&mut self, cx: i32, cy: i32, c: u16) {
+        self.round_rect(cx - 9, cy - 1, 18, 15, 4, c);
+        // Hollow the body center slightly using the surrounding black surface
+        // is not possible generically here; keep the compact filled Wear glyph.
+        self.ring(cx, cy - 5, 7, 2, c);
+    }
+
+    fn icon_sound(&mut self, cx: i32, cy: i32, c: u16) {
+        self.fill_rect(cx - 11, cy - 4, 6, 8, c);
+        self.line(cx - 5, cy - 4, cx + 2, cy - 10, 3, c);
+        self.line(cx - 5, cy + 4, cx + 2, cy + 10, 3, c);
+        self.line(cx + 6, cy - 7, cx + 10, cy, 2, c);
+        self.line(cx + 10, cy, cx + 6, cy + 7, 2, c);
+    }
+
+    fn icon_person(&mut self, cx: i32, cy: i32, c: u16) {
+        self.circle(cx, cy - 8, 4, c);
+        self.line(cx, cy - 2, cx, cy + 10, 3, c);
+        self.line(cx - 9, cy + 2, cx + 9, cy + 2, 3, c);
+        self.line(cx, cy + 10, cx - 7, cy + 15, 3, c);
+        self.line(cx, cy + 10, cx + 7, cy + 15, 3, c);
+    }
+
+    fn row_icon(&mut self, label: &str, cx: i32, cy: i32, c: u16) {
+        match label {
+            "CONNECTIVITY" | "WI-FI" => self.icon_wifi(cx, cy, c),
+            "BLUETOOTH" => self.icon_bt(cx, cy, c),
+            "APPS & NOTIFS" | "NOTIFICATIONS" => self.icon_bell(cx, cy, c),
+            "DISPLAY" | "BRIGHTNESS" => self.icon_sun(cx, cy, c),
+            "SOUND & VIBRATION" => self.icon_sound(cx, cy, c),
+            "ACCESSIBILITY" => self.icon_person(cx, cy, c),
+            "SECURITY" | "SCREEN LOCK" => self.icon_lock(cx, cy, c),
+            "DATE & TIME" | "AUTOMATIC TIME" | "SET HOUR" | "SET MINUTE" | "TIME ZONE" => self.icon_clock(cx, cy, c),
+            "ABOUT" | "SYSTEM INFO" | "BUILD NUMBER" => self.icon_info(cx, cy, c),
+            "DEVELOPER OPTIONS" | "SYSTEM" | "SETTINGS" => self.icon_settings(cx, cy, c),
+            "MEDIA CONTROLS" => self.icon_media(cx, cy, c),
+            "AIRPLANE MODE" => self.icon_airplane(cx, cy, c),
+            "BACK" => self.icon_back(cx, cy, c),
+            _ => self.circle(cx, cy, 3, c),
+        }
+    }
+
+
+    fn numeral_segment(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, c: u16) {
+        self.line(x0, y0, x1, y1, 5, c);
+    }
+
+    fn numeral(&mut self, x: i32, y: i32, ch: u8, c: u16) {
+        // Rounded seven-stroke numeral used only for the hero clock. The rest
+        // of SystemUI keeps the compact bitmap font to save flash/RAM.
+        let seg = match ch {
+            b'0' => 0b1110111,
+            b'1' => 0b0100100,
+            b'2' => 0b1011101,
+            b'3' => 0b1101101,
+            b'4' => 0b0101110,
+            b'5' => 0b1101011,
+            b'6' => 0b1111011,
+            b'7' => 0b0100101,
+            b'8' => 0b1111111,
+            b'9' => 0b1101111,
+            _ => 0,
+        };
+        // bit order: top, upper-right, lower-right, bottom, lower-left,
+        // upper-left, middle.
+        if seg & 0b0000001 != 0 { self.numeral_segment(x + 6, y, x + 28, y, c); }
+        if seg & 0b0000010 != 0 { self.numeral_segment(x + 31, y + 5, x + 31, y + 25, c); }
+        if seg & 0b0000100 != 0 { self.numeral_segment(x + 31, y + 33, x + 31, y + 53, c); }
+        if seg & 0b0001000 != 0 { self.numeral_segment(x + 6, y + 58, x + 28, y + 58, c); }
+        if seg & 0b0010000 != 0 { self.numeral_segment(x + 3, y + 33, x + 3, y + 53, c); }
+        if seg & 0b0100000 != 0 { self.numeral_segment(x + 3, y + 5, x + 3, y + 25, c); }
+        if seg & 0b1000000 != 0 { self.numeral_segment(x + 6, y + 29, x + 28, y + 29, c); }
+    }
+
+    fn big_time(&mut self, y: i32, minutes: u16, _valid: bool, c: u16) {
+        let h = (minutes / 60) % 24;
+        let m = minutes % 60;
+        let chars = [b'0' + (h / 10) as u8, b'0' + (h % 10) as u8, b'0' + (m / 10) as u8, b'0' + (m % 10) as u8];
+        self.numeral(32, y, chars[0], c);
+        self.numeral(72, y, chars[1], c);
+        self.circle(120, y + 20, 3, c); self.circle(120, y + 40, 3, c);
+        self.numeral(136, y, chars[2], c);
+        self.numeral(176, y, chars[3], c);
+    }
+
     fn glyph(&mut self, x: i32, y: i32, ch: u8, scale: i32, c: u16) {
-        let g = glyph(ch.to_ascii_uppercase());
+        let g = glyph(ch);
         let scale = scale.max(1);
         for (col, bits) in g.iter().enumerate() {
             for row in 0..7 {
@@ -207,10 +455,7 @@ impl Surface {
 
     fn text(&mut self, x: i32, y: i32, text: &str, scale: i32, c: u16) {
         let mut cx = x;
-        for ch in text.bytes() {
-            self.glyph(cx, y, ch, scale, c);
-            cx += 6 * scale;
-        }
+        for ch in text.bytes() { self.glyph(cx, y, ch, scale, c); cx += 6 * scale; }
     }
 
     fn text_width(text: &str, scale: i32) -> i32 {
@@ -221,46 +466,74 @@ impl Surface {
         self.text((WIDTH as i32 - Self::text_width(text, scale)) / 2, y, text, scale, c);
     }
 
+    fn text_center_x(&mut self, cx: i32, y: i32, text: &str, scale: i32, c: u16) {
+        self.text(cx - Self::text_width(text, scale) / 2, y, text, scale, c);
+    }
+
     fn time_text(mins: u16) -> [u8; 5] {
         let h = (mins / 60) % 24;
         let m = mins % 60;
         [b'0' + (h / 10) as u8, b'0' + (h % 10) as u8, b':', b'0' + (m / 10) as u8, b'0' + (m % 10) as u8]
     }
 
-    fn text_center_x(&mut self, cx: i32, y: i32, text: &str, scale: i32, c: u16) {
-        self.text(cx - Self::text_width(text, scale) / 2, y, text, scale, c);
+    fn mmss_text(secs: u16) -> [u8; 5] {
+        let m = (secs / 60).min(99);
+        let s = secs % 60;
+        [b'0' + (m / 10) as u8, b'0' + (m % 10) as u8, b':', b'0' + (s / 10) as u8, b'0' + (s % 10) as u8]
     }
 
     fn status_strip(&mut self, f: MaterialFrame, t: Theme) {
-        // Wear OS keeps status chrome deliberately tiny so the watch face remains dominant.
+        // System-facing status only. Development transports (USB/ADB) are not
+        // exposed on normal Wear surfaces.
         let mut x = 18;
-        if f.wifi { self.circle(x, 16, 4, t.primary); x += 13; }
-        if f.bt { self.circle(x, 16, 3, t.primary); x += 12; }
-        if f.dnd { self.circle(x, 16, 3, t.on_surface_variant); x += 12; }
-        if f.adb {
-            self.round_rect(x - 1, 9, 28, 14, 7, t.primary_container);
-            self.text(x + 4, 12, "ADB", 1, t.on_primary_container);
-        }
-        self.round_rect(192, 9, 30, 14, 7, t.surface_high);
-        self.text(197, 12, "USB", 1, t.on_surface_variant);
+        if f.airplane { self.icon_airplane(x, 15, t.on_surface_variant); x += 29; }
+        if f.wifi { self.icon_wifi(x, 15, t.primary); x += 31; }
+        if f.bt { self.icon_bt(x, 15, t.primary); x += 25; }
+        if f.dnd { self.icon_dnd(x, 15, t.on_surface_variant); }
+        if f.notes > 0 { self.circle(218, 15, 4, t.primary); }
     }
 
-    fn title(&mut self, title: &str, t: Theme) {
-        self.text_center(15, title, 2, t.on_surface);
+    fn title(&mut self, title: &str, t: Theme) { self.text_center(15, title, 2, t.on_surface); }
+
+    fn keyboard_key(&mut self, x: i32, y: i32, w: i32, h: i32, label: &str, selected: bool, t: Theme) {
+        let bg = if selected { t.primary } else { t.surface_high };
+        let fg = if selected { t.on_primary } else { t.on_surface };
+        self.round_rect(x, y, w, h, 7, bg);
+        self.text_center_x(x + w / 2, y + (h - 7) / 2, label, 1, fg);
     }
 
     fn wear_row(&mut self, y: i32, label: &str, selected: bool, t: Theme) {
-        // Center item expands like the curved Wear OS launcher/settings lists.
         let (x, w, h, r, bg, fg, icon_r) = if selected {
             (5, 230, 50, 25, t.primary_container, t.on_primary_container, 12)
         } else {
             (17, 206, 42, 21, t.surface, t.on_surface, 9)
         };
         self.round_rect(x, y, w, h, r, bg);
-        self.circle(x + 25, y + h / 2, icon_r, if selected { t.primary } else { t.surface_high });
-        let scale = if label.len() > 10 { 1 } else { 2 };
-        let glyph_h = 7 * scale;
-        self.text(x + 46, y + (h - glyph_h) / 2, label, scale, fg);
+        let icon_bg = if selected { t.primary } else { t.surface_high };
+        let icon_fg = if selected { t.on_primary } else { t.on_surface_variant };
+        self.circle(x + 25, y + h / 2, icon_r, icon_bg);
+        self.row_icon(label, x + 25, y + h / 2, icon_fg);
+        let scale = if label.len() > 11 { 1 } else { 2 };
+        self.text(x + 46, y + (h - 7 * scale) / 2, label, scale, fg);
+    }
+
+    fn app_row(&mut self, y: i32, label: &str, selected: bool, icon: u8, t: Theme) {
+        let (x, w, h, r, cx, icon_r, bg, fg) = if selected {
+            (8, 224, 48, 24, 35, 15, t.primary_container, t.on_primary_container)
+        } else {
+            (17, 206, 42, 21, 42, 12, t.surface, t.on_surface)
+        };
+        self.round_rect(x, y, w, h, r, bg);
+        self.circle(cx, y + h / 2, icon_r, if selected { t.primary } else { t.surface_high });
+        let icon_fg = if selected { t.on_primary } else { t.on_surface_variant };
+        match icon {
+            0 => self.icon_clock(cx, y + h / 2, icon_fg),
+            1 => self.icon_media(cx, y + h / 2, icon_fg),
+            2 => self.icon_settings(cx, y + h / 2, icon_fg),
+            _ => self.icon_info(cx, y + h / 2, icon_fg),
+        }
+        let scale = if label.len() > 12 { 1 } else { 2 };
+        self.text(if selected { 64 } else { 70 }, y + (h - 7 * scale) / 2, label, scale, fg);
     }
 
     fn toggle(&mut self, x: i32, y: i32, on: bool, t: Theme) {
@@ -270,173 +543,502 @@ impl Surface {
     }
 
     fn slider(&mut self, x: i32, y: i32, w: i32, v: u8, t: Theme) {
-        self.round_rect(x, y, w, 8, 4, t.surface_high);
-        let active = ((w - 8) * v as i32 / 100).max(0);
-        self.round_rect(x, y, active + 8, 8, 4, t.primary);
-        self.circle(x + 4 + active, y + 4, 7, t.primary);
+        self.round_rect(x, y, w, 10, 5, t.surface_high);
+        let active = ((w - 10) * v as i32 / 100).max(0);
+        self.round_rect(x, y, active + 10, 10, 5, t.primary);
+        self.circle(x + 5 + active, y + 5, 8, t.primary);
     }
 
     fn quick_button(&mut self, cx: i32, cy: i32, label: &str, on: bool, selected: bool, t: Theme) {
-        if selected { self.circle(cx, cy, 31, t.primary_container); }
-        self.circle(cx, cy, if selected { 25 } else { 24 }, if on { t.primary } else { t.surface_high });
-        let icon_color = if on { t.on_primary } else { t.on_surface };
-        // Tiny geometric icon: enough to read as a Wear OS quick-settings glyph on 240 px.
-        self.circle(cx, cy - 2, 7, icon_color);
-        self.text_center_x(cx, cy + 34, label, 1, if selected { t.on_primary_container } else { t.on_surface_variant });
+        // Wear OS 6 / Material 3 Expressive: grouped pill buttons expand and
+        // shape-morph around the focused item.
+        let w = if selected { 92 } else { 82 };
+        let h = if selected { 54 } else { 48 };
+        let bg = if on { t.primary } else if selected { t.primary_container } else { t.surface_high };
+        let fg = if on { t.on_primary } else if selected { t.on_primary_container } else { t.on_surface };
+        self.round_rect(cx - w / 2, cy - h / 2, w, h, h / 2, bg);
+        let ix = cx - 22;
+        match label {
+            "WIFI" => self.icon_wifi(ix, cy, fg),
+            "BT" => self.icon_bt(ix, cy, fg),
+            "DND" => self.icon_dnd(ix, cy, fg),
+            "AIR" => self.icon_airplane(ix, cy, fg),
+            "LIGHT" => self.icon_sun(ix, cy, fg),
+            "SET" => self.icon_settings(ix, cy, fg),
+            _ => self.circle(ix, cy, 7, fg),
+        }
+        self.text(cx - 3, cy - 4, label, 1, fg);
     }
+
+    fn info_card(&mut self, y: i32, title: &str, value: &str, active: bool, t: Theme) {
+        self.round_rect(16, y, 208, 52, 26, if active { t.primary_container } else { t.surface });
+        self.circle(42, y + 26, 10, if active { t.primary } else { t.surface_high });
+        self.text(64, y + 10, title, 1, if active { t.on_primary_container } else { t.on_surface_variant });
+        self.text(64, y + 28, value, 1, if active { t.primary } else { t.on_surface });
+    }
+
 
     fn lock_screen(&mut self, f: MaterialFrame, t: Theme) {
-        self.status_strip(f, t);
-        let tm = Self::time_text(f.time_minutes);
-        let ts = core::str::from_utf8(&tm).unwrap_or("00:00");
-        self.text_center(61, ts, 6, t.on_surface);
-        self.text_center(112, "AOSP WEAR OS", 1, t.on_surface_variant);
-        // Small lock puck, matching the unobtrusive locked-state cue used on watches.
-        self.circle(120, 145, 14, t.surface_high);
-        self.round_rect(115, 140, 10, 10, 3, t.on_surface_variant);
-        if f.notes > 0 {
-            self.round_rect(31, 176, 178, 47, 23, t.surface);
-            self.circle(55, 199, 10, t.primary_container);
-            self.text(76, 188, "ANDROID SYSTEM", 1, t.on_surface);
-            self.text(76, 204, "1 NOTIFICATION", 1, t.on_surface_variant);
-        } else {
-            self.text_center(192, "NO NOTIFICATIONS", 1, t.outline);
-        }
-        self.text_center(251, "PRESS CROWN", 1, t.outline);
+        self.big_time(55, f.time_minutes, f.time_valid, t.on_surface);
+        self.ring(120, 145, 17, 3, t.surface_high);
+        self.round_rect(114, 142, 12, 12, 3, t.on_surface_variant);
+        if f.notes > 0 { self.circle(120, 196, 5, t.primary); }
+        self.text_center(226, "UNLOCK", 1, t.on_surface_variant);
     }
+
 
     fn watchface(&mut self, f: MaterialFrame, t: Theme) {
+        // Watch face intentionally contains no Android/debug branding. Wear
+        // surfaces prioritize glanceable time, status, and complications.
         self.status_strip(f, t);
-        let tm = Self::time_text(f.time_minutes);
-        let ts = core::str::from_utf8(&tm).unwrap_or("00:00");
-        self.text_center(54, ts, 6, t.on_surface);
-        self.text_center(105, "ANDROID 17 QPR1", 1, t.on_surface_variant);
+        self.big_time(43, f.time_minutes, f.time_valid, t.on_surface);
+        if !f.time_valid {
+            self.text_center(112, if f.auto_time { "SYNCING TIME" } else { "SET TIME IN SETTINGS" }, 1, t.on_surface_variant);
+        }
 
-        // Complication row: rounded, glanceable, and almost entirely icon-driven.
-        self.round_rect(19, 145, 62, 54, 27, t.surface);
-        self.circle(50, 163, 8, if f.wifi { t.primary } else { t.surface_high });
-        self.text_center_x(50, 181, if f.wifi { "WIFI" } else { "OFF" }, 1, if f.wifi { t.primary } else { t.on_surface_variant });
-
-        self.round_rect(89, 145, 62, 54, 27, t.surface);
-        self.circle(120, 163, 8, if f.bt { t.primary } else { t.surface_high });
-        self.text_center_x(120, 181, if f.bt { "BT" } else { "OFF" }, 1, if f.bt { t.primary } else { t.on_surface_variant });
-
-        self.round_rect(159, 145, 62, 54, 27, t.surface);
-        self.circle(190, 163, 8, if f.adb { t.primary } else { t.surface_high });
-        self.text_center_x(190, 181, if f.adb { "ADB" } else { "OFF" }, 1, if f.adb { t.primary } else { t.on_surface_variant });
+        // Three small complication slots. They expose only real state that the
+        // board actually knows, not development transport state.
+        let y = 177;
+        for cx in [54, 120, 186] { self.circle(cx, y, 24, t.surface); }
+        if f.wifi { self.icon_wifi(54, y, t.primary); } else { self.icon_wifi(54, y, t.outline); }
+        if f.alarm_enabled { self.icon_clock(120, y, t.primary); } else { self.icon_clock(120, y, t.outline); }
+        if f.dnd { self.icon_dnd(186, y, t.primary); } else { self.icon_dnd(186, y, t.outline); }
 
         if f.notes > 0 {
-            self.circle(120, 224, 6, t.primary);
-            self.circle(120, 224, 2, t.on_primary);
+            self.circle(120, 231, 6, t.primary);
+            self.circle(120, 231, 2, t.on_primary);
         }
-        self.text_center(252, if f.dnd { "DND  CROWN FOR APPS" } else { "CROWN FOR APPS" }, 1, t.outline);
     }
+
 
     fn launcher(&mut self, f: MaterialFrame, t: Theme) {
         self.text_center(12, "APPS", 1, t.on_surface_variant);
-        let labels = ["MESSAGES", "SETTINGS", "CLOCK", "CONNECT", "SYSTEM"];
-        let cur = f.cursor.min(4) as usize;
-        let start = if cur >= 2 { (cur - 2).min(2) } else { 0 };
+        let labels = ["CLOCK", "MEDIA CONTROLS", "SETTINGS", "SYSTEM INFO"];
+        let cur = f.cursor.min(3) as usize;
+        let start = cur.saturating_sub(1).min(1);
         for row in 0..3 {
-            let i = (start + row).min(4);
-            let y = 49 + row as i32 * 67;
-            self.wear_row(y, labels[i], i == cur, t);
+            let i = (start + row).min(3);
+            self.app_row(48 + row as i32 * 64, labels[i], i == cur, i as u8, t);
         }
-        self.text_center(258, "ROTATE  PRESS", 1, t.outline);
     }
 
+
     fn notifications(&mut self, f: MaterialFrame, t: Theme) {
-        self.title("NOTIFICATIONS", t);
+        let tm = Self::time_text(f.time_minutes);
+        let ts = core::str::from_utf8(&tm).unwrap_or("00:00");
+        self.text_center(10, ts, 1, t.on_surface_variant);
         if f.notes == 0 {
-            self.circle(120, 119, 28, t.surface);
-            self.circle(120, 119, 8, t.primary_container);
-            self.text_center(162, "ALL CAUGHT UP", 1, t.on_surface_variant);
+            self.circle(120, 113, 32, t.surface);
+            self.icon_bell(120, 113, t.on_surface_variant);
+            self.text_center(161, "NO NOTIFICATIONS", 1, t.on_surface_variant);
         } else {
-            self.round_rect(12, 55, 216, 104, 34, t.surface);
-            self.circle(43, 84, 13, t.primary_container);
-            self.text(66, 72, "ANDROID SYSTEM", 1, t.on_surface_variant);
-            self.text(66, 91, "DEVICE IS READY", 2, t.on_surface);
-            self.text(66, 119, "ANDROID 17 QPR1", 1, t.primary);
-            self.round_rect(20, 172, 200, 58, 29, t.surface);
-            self.circle(47, 201, 10, if f.adb { t.primary } else { t.surface_high });
-            self.text(69, 189, "WIRELESS DEBUG", 1, t.on_surface);
-            self.text(69, 205, if f.adb { "ADB AVAILABLE" } else { "ADB OFF" }, 1, t.on_surface_variant);
+            let selected = f.cursor == 0;
+            self.round_rect(12, 50, 216, 112, 35, if selected { t.primary_container } else { t.surface });
+            self.circle(44, 82, 14, t.primary);
+            self.icon_bell(44, 82, t.on_primary);
+            self.text(67, 67, "SYSTEM", 1, t.on_surface_variant);
+            self.text(67, 88, "NOTIFICATION", 2, if selected { t.on_primary_container } else { t.on_surface });
+            self.text(67, 119, "PRESS TO DISMISS", 1, t.on_surface_variant);
+            if f.notes > 1 {
+                self.round_rect(27, 175, 186, 48, 24, t.surface);
+                self.text_center(191, "MORE NOTIFICATIONS", 1, t.on_surface_variant);
+            }
         }
-        self.text_center(258, "CROWN  BACK", 1, t.outline);
     }
+
 
     fn quick_settings(&mut self, f: MaterialFrame, t: Theme) {
         let tm = Self::time_text(f.time_minutes);
         let ts = core::str::from_utf8(&tm).unwrap_or("00:00");
-        self.text_center(8, ts, 2, t.on_surface);
-        self.quick_button(58, 72, "WIFI", f.wifi, f.cursor == 0, t);
-        self.quick_button(182, 72, "BT", f.bt, f.cursor == 1, t);
-        self.quick_button(58, 157, "ADB", f.adb, f.cursor == 2, t);
-        self.quick_button(182, 157, "DND", f.dnd, f.cursor == 3, t);
-        self.quick_button(58, 225, "AIR", f.airplane, f.cursor == 4, t);
-        self.quick_button(182, 225, "LIGHT", true, f.cursor == 5, t);
-        // Brightness value is encoded as a tiny progress line under the LIGHT tile.
-        let active = (42 * f.brightness as i32 / 100).max(3);
-        self.round_rect(161, 269, 42, 4, 2, t.surface_high);
-        self.round_rect(161, 269, active, 4, 2, t.primary);
+        self.text_center(9, ts, 2, t.on_surface);
+        self.quick_button(66, 68, "WIFI", f.wifi, f.cursor == 0, t);
+        self.quick_button(174, 68, "BT", f.bt, f.cursor == 1, t);
+        self.quick_button(66, 132, "DND", f.dnd, f.cursor == 2, t);
+        self.quick_button(174, 132, "AIR", f.airplane, f.cursor == 3, t);
+        self.quick_button(66, 196, "LIGHT", true, f.cursor == 4, t);
+        self.quick_button(174, 196, "SET", false, f.cursor == 5, t);
+        self.icon_sun(25, 250, t.on_surface_variant);
+        self.slider(43, 246, 165, f.brightness, t);
     }
+
 
     fn settings(&mut self, f: MaterialFrame, t: Theme) {
         self.title("SETTINGS", t);
-        let labels = ["DISPLAY", "THEME", "CONNECTIVITY", "SYSTEM", "BACK"];
-        let cur = f.cursor.min(4) as usize;
-        let start = if cur >= 3 { cur - 2 } else { 0 };
+        let labels = [
+            "CONNECTIVITY", "APPS & NOTIFS", "DISPLAY", "SOUND & VIBRATION",
+            "GESTURES", "ACCESSIBILITY", "SECURITY", "SYSTEM", "BACK"
+        ];
+        let cur = f.cursor.min(8) as usize;
+        let start = cur.saturating_sub(1).min(6);
         for row in 0..3 {
-            let i = (start + row).min(4);
-            let y = 57 + row as i32 * 64;
-            self.wear_row(y, labels[i], i == cur, t);
-            if i == 0 { self.slider(145, y + 22, 60, f.brightness, t); }
-            if i == 1 {
-                let n = match f.theme { 1 => "BLUE", 2 => "PURPLE", 3 => "CORAL", _ => "GREEN" };
-                self.text(159, y + 20, n, 1, t.on_surface_variant);
-            }
+            let i = (start + row).min(8);
+            self.wear_row(55 + row as i32 * 64, labels[i], i == cur, t);
         }
-        self.text_center(258, "ROTATE  PRESS", 1, t.outline);
     }
 
+
     fn clock(&mut self, f: MaterialFrame, t: Theme) {
-        let tm = Self::time_text(f.time_minutes);
-        let ts = core::str::from_utf8(&tm).unwrap_or("00:00");
-        self.text_center(57, ts, 6, t.on_surface);
-        self.text_center(111, "CLOCK", 1, t.on_surface_variant);
-        self.round_rect(36, 151, 168, 55, 27, t.surface);
-        self.circle(61, 178, 9, t.primary_container);
-        self.text(82, 166, "TIME SOURCE", 1, t.on_surface_variant);
-        self.text(82, 184, "RTC / NTP READY", 1, t.primary);
-        self.text_center(258, "CROWN  BACK", 1, t.outline);
+        self.big_time(34, f.time_minutes, f.time_valid, t.on_surface);
+        self.text_center(98, "CLOCK", 1, t.on_surface_variant);
+        let labels = ["TIMER", "STOPWATCH", "ALARM"];
+        for i in 0..3 {
+            let selected = f.cursor as usize == i;
+            let cx = 48 + i as i32 * 72;
+            self.circle(cx, 165, if selected { 28 } else { 23 }, if selected { t.primary } else { t.surface_high });
+            self.icon_clock(cx, 165, if selected { t.on_primary } else { t.on_surface });
+            self.text_center_x(cx, 202, labels[i], 1, t.on_surface_variant);
+        }
     }
+
 
     fn connectivity(&mut self, f: MaterialFrame, t: Theme) {
         self.title("CONNECTIVITY", t);
-        let labels = ["WIFI", "BLUETOOTH", "WIRELESS ADB", "AIRPLANE", "BACK"];
-        let vals = [f.wifi, f.bt, f.adb, f.airplane, false];
-        let cur = f.cursor.min(4) as usize;
-        let start = if cur >= 3 { cur - 2 } else { 0 };
+        let labels = ["WI-FI", "BLUETOOTH", "AIRPLANE MODE", "BACK"];
+        let vals = [f.wifi, f.bt, f.airplane, false];
+        let cur = f.cursor.min(3) as usize;
+        let start = cur.saturating_sub(1).min(1);
         for row in 0..3 {
-            let i = (start + row).min(4);
+            let i = (start + row).min(3);
             let y = 57 + row as i32 * 64;
             self.wear_row(y, labels[i], i == cur, t);
-            if i < 4 { self.toggle(174, y + 13, vals[i], t); }
+            if i < 3 { self.toggle(174, y + 13, vals[i], t); }
         }
-        self.text_center(258, "ROTATE  PRESS", 1, t.outline);
     }
 
+
     fn about(&mut self, f: MaterialFrame, t: Theme) {
+        self.title("ABOUT", t);
+        self.circle(120, 72, 30, t.primary_container);
+        self.text_center(57, "A", 4, t.primary);
+        self.text_center(116, "AOSP WEAR", 2, t.on_surface);
+        self.text_center(144, "ANDROID 17", 1, t.primary);
+        self.round_rect(22, 168, 196, 36, 18, t.surface);
+        self.text_center(180, "BUILD 17.1.6", 1, t.on_surface);
+        self.text_center(216, "ESP32-S3-ZERO-N4R2", 1, t.on_surface_variant);
+        self.text_center(238, if f.swap_pages > 0 { "SYSTEM STORAGE ACTIVE" } else { "SYSTEM STORAGE READY" }, 1, t.outline);
+    }
+
+
+    fn widgets(&mut self, f: MaterialFrame, t: Theme) {
+        self.title("TILES", t);
+        let cur = f.cursor.min(2);
+        self.round_rect(14, 51, 212, 166, 38, t.surface);
+        if cur == 0 {
+            self.icon_wifi(120, 92, if f.wifi { t.primary } else { t.outline });
+            self.text_center(126, "CONNECTIVITY", 2, t.on_surface);
+            self.text_center(157, if f.wifi { "WI-FI ON" } else { "WI-FI OFF" }, 1, t.on_surface_variant);
+        } else if cur == 1 {
+            self.icon_clock(120, 91, t.primary);
+            self.text_center(126, "TIMER", 2, t.on_surface);
+            self.text_center(157, if f.timer_secs > 0 { "RUNNING" } else { "5 MINUTES" }, 1, t.on_surface_variant);
+        } else {
+            self.icon_clock(120, 91, if f.alarm_enabled { t.primary } else { t.outline });
+            self.text_center(126, "ALARM", 2, t.on_surface);
+            self.text_center(157, if f.alarm_enabled { "ON" } else { "OFF" }, 1, t.on_surface_variant);
+        }
+        for i in 0..3 { self.circle(108 + i * 12, 239, if i as u8 == cur { 4 } else { 2 }, if i as u8 == cur { t.primary } else { t.outline }); }
+    }
+
+
+    fn media(&mut self, f: MaterialFrame, t: Theme) {
+        let tm = Self::time_text(f.time_minutes);
+        let ts = core::str::from_utf8(&tm).unwrap_or("00:00");
+        self.text_center(9, ts, 1, t.on_surface_variant);
+        self.circle(120, 78, 38, t.surface_high);
+        self.text_center(61, "M", 4, t.primary);
+        self.text_center(128, "NO MEDIA PLAYING", 1, t.on_surface);
+        self.text_center(149, "START MEDIA ON PHONE", 1, t.on_surface_variant);
+        let labels = ["<", "||", ">"];
+        for i in 0..3 {
+            let cx = 55 + i as i32 * 65;
+            let selected = f.cursor as usize == i;
+            self.circle(cx, 204, if selected { 26 } else { 21 }, if selected { t.primary } else { t.surface_high });
+            self.text_center_x(cx, 198, labels[i], 2, if selected { t.on_primary } else { t.on_surface });
+        }
+    }
+
+
+    fn clock_tools(&mut self, f: MaterialFrame, t: Theme) {
+        self.title("CLOCK", t);
+        let cur = f.cursor.min(3) as usize;
+        let timer = Self::mmss_text(if f.timer_secs == 0 { 300 } else { f.timer_secs });
+        let stopwatch = Self::mmss_text(f.stopwatch_secs);
+        let timer_s = core::str::from_utf8(&timer).unwrap_or("05:00");
+        let stopwatch_s = core::str::from_utf8(&stopwatch).unwrap_or("00:00");
+        let labels = ["TIMER", "STOPWATCH", "ALARM", "BACK"];
+        let start = cur.saturating_sub(1).min(1);
+        for row in 0..3 {
+            let i = (start + row).min(3);
+            let y = 57 + row as i32 * 64;
+            self.wear_row(y, labels[i], i == cur, t);
+            if i == 0 { self.text(154, y + 19, timer_s, 1, if f.timer_secs > 0 { t.primary } else { t.on_surface_variant }); }
+            if i == 1 { self.text(154, y + 19, stopwatch_s, 1, t.on_surface_variant); }
+            if i == 2 { self.text(174, y + 19, if f.alarm_enabled { "ON" } else { "OFF" }, 1, if f.alarm_enabled { t.primary } else { t.on_surface_variant }); }
+        }
+    }
+
+
+    fn wifi_page(&mut self, f: MaterialFrame, t: Theme) {
+        self.title("WI-FI", t);
+        self.round_rect(18, 52, 204, 58, 29, if f.cursor == 0 { t.primary_container } else { t.surface });
+        self.icon_wifi(47, 81, if f.wifi { t.primary } else { t.outline });
+        self.text(72, 66, "USE WI-FI", 1, t.on_surface);
+        self.text(72, 84, if f.wifi { "ON" } else { "OFF" }, 1, t.on_surface_variant);
+        self.toggle(171, 69, f.wifi, t);
+        self.info_card(124, "NETWORKS", if f.wifi { "SCAN / SAVED" } else { "WI-FI IS OFF" }, f.cursor == 1, t);
+        self.info_card(188, "BACK", "CONNECTIVITY", f.cursor == 2, t);
+    }
+
+
+
+    fn wifi_ssid<'a>(f: &'a MaterialFrame) -> &'a str {
+        let n = (f.wifi_ap_ssid_len as usize).min(32);
+        core::str::from_utf8(&f.wifi_ap_ssid[..n]).unwrap_or("UNKNOWN")
+    }
+
+    fn wifi_networks(&mut self, f: MaterialFrame, t: Theme) {
+        self.title("AVAILABLE NETWORKS", t);
+        if f.wifi_ap_count == 0 {
+            self.circle(120, 104, 34, t.surface);
+            self.icon_wifi(120, 104, t.outline);
+            self.text_center(158, "SCANNING...", 2, t.on_surface);
+            self.text_center(184, "ROTATE CROWN AFTER SCAN", 1, t.on_surface_variant);
+            self.round_rect(48, 222, 144, 38, 19, t.surface_high);
+            self.text_center(234, "BACK", 1, t.on_surface);
+            return;
+        }
+        let cur = f.cursor.min(f.wifi_ap_count);
+        if cur >= f.wifi_ap_count {
+            self.round_rect(30, 87, 180, 94, 36, t.primary_container);
+            self.text_center(113, "BACK", 2, t.on_primary_container);
+            self.text_center(146, "RETURN TO WI-FI", 1, t.on_surface_variant);
+        } else {
+            self.round_rect(16, 55, 208, 145, 38, t.surface);
+            self.icon_wifi(120, 91, if f.wifi_ap_rssi > -70 { t.primary } else { t.outline });
+            self.text_center(124, Self::wifi_ssid(&f), 2, t.on_surface);
+            let sig = if f.wifi_ap_rssi > -55 { "EXCELLENT" } else if f.wifi_ap_rssi > -70 { "GOOD" } else { "WEAK" };
+            self.text_center(151, sig, 1, t.on_surface_variant);
+            self.text_center(176, "PRESS TO CONNECT", 1, t.primary);
+        }
+        for i in 0..f.wifi_ap_count.min(7) {
+            let x = 120 - ((f.wifi_ap_count.min(7) as i32 - 1) * 6) + i as i32 * 12;
+            self.circle(x, 231, if i == f.wifi_ap_index { 4 } else { 2 }, if i == f.wifi_ap_index { t.primary } else { t.outline });
+        }
+    }
+
+    fn wifi_password(&mut self, f: MaterialFrame, t: Theme) {
+        const ALPHA: &[u8] = b"qwertyuiopasdfghjklzxcvbnm.@_-";
+        const SYMBOLS_1: &[u8] = b"1234567890!@#$%^&*()_+-=[]";
+        const SYMBOLS_2: &[u8] = b"{}.,:;?'\"/\\|<>`~";
+
+        let page = (f.wifi_editor_char >> 6).min(3);
+        let selected = (f.wifi_editor_char & 0x3f) as usize;
+        let chars = match page { 2 => SYMBOLS_1, 3 => SYMBOLS_2, _ => ALPHA };
+
+        self.text_center(7, "WI-FI PASSWORD", 1, t.on_surface_variant);
+        self.text_center(22, Self::wifi_ssid(&f), 1, t.on_surface);
+        self.round_rect(14, 39, 212, 34, 14, t.surface);
+        if f.wifi_password_len == 0 {
+            self.text_center(52, "PASSWORD", 1, t.outline);
+        } else {
+            // Keep the entered passphrase private, like Android's password
+            // field, while making every key itself fully visible below.
+            let stars = match f.wifi_password_len {
+                1..=4 => "****", 5..=8 => "********", 9..=12 => "************", _ => "****************",
+            };
+            self.text_center(47, stars, 1, t.on_surface);
+            let count = if f.wifi_password_len < 10 {
+                [b'0' + f.wifi_password_len, b' ', b'C', b'H']
+            } else {
+                [b'0' + (f.wifi_password_len / 10), b'0' + (f.wifi_password_len % 10), b'C', b'H']
+            };
+            if let Ok(label) = core::str::from_utf8(&count) { self.text_center(60, label, 1, t.outline); }
+        }
+
+        let rows: &[usize] = match page {
+            2 => &[10, 10, 6],
+            3 => &[9, 8],
+            _ => &[10, 9, 7, 4],
+        };
+        let mut base = 0usize;
+        let mut y = 80i32;
+        for &count in rows {
+            let key_w = 20i32;
+            let gap = 2i32;
+            let row_w = count as i32 * key_w + (count as i32 - 1) * gap;
+            let mut x = (WIDTH as i32 - row_w) / 2;
+            for pos in 0..count {
+                let idx = base + pos;
+                if idx >= chars.len() { break; }
+                let mut ch = chars[idx];
+                if page == 1 { ch = ch.to_ascii_uppercase(); }
+                let one = [ch];
+                let label = core::str::from_utf8(&one).unwrap_or("?");
+                self.keyboard_key(x, y, key_w, 23, label, selected == idx, t);
+                x += key_w + gap;
+            }
+            base += count;
+            y += 27;
+        }
+
+        let n = chars.len();
+        let (page_key, alpha_key) = match page {
+            2 => ("#+=", "ABC"),
+            3 => ("123", "ABC"),
+            _ => (if page == 1 { "abc" } else { "SHIFT" }, "123"),
+        };
+        self.keyboard_key(10, 190, 50, 27, page_key, selected == n, t);
+        self.keyboard_key(64, 190, 42, 27, alpha_key, selected == n + 1, t);
+        self.keyboard_key(110, 190, 66, 27, "SPACE", selected == n + 2, t);
+        self.keyboard_key(180, 190, 50, 27, "DEL", selected == n + 3, t);
+        self.keyboard_key(10, 224, 142, 32, "CONNECT", selected == n + 4, t);
+        self.keyboard_key(158, 224, 72, 32, "BACK", selected == n + 5, t);
+        self.text_center(264, "ROTATE CROWN  PRESS KEY", 1, t.outline);
+    }
+
+    fn wifi_connecting(&mut self, f: MaterialFrame, t: Theme) {
+        self.title("WI-FI", t);
+        self.circle(120, 102, 38, t.surface);
+        self.icon_wifi(120, 102, if f.wifi_link_state == 4 { t.primary } else { t.outline });
+        let (title, sub) = match f.wifi_link_state {
+            4 => ("CONNECTED", "TIME SYNC STARTED"),
+            3 => ("GETTING ADDRESS", "DHCP"),
+            2 => ("LINK READY", "STARTING NETWORK"),
+            1 => ("CONNECTING", "ASSOCIATING"),
+            _ => ("NOT CONNECTED", "PRESS TO RETURN"),
+        };
+        self.text_center(159, title, 2, if f.wifi_link_state == 4 { t.primary } else { t.on_surface });
+        self.text_center(187, sub, 1, t.on_surface_variant);
+        self.round_rect(48, 222, 144, 38, 19, t.surface_high);
+        self.text_center(234, "DONE", 1, t.on_surface);
+    }
+
+    fn bluetooth_page(&mut self, f: MaterialFrame, t: Theme) {
+        self.title("BLUETOOTH", t);
+        self.round_rect(18, 52, 204, 58, 29, if f.cursor == 0 { t.primary_container } else { t.surface });
+        self.icon_bt(47, 81, if f.bt { t.primary } else { t.outline });
+        self.text(72, 66, "BLUETOOTH", 1, t.on_surface);
+        self.text(72, 84, if f.bt { "ON" } else { "OFF" }, 1, t.on_surface_variant);
+        self.toggle(171, 69, f.bt, t);
+        self.info_card(124, "PAIR NEW DEVICE", if f.bt { "READY TO SCAN" } else { "BLUETOOTH OFF" }, f.cursor == 1, t);
+        self.info_card(188, "WATCH NAME", "AOSP WEAR", f.cursor == 2, t);
+    }
+
+
+    fn display_settings(&mut self, f: MaterialFrame, t: Theme) {
+        self.title("DISPLAY", t);
+        self.round_rect(16, 55, 208, 66, 33, if f.cursor == 0 { t.primary_container } else { t.surface });
+        self.icon_sun(42, 86, t.primary);
+        self.text(66, 68, "BRIGHTNESS", 1, t.on_surface_variant);
+        self.slider(66, 94, 132, f.brightness, t);
+        self.round_rect(16, 135, 208, 58, 29, if f.cursor == 1 { t.primary_container } else { t.surface });
+        self.text(38, 148, "DYNAMIC COLOR", 1, t.on_surface_variant);
+        let color = match f.theme { 1 => "BLUE", 2 => "PURPLE", 3 => "CORAL", _ => "GREEN" };
+        self.text(38, 168, color, 2, t.primary);
+        self.round_rect(16, 207, 208, 42, 21, if f.cursor == 2 { t.primary_container } else { t.surface });
+        self.text_center(219, "BACK", 1, t.on_surface);
+    }
+
+
+    fn system_page(&mut self, f: MaterialFrame, t: Theme) {
         self.title("SYSTEM", t);
-        self.circle(120, 75, 30, t.primary_container);
-        self.text_center(61, "A", 4, t.primary);
-        self.text_center(116, "AOSP WEAR OS", 2, t.on_surface);
-        self.text_center(143, "ANDROID 17 QPR1", 1, t.primary);
-        self.round_rect(25, 166, 190, 34, 17, t.surface);
-        self.text_center(177, "ESP32-S3 / API 37", 1, t.on_surface);
-        self.text_center(214, "PSRAM 2M / SWAP 32M", 1, t.on_surface_variant);
-        self.text_center(234, if f.swap_pages > 0 { "PAGER ACTIVE" } else { "PAGER READY" }, 1, if f.swap_pages > 0 { t.primary } else { t.outline });
-        self.text_center(255, "USERDEBUG / AVB ORANGE", 1, t.error);
+        let labels = ["DATE & TIME", "ABOUT", "DEVELOPER OPTIONS", "BACK"];
+        let cur = f.cursor.min(3) as usize;
+        let start = cur.saturating_sub(1).min(1);
+        for row in 0..3 {
+            let i = (start + row).min(3);
+            self.wear_row(55 + row as i32 * 64, labels[i], i == cur, t);
+        }
+    }
+
+    fn date_time(&mut self, f: MaterialFrame, t: Theme) {
+        self.title("DATE & TIME", t);
+        let labels = ["AUTOMATIC TIME", "SET HOUR", "SET MINUTE", "TIME ZONE", "BACK"];
+        let cur = f.cursor.min(4) as usize;
+        let start = cur.saturating_sub(1).min(2);
+        for row in 0..3 {
+            let i = (start + row).min(4);
+            let y = 56 + row as i32 * 64;
+            self.wear_row(y, labels[i], i == cur, t);
+            if i == 0 { self.toggle(174, y + 13, f.auto_time, t); }
+            if i == 1 || i == 2 {
+                let tm = Self::time_text(f.time_minutes);
+                let ts = core::str::from_utf8(&tm).unwrap_or("00:00");
+                self.text(167, y + 19, ts, 1, if f.auto_time { t.outline } else { t.primary });
+            }
+            if i == 3 {
+                if f.timezone_hours == 0 { self.text(178, y + 19, "UTC", 1, t.on_surface_variant); }
+                else if f.timezone_hours > 0 { self.text(166, y + 19, "UTC+", 1, t.on_surface_variant); }
+                else { self.text(166, y + 19, "UTC-", 1, t.on_surface_variant); }
+            }
+        }
+        if f.auto_time && !f.time_valid { self.text_center(251, "SYNCING OVER WI-FI / PHONE", 1, t.primary); }
+    }
+
+    fn unavailable_page(&mut self, title: &str, icon: &str, body: &str, t: Theme) {
+        self.title(title, t);
+        self.circle(120, 103, 37, t.surface);
+        self.text_center(88, icon, 3, t.primary);
+        self.text_center(157, body, 1, t.on_surface);
+        self.text_center(180, "NOT PRESENT ON THIS BOARD", 1, t.on_surface_variant);
+        self.round_rect(45, 217, 150, 38, 19, t.surface_high);
+        self.text_center(229, "BACK", 1, t.on_surface);
+    }
+
+    fn sound_page(&mut self, _f: MaterialFrame, t: Theme) {
+        self.unavailable_page("SOUND & VIBRATION", "S", "AUDIO HARDWARE", t);
+    }
+
+    fn gestures_page(&mut self, _f: MaterialFrame, t: Theme) {
+        self.title("GESTURES", t);
+        self.info_card(65, "CROWN", "ROTATE TO SCROLL", true, t);
+        self.info_card(132, "CROWN PRESS", "SELECT / APPS", false, t);
+        self.info_card(199, "HOME", "RETURN TO WATCH FACE", false, t);
+    }
+
+    fn accessibility_page(&mut self, _f: MaterialFrame, t: Theme) {
+        self.title("ACCESSIBILITY", t);
+        self.info_card(68, "INPUT", "CROWN-ONLY MODE", true, t);
+        self.info_card(135, "CONTRAST", "DARK WATCH UI", false, t);
+        self.round_rect(45, 213, 150, 40, 20, t.surface_high);
+        self.text_center(226, "BACK", 1, t.on_surface);
+    }
+
+    fn security_page(&mut self, f: MaterialFrame, t: Theme) {
+        self.title("SECURITY", t);
+        self.round_rect(18, 65, 204, 64, 32, if f.cursor == 0 { t.primary_container } else { t.surface });
+        self.text(42, 78, "SCREEN LOCK", 1, t.on_surface);
+        self.text(42, 99, if f.locked { "ENABLED" } else { "NONE" }, 1, t.on_surface_variant);
+        self.toggle(169, 85, f.locked, t);
+        self.round_rect(45, 194, 150, 42, 21, if f.cursor == 1 { t.primary_container } else { t.surface });
+        self.text_center(207, "BACK", 1, t.on_surface);
+    }
+
+    fn apps_notifications_page(&mut self, f: MaterialFrame, t: Theme) {
+        self.title("APPS & NOTIFS", t);
+        let labels = ["NOTIFICATIONS", "APP INFO", "BACK"];
+        let cur = f.cursor.min(2) as usize;
+        for i in 0..3 {
+            let y = 57 + i as i32 * 64;
+            self.wear_row(y, labels[i], i == cur, t);
+            if i == 0 { self.text(176, y + 19, if f.notes > 0 { "NEW" } else { "0" }, 1, t.on_surface_variant); }
+            if i == 1 { self.text(176, y + 19, "4", 1, t.on_surface_variant); }
+        }
+    }
+
+    fn developer_page(&mut self, f: MaterialFrame, t: Theme) {
+        self.title("DEVELOPER OPTIONS", t);
+        let labels = ["WIRELESS DEBUG", "BUILD NUMBER", "SYSTEM", "BACK"];
+        let cur = f.cursor.min(3) as usize;
+        let start = cur.saturating_sub(1).min(1);
+        for row in 0..3 {
+            let i = (start + row).min(3);
+            let y = 57 + row as i32 * 64;
+            self.wear_row(y, labels[i], i == cur, t);
+            if i == 0 { self.toggle(174, y + 13, f.adb, t); }
+            if i == 1 { self.text(157, y + 19, "17.1.6", 1, t.primary); }
+        }
+        if f.adb { self.text_center(253, "WIRELESS ADB IS A DEVELOPER FEATURE", 1, t.error); }
     }
 
 }

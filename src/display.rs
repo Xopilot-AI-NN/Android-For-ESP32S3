@@ -77,14 +77,14 @@ mod oled {
     {
         fn boot_logo(&mut self) -> Result<(), DisplayError> {
             self.fb.clear();
-            self.fb.draw_zephyr_mark();
+            self.fb.draw_aosp_mark();
             self.fb.draw_text_centered(49, "ANDROID", 1, true);
             self.flush()
         }
 
         fn boot_progress(&mut self, label: &str, phase: u8) -> Result<(), DisplayError> {
             self.fb.clear();
-            self.fb.draw_zephyr_mark();
+            self.fb.draw_aosp_mark();
             self.fb.draw_text_centered(45, label, 1, true);
             self.fb.draw_spinner(phase);
             self.flush()

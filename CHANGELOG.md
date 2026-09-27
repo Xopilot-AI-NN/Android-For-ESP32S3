@@ -1,3 +1,27 @@
+# 17.1.6
+
+- Default to the 80 MHz wearable CPU profile instead of maximum CPU clock.
+- Enable esp-radio minimum modem power saving for lower Wi-Fi heat/current.
+- Replace the Wi-Fi password character carousel with a visible four-page QWERTY/symbol keyboard covering printable ASCII.
+- Add lowercase and password-symbol glyphs to the physical ST7789 font.
+- Keep password bytes private; viewer protocol packs keyboard page + selected key into the existing editor byte.
+
+# 17.1.4
+
+- Fixed the Wi-Fi-on freeze in USB-PC-block builds: host writes now tolerate temporary ESP32-S3 USB-Serial-JTAG backpressure instead of terminating with `SerialTimeoutException`.
+- Added complete-write framing for line and binary block replies.
+- Enabling Wi-Fi no longer performs a synchronous active scan; scanning is explicit on the Available networks page.
+- Preserved the software RTC/SNTP behavior from 17.1.3.
+
+# 17.1.3
+
+- Fixed Wireless ADB runtime bit: TCP/5555 now follows Developer options instead of Bluetooth.
+- Fixed `dumpsys` Wi-Fi/Bluetooth/WADB bit reporting.
+- Moved Wi-Fi credentials to reserved ZPager metadata slots and added migration from the legacy colliding slot.
+- Added persistent Wear settings and last-known wall-clock holdover.
+- Replaced launcher/settings placeholder letters with compact vector Wear-style icons.
+- Added watch-face status indicators and removed dead renderer helpers.
+
 # 1.9.3
 
 - Clean PC-block build warnings by feature-gating SD/fastboot-only code and removing unused helpers.

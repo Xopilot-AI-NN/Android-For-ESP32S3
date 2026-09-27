@@ -14,9 +14,9 @@ use esp_radio::wifi::WifiDevice;
 use heapless::{String as HString, Vec as HVec};
 use smoltcp::{
     iface::{Config, Interface, SocketHandle, SocketSet},
-    socket::{dhcpv4, tcp},
+    socket::{dhcpv4, tcp, udp},
     time::{Duration as SmolDuration, Instant},
-    wire::{DhcpOption, EthernetAddress, IpCidr, Ipv4Address},
+    wire::{DhcpOption, EthernetAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address},
 };
 use static_cell::StaticCell;
 
@@ -32,6 +32,23 @@ static DHCP_OPTIONS: [DhcpOption<'static>; 1] = [DhcpOption { kind: 12, data: DH
 
 static WADB_RX_BUF: StaticCell<[u8; 4096]> = StaticCell::new();
 static WADB_TX_BUF: StaticCell<[u8; 4096]> = StaticCell::new();
+static NTP_RX_META: StaticCell<[udp::PacketMetadata; 2]> = StaticCell::new();
+static NTP_TX_META: StaticCell<[udp::PacketMetadata; 2]> = StaticCell::new();
+static NTP_RX_BUF: StaticCell<[u8; 128]> = StaticCell::new();
+static NTP_TX_BUF: StaticCell<[u8; 128]> = StaticCell::new();
+
+const NTP_PORT: u16 = 123;
+const NTP_LOCAL_PORT: u16 = 49152;
+const NTP_UNIX_EPOCH_DELTA: u32 = 2_208_988_800;
+const NTP_RETRY_MS: u64 = 15_000;
+const NTP_RESYNC_MS: u64 = 6 * 60 * 60 * 1000;
+// Google Public NTP time1..time4.google.com anycast IPv4 endpoints.
+const NTP_SERVERS: [Ipv4Address; 4] = [
+    Ipv4Address::new(216, 239, 35, 0),
+    Ipv4Address::new(216, 239, 35, 4),
+    Ipv4Address::new(216, 239, 35, 8),
+    Ipv4Address::new(216, 239, 35, 12),
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LinkState {
@@ -181,6 +198,7 @@ pub struct NetworkService {
     sockets: SocketSet<'static>,
     dhcp_handle: SocketHandle,
     adb_handle: SocketHandle,
+    ntp_handle: SocketHandle,
     adb_rx: AdbRx,
     adb_stream: AdbStream,
     next_adb_local_id: u32,
@@ -188,6 +206,11 @@ pub struct NetworkService {
     link: LinkState,
     wadb_listening: bool,
     wadb_seen_client: bool,
+    ntp_next_request_ms: u64,
+    ntp_request_started_ms: u64,
+    ntp_server_index: u8,
+    ntp_pending: bool,
+    ntp_unix_seconds: Option<u32>,
 }
 
 impl NetworkService {
@@ -218,11 +241,22 @@ impl NetworkService {
         adb_socket.set_timeout(Some(SmolDuration::from_secs(90)));
         let adb_handle = sockets.add(adb_socket);
 
+        let ntp_rx_meta = &mut NTP_RX_META.init([udp::PacketMetadata::EMPTY; 2])[..];
+        let ntp_tx_meta = &mut NTP_TX_META.init([udp::PacketMetadata::EMPTY; 2])[..];
+        let ntp_rx_data = &mut NTP_RX_BUF.init([0; 128])[..];
+        let ntp_tx_data = &mut NTP_TX_BUF.init([0; 128])[..];
+        let ntp_socket = udp::Socket::new(
+            udp::PacketBuffer::new(ntp_rx_meta, ntp_rx_data),
+            udp::PacketBuffer::new(ntp_tx_meta, ntp_tx_data),
+        );
+        let ntp_handle = sockets.add(ntp_socket);
+
         Self {
             iface,
             sockets,
             dhcp_handle,
             adb_handle,
+            ntp_handle,
             adb_rx: AdbRx::new(),
             adb_stream: AdbStream::new(),
             next_adb_local_id: 1,
@@ -230,6 +264,11 @@ impl NetworkService {
             link: LinkState::Down,
             wadb_listening: false,
             wadb_seen_client: false,
+            ntp_next_request_ms: 0,
+            ntp_request_started_ms: 0,
+            ntp_server_index: 0,
+            ntp_pending: false,
+            ntp_unix_seconds: None,
         }
     }
 
@@ -244,6 +283,8 @@ impl NetworkService {
     pub fn ip(&self) -> Option<Ipv4Address> { self.ip }
     pub fn wadb_active(&self) -> bool { self.wadb_listening }
     pub fn wadb_seen_client(&self) -> bool { self.wadb_seen_client }
+    pub fn take_network_time(&mut self) -> Option<u32> { self.ntp_unix_seconds.take() }
+    pub fn request_time_sync(&mut self) { self.ntp_pending = false; self.ntp_next_request_ms = 0; }
 
     pub fn reset(&mut self) {
         self.link = LinkState::Down;
@@ -254,6 +295,11 @@ impl NetworkService {
         if socket.is_open() { socket.abort(); }
         self.wadb_listening = false;
         self.wadb_seen_client = false;
+        self.ntp_pending = false;
+        self.ntp_next_request_ms = 0;
+        self.ntp_request_started_ms = 0;
+        let ntp = self.sockets.get_mut::<udp::Socket>(self.ntp_handle);
+        if ntp.is_open() { ntp.close(); }
     }
 
     pub fn poll(&mut self, device: &mut WifiDevice<'static>, wadb_enabled: bool) {
@@ -264,8 +310,67 @@ impl NetworkService {
             let _ = self.iface.poll(now, device, &mut self.sockets);
             self.poll_dhcp();
             self.poll_wadb(wadb_enabled);
+            self.poll_ntp();
         } else {
             self.poll_wadb(false);
+            self.ntp_pending = false;
+        }
+    }
+
+    fn poll_ntp(&mut self) {
+        if self.ip.is_none() { return; }
+        let now = now_ms();
+        let socket = self.sockets.get_mut::<udp::Socket>(self.ntp_handle);
+        if !socket.is_open() {
+            if let Err(e) = socket.bind(NTP_LOCAL_PORT) {
+                println!("time: NTP bind failed: {:?}", e);
+                self.ntp_next_request_ms = now.saturating_add(NTP_RETRY_MS);
+                return;
+            }
+        }
+
+        if socket.can_recv() {
+            let mut packet = [0u8; 64];
+            if let Ok((n, _meta)) = socket.recv_slice(&mut packet) {
+                if n >= 48 {
+                    let mode = packet[0] & 0x07;
+                    let stratum = packet[1];
+                    let ntp_seconds = u32::from_be_bytes([packet[40], packet[41], packet[42], packet[43]]);
+                    if (mode == 4 || mode == 5) && stratum != 0 && ntp_seconds > NTP_UNIX_EPOCH_DELTA {
+                        let unix = ntp_seconds - NTP_UNIX_EPOCH_DELTA;
+                        self.ntp_unix_seconds = Some(unix);
+                        self.ntp_pending = false;
+                        self.ntp_next_request_ms = now.saturating_add(NTP_RESYNC_MS);
+                        println!("time: NTP sync received unix={}", unix);
+                        return;
+                    }
+                }
+            }
+        }
+
+        if self.ntp_pending {
+            if now.saturating_sub(self.ntp_request_started_ms) < 5_000 { return; }
+            self.ntp_pending = false;
+            self.ntp_server_index = (self.ntp_server_index + 1) % NTP_SERVERS.len() as u8;
+            self.ntp_next_request_ms = now.saturating_add(1_000);
+        }
+        if now < self.ntp_next_request_ms || !socket.can_send() { return; }
+
+        let mut request = [0u8; 48];
+        request[0] = 0x23; // LI=0, SNTP/NTP v4, client mode.
+        let server = NTP_SERVERS[self.ntp_server_index as usize];
+        let endpoint = IpEndpoint::new(IpAddress::Ipv4(server), NTP_PORT);
+        match socket.send_slice(&request, endpoint) {
+            Ok(()) => {
+                self.ntp_pending = true;
+                self.ntp_request_started_ms = now;
+                self.ntp_next_request_ms = now.saturating_add(NTP_RETRY_MS);
+                println!("time: requesting NTP from {}", server);
+            }
+            Err(e) => {
+                println!("time: NTP request failed: {:?}", e);
+                self.ntp_next_request_ms = now.saturating_add(NTP_RETRY_MS);
+            }
         }
     }
 
@@ -286,6 +391,8 @@ impl NetworkService {
                 }
                 if self.ip != Some(address) {
                     println!("net: DHCP address {}", address);
+                    self.ntp_next_request_ms = 0;
+                    self.ntp_pending = false;
                 }
                 self.ip = Some(address);
                 self.link = LinkState::Online;
@@ -305,6 +412,8 @@ impl NetworkService {
 
     fn clear_ip(&mut self) {
         self.ip = None;
+        self.ntp_pending = false;
+        self.ntp_next_request_ms = 0;
         self.iface.update_ip_addrs(|addrs| addrs.clear());
         self.iface.routes_mut().remove_default_ipv4_route();
         self.sockets.get_mut::<dhcpv4::Socket>(self.dhcp_handle).reset();

@@ -17,8 +17,8 @@ from pathlib import Path
 def default_socket() -> Path:
     runtime = os.environ.get("XDG_RUNTIME_DIR")
     if runtime:
-        return Path(runtime) / "zephyr-watch-viewer.sock"
-    return Path(f"/tmp/zephyr-watch-viewer-{os.getuid()}.sock")
+        return Path(runtime) / "aosp-wear-viewer.sock"
+    return Path(f"/tmp/aosp-wear-viewer-{os.getuid()}.sock")
 
 
 SIMPLE_COMMANDS = {
@@ -52,6 +52,15 @@ def build_command(args: argparse.Namespace) -> tuple[str, str]:
         if len(compact) != 12 or any(ch not in "0123456789abcdef" for ch in compact):
             raise SystemExit("Bluetooth address must look like AA:BB:CC:DD:EE:FF")
         return f"@ZADB|BT_CONNECT|{compact}", "bt"
+    if args.command == "companion-time":
+        try:
+            hh, mm = args.time.split(":", 1)
+            minutes = int(hh) * 60 + int(mm)
+        except (ValueError, AttributeError):
+            raise SystemExit("time must be HH:MM")
+        if not (0 <= minutes < 1440 and 0 <= int(mm) < 60):
+            raise SystemExit("time must be HH:MM in 24-hour format")
+        return f"@ZADB|COMPANION_TIME|{minutes}", "time"
     raise AssertionError(args.command)
 
 
@@ -65,6 +74,8 @@ def main() -> int:
     wifi_connect.add_argument("password", nargs="?", default="")
     bt_connect = sub.add_parser("bt-connect")
     bt_connect.add_argument("address")
+    companion_time = sub.add_parser("companion-time", help="explicitly simulate paired-phone time; never sent automatically")
+    companion_time.add_argument("time", help="24-hour HH:MM")
     ap.add_argument("--socket", type=Path, default=default_socket())
     ap.add_argument("--timeout", type=float, default=8.0)
     args = ap.parse_args()
