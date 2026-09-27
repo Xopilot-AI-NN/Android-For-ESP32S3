@@ -65,12 +65,12 @@ fn prop(key: &str) -> Option<&'static str> {
         "ro.build.version.release" => Some("17"),
         "ro.build.version.sdk" => Some("37"),
         "ro.build.version.codename" => Some("REL"),
-        "ro.build.version.incremental" => Some("AOSP17QPR1.17.1.6"),
+        "ro.build.version.incremental" => Some("AOSP17QPR1.17.2.1"),
         "ro.build.type" => Some("userdebug"),
         "ro.build.tags" => Some("test-keys"),
         "ro.build.flavor" => Some("aosp_wear-userdebug"),
         "ro.build.display.id" => Some("AOSP Wear OS Android 17 QPR1"),
-        "ro.build.fingerprint" => Some("aosp/aosp_wear/aosp_wear:17/QPR1/17.1.6:userdebug/test-keys"),
+        "ro.build.fingerprint" => Some("aosp/aosp_wear/aosp_wear:17/QPR1/17.2.1:userdebug/test-keys"),
         "ro.boot.dynamic_partitions" => Some("true"),
         "ro.treble.enabled" => Some("true"),
         "ro.aosp_esp32.runtime" => Some("rhai"),
@@ -84,7 +84,7 @@ fn prop(key: &str) -> Option<&'static str> {
         "ro.system.build.version.release" => Some("17"),
         "ro.system.build.version.sdk" => Some("37"),
         "ro.wear.platform" => Some("aosp"),
-        "ro.aosp_esp32.version" => Some("17.1.6"),
+        "ro.aosp_esp32.version" => Some("17.2.1"),
         "net.hostname" => Some(HOSTNAME),
         "persist.sys.device_name" => Some(PRODUCT_MODEL),
         _ => None,
@@ -113,7 +113,7 @@ pub fn services() -> &'static str {
 }
 
 pub fn packages() -> &'static str {
-    "com.android.systemui com.android.wear.launcher com.android.wear.tiles com.android.wear.media com.android.settings com.android.deskclock com.android.settings.connectivity android.system"
+    "com.android.systemui com.android.wear.launcher com.android.wear.tiles com.android.wear.media com.android.wear.assistant com.android.settings com.android.deskclock com.android.settings.connectivity android.system"
 }
 
 /// Execute the tiny userdebug shell used by wireless ADB. This is deliberately

@@ -1,4 +1,4 @@
-# Wear Material UI ABI — release 17.1.6
+# Wear Material UI ABI — release 17.2.1
 
 The physical SystemUI renderer is native Rust/RGB565. Rhai owns Activity navigation and compact
 framework state. The desktop viewer mirrors the semantic frame and can inject the same input events.
@@ -24,7 +24,7 @@ Rust → PC viewer adds `swap_pages` after `time_minutes`:
 ```text
  0 lock                12 Wi-Fi
  1 watch face          13 Bluetooth
- 2 launcher            14 Display
+ 2 grid launcher       14 Display
  3 notifications       15 System
  4 Quick Settings      16 Date & time
  5 Settings            17 Sound & vibration
@@ -33,23 +33,26 @@ Rust → PC viewer adds `swap_pages` after `time_minutes`:
  8 About               20 Security
  9 Tiles               21 Apps & notifications
 10 Media controls      22 Developer options
-11 Clock tools
+11 Clock tools         23 Available networks
+                       24 Wi-Fi keyboard
+                       25 Wi-Fi connection
+                       26 list launcher
+                       27 Assistant
 ```
 
 ## Input contract
 
+Production hardware is encoder-only:
+
 ```text
-@ZWIN|POWER             crown press / select
-@ZWIN|ROTATE|-1|1       crown rotation
-@ZWIN|SWIPE|UP          watch face → notifications
-@ZWIN|SWIPE|DOWN        watch face → Quick Settings
-@ZWIN|SWIPE|LEFT|RIGHT  Tiles / back-navigation semantics
-@ZWIN|NORMAL            Home
-@ZWIN|SYNC              resend UI state only
+rotate crown          focus / scroll
+short press           select
+long press ~0.7 s     Back
+very long ~1.8 s      Home / watch face
 ```
 
-The target board has no touch controller, so real-board crown input is the fallback. The viewer's
-swipe controls exist to validate Wear navigation without pretending the board has touch hardware.
+The desktop development viewer may still inject `POWER`, `ROTATE`, `SWIPE`, `NORMAL` and `SYNC`
+events. Swipe is a test-only convenience and is not required by the watch UI.
 
 ## Visual rules
 
@@ -61,7 +64,7 @@ swipe controls exist to validate Wear navigation without pretending the board ha
 - no developer/USB status badges on normal watch surfaces;
 - Wireless ADB appears only in Developer options.
 
-## 17.1.6 Wi-Fi provisioning extension
+## Wi-Fi provisioning extension
 
 The base `M3` state is followed by optional watch-side provisioning fields:
 
@@ -76,6 +79,6 @@ Screens:
 This extension is filled by the native runtime after Rhai renders the base scene, so credentials never enter the Rhai framework state or the viewer protocol as clear text. Only password length is mirrored to the development viewer.
 
 
-## 17.1.6 keyboard encoding
+## 17.2.1 keyboard encoding
 
 On screen 24 the existing `editor_char` byte is packed as `page<<6 | selected_key`. Pages are 0=lowercase QWERTY, 1=uppercase QWERTY, 2=numbers/symbols, 3=remaining printable ASCII symbols. This avoids exposing password contents or changing the USB viewer frame shape.

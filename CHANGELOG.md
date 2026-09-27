@@ -1,4 +1,12 @@
-# 17.1.6
+# 17.2.1
+
+- Keep the ESP32-S3 at the chip maximum clock (`CpuClock::max`, 240 MHz on ESP32-S3) and report it explicitly at boot.
+- Do not persist a newly typed Wi-Fi password until association actually succeeds; failed crown input can no longer overwrite the last known-good profile.
+- Show the last 16 entered Wi-Fi password characters on the physical watch while editing; desktop/browser remotes still omit password bytes.
+- Add a local HTTP browser remote on port 80 with watch state, crown/Back/Home controls and swipe controls.
+- Browser remote is served directly by the ESP32-S3 after DHCP; no PC or cloud service is required.
+
+# 17.2.0
 
 - Default to the 80 MHz wearable CPU profile instead of maximum CPU clock.
 - Enable esp-radio minimum modem power saving for lower Wi-Fi heat/current.
@@ -83,3 +91,12 @@
 - Added interactive `adb shell` prompt with line commands and `exit`.
 - Disabled Nagle for WADB and enabled TCP keepalive/timeout.
 - Expanded userdebug shell (`getprop`, `dumpsys`, `wm`, package/service queries).
+
+## 17.2.1
+
+- Added Wear-style honeycomb/grid launcher and companion list-view launcher.
+- Expanded launcher registry to Clock, Media, Settings, Connectivity, System Info and Assistant.
+- Added service-neutral Assistant UI shell for future phone-companion integration.
+- Reworked crown hardware semantics: short=Select, long=Back, very-long=Home.
+- Reworked Wi-Fi password keyboard into a Gboard-like QWERTY layout optimized for encoder focus.
+- Kept watch-side Wi-Fi provisioning, RTC/SNTP, wireless ADB and 17.1.6 radio stability fixes.

@@ -362,7 +362,7 @@ class WatchViewer:
         self.last_pong = 0.0
         self.connected = False
 
-        root.title("AOSP Wear OS 17.1.6 — Android 17 QPR1 — Live ESP32-S3")
+        root.title("AOSP Wear OS 17.2.1 — Android 17 QPR1 — Live ESP32-S3")
         root.minsize(620, 650)
 
         outer = ttk.Frame(root, padding=14)
@@ -600,6 +600,26 @@ class WatchViewer:
             self.canvas.create_oval(x-r,y-r,x+r,y+r,outline=color,width=max(1,int(2*self.scale)))
             self.m3_circle(cx,cy-6,2,color); self.m3_rr(cx-2,cy-1,4,10,2,color)
 
+        def icon_grid(cx,cy,color):
+            for yy in (-7,0,7):
+                for xx in (-7,0,7): self.m3_circle(cx+xx,cy+yy,2,color)
+
+        def icon_assistant(cx,cy,color):
+            line(cx,cy-13,cx,cy+13,color,2); line(cx-13,cy,cx+13,cy,color,2)
+            line(cx-8,cy-8,cx+8,cy+8,color,2); line(cx-8,cy+8,cx+8,cy-8,color,2)
+            self.m3_circle(cx,cy,3,color)
+
+        def app_icon(index,cx,cy,color):
+            if index==0: icon_clock(cx,cy,color)
+            elif index==1: icon_media(cx,cy,color)
+            elif index==2: icon_settings(cx,cy,color)
+            elif index==3: icon_wifi(cx,cy,color)
+            elif index==4: icon_info(cx,cy,color)
+            elif index==5: icon_assistant(cx,cy,color)
+            else: icon_grid(cx,cy,color)
+
+        app_accents=("#b5e8d3","#ffbfab","#aecbff","#66ddcd","#dabeff","#7ee1a5","#323b36")
+
         def icon_back(cx,cy,color):
             line(cx+8,cy,cx-8,cy,color,3); line(cx-8,cy,cx-1,cy-7,color,3); line(cx-8,cy,cx-1,cy+7,color,3)
 
@@ -689,11 +709,18 @@ class WatchViewer:
                 self.m3_circle(120,231,6,t["primary"]); self.m3_circle(120,231,2,t["on_primary"])
 
         elif screen == 2:
-            text(120,12,"APPS",8,t["muted"],False,True)
-            labels=("CLOCK","MEDIA CONTROLS","SETTINGS","SYSTEM INFO")
-            cur=min(cursor,3); start=min(max(cur-1,0),1)
-            for r in range(3):
-                i=min(3,start+r); row(48+r*64,labels[i],i==cur)
+            labels=("CLOCK","MEDIA","SETTINGS","CONNECTIVITY","SYSTEM INFO","ASSISTANT","LIST VIEW")
+            cur=min(cursor,6)
+            pos=((52,70),(120,58),(188,70),(52,140),(120,128),(188,140),(120,208))
+            for i,(cx,cy) in enumerate(pos):
+                sel=(i==cur); rr=33 if sel else (26 if i==6 else 28)
+                bg=t["high"] if i==6 else app_accents[i]
+                fg=t["muted"] if i==6 else "#0a2218"
+                if sel:
+                    x,y=self.p(cx,cy); r=(rr+3)*self.scale
+                    self.canvas.create_oval(x-r,y-r,x+r,y+r,outline=t["on"],width=max(1,int(2*self.scale)))
+                self.m3_circle(cx,cy,rr,bg); app_icon(i,cx,cy,fg)
+            self.m3_rr(31,244,178,27,13,t["surface"]); text(120,252,labels[cur],8,t["on"],True,True)
 
         elif screen == 3:
             text(120,10,clock,8,t["muted"],False,True)
@@ -736,19 +763,24 @@ class WatchViewer:
         elif screen == 8:
             title("ABOUT"); self.m3_circle(120,72,30,t["pc"]); text(120,54,"A",27,t["primary"],True,True)
             text(120,116,"AOSP WEAR",12,t["on"],True,True); text(120,144,"ANDROID 17",8,t["primary"],True,True)
-            self.m3_rr(22,168,196,36,18,t["surface"]); text(120,179,"BUILD 17.1.6",8,t["on"],False,True)
+            self.m3_rr(22,168,196,36,18,t["surface"]); text(120,179,"BUILD 17.2.1",8,t["on"],False,True)
             text(120,216,"ESP32-S3-ZERO-N4R2",7,t["muted"],False,True)
             text(120,238,"SYSTEM STORAGE ACTIVE" if swap_pages else "SYSTEM STORAGE READY",7,t["outline"],False,True)
 
         elif screen == 9:
-            title("TILES"); self.m3_rr(14,51,212,166,38,t["surface"])
-            if cursor%3==0:
-                icon_wifi(120,92,t["primary"] if wifi else t["outline"]); text(120,126,"CONNECTIVITY",11,t["on"],True,True); text(120,157,"WI-FI ON" if wifi else "WI-FI OFF",8,t["muted"],False,True)
-            elif cursor%3==1:
-                icon_clock(120,92,t["primary"]); text(120,126,"TIMER",11,t["on"],True,True); text(120,157,"RUNNING" if timer_secs else "5 MINUTES",8,t["muted"],False,True)
+            cur=cursor%3
+            if cur==0:
+                bg,fg,sub="#3a715e","#e4fff1",("WI-FI CONNECTED" if wifi else "WI-FI OFF")
+            elif cur==1:
+                bg,fg,sub="#2f4e7e","#e2ecff",("TIMER RUNNING" if timer_secs else "5 MINUTE TIMER")
             else:
-                icon_clock(120,92,t["primary"] if alarm_enabled else t["outline"]); text(120,126,"ALARM",11,t["on"],True,True); text(120,157,"ON" if alarm_enabled else "OFF",8,t["muted"],False,True)
-            for i in range(3): self.m3_circle(108+i*12,239,4 if i==cursor%3 else 2,t["primary"] if i==cursor%3 else t["outline"])
+                bg,fg,sub="#5c4377","#f7e7ff",("ALARM ON" if alarm_enabled else "ALARM OFF")
+            self.m3_rr(10,24,220,208,42,bg)
+            if cur==0: icon_wifi(52,66,fg); text(82,55,"CONNECTIVITY",8,fg,True); text(27,112,sub,11,fg,True); text(27,153,"PRESS TO OPEN",7,fg)
+            elif cur==1:
+                icon_clock(52,66,fg); text(82,55,"CLOCK",8,fg,True); text(27,112,sub,11,fg,True); tt=timer_secs if timer_secs else 300; text(27,153,f"{tt//60:02d}:{tt%60:02d}",11,fg,True)
+            else: icon_clock(52,66,fg); text(82,55,"ALARM",8,fg,True); text(27,112,sub,11,fg,True); text(27,153,"PRESS TO OPEN",7,fg)
+            for i in range(3): self.m3_circle(108+i*12,254,4 if i==cur else 2,t["primary"] if i==cur else t["outline"])
 
         elif screen == 10:
             text(120,9,clock,8,t["muted"],False,True); self.m3_circle(120,78,38,t["high"]); text(120,58,"M",27,t["primary"],True,True)
@@ -811,14 +843,14 @@ class WatchViewer:
             for i in range(3):
                 y=57+i*64; row(y,labels[i],i==cur)
                 if i==0: text(176,y+18,"NEW" if notes else "0",7,t["muted"])
-                elif i==1: text(176,y+18,"4",7,t["muted"])
+                elif i==1: text(176,y+18,"6",7,t["muted"])
 
         elif screen == 22:
             title("DEVELOPER OPTIONS"); labels=("WIRELESS DEBUG","BUILD NUMBER","SYSTEM","BACK"); cur=min(cursor,3); start=min(max(cur-1,0),1)
             for r in range(3):
                 i=min(3,start+r); y=57+r*64; row(y,labels[i],i==cur)
                 if i==0: toggle(174,y+13,bool(adb))
-                elif i==1: text(157,y+18,"17.1.6",7,t["primary"])
+                elif i==1: text(157,y+18,"17.2.1",7,t["primary"])
             if adb: text(120,253,"WIRELESS ADB IS A DEVELOPER FEATURE",6,t["error"],False,True)
 
         elif screen == 23:
@@ -836,41 +868,72 @@ class WatchViewer:
 
         elif screen == 24:
             page=(wifi_editor_char >> 6) & 0x03; selected=wifi_editor_char & 0x3f
-            alpha="qwertyuiopasdfghjklzxcvbnm.@_-"
+            alpha="qwertyuiopasdfghjklzxcvbnm"
             symbols1="1234567890!@#$%^&*()_+-=[]"
             symbols2="{}.,:;?'\"/\\|<>`~"
             chars=symbols1 if page==2 else symbols2 if page==3 else alpha
-            text(120,7,"WI-FI PASSWORD",7,t["muted"],False,True)
-            text(120,22,wifi_ap_ssid or "NETWORK",7,t["on"],False,True)
-            self.m3_rr(14,39,212,34,14,t["surface"])
-            preview="PASSWORD" if wifi_password_len==0 else (("*"*min(16,wifi_password_len))+f"  {wifi_password_len} CH")
-            text(120,50,preview,7,t["on"] if wifi_password_len else t["outline"],False,True)
+            text(120,5,wifi_ap_ssid or "NETWORK",7,t["muted"],False,True)
+            self.m3_rr(12,21,216,40,18,t["surface"])
+            preview="PASSWORD" if wifi_password_len==0 else "*"*min(16,wifi_password_len)
+            text(25,34,preview,11 if wifi_password_len else 7,t["on"] if wifi_password_len else t["outline"],False,False)
+            self.m3_circle(211,41,5,t["pc"]); self.m3_circle(211,41,2,t["primary"])
 
-            def kbkey(x,y,w,h,label,index):
-                sel=(selected==index); self.m3_rr(x,y,w,h,7,t["primary"] if sel else t["high"]); text(x+w//2,y+7,label,7,t["on_primary"] if sel else t["on"],True,True)
+            def kbchar(x,y,w,h,ch,index):
+                sel=(selected==index); yy=y-3 if sel else y; hh=h+6 if sel else h
+                self.m3_rr(x,yy,w,hh,8,t["primary"] if sel else t["high"])
+                text(x+w/2,yy+(5 if sel else 8),ch.upper() if page==1 else ch,10 if sel else 7,t["on_primary"] if sel else t["on"],True,True)
 
-            rows=(10,10,6) if page==2 else (9,8) if page==3 else (10,9,7,4)
-            base=0; y=80
-            for count in rows:
-                kw=20; gap=2; rw=count*kw+(count-1)*gap; x=(240-rw)//2
-                for pos in range(count):
-                    idx=base+pos
-                    if idx>=len(chars): break
-                    ch=chars[idx].upper() if page==1 else chars[idx]
-                    kbkey(x,y,kw,23,ch,idx); x += kw+gap
-                base += count; y += 27
+            if page in (0,1):
+                rows=(10,9,7); base=0
+                for r,count in enumerate(rows):
+                    y=76+r*37; kw=20 if r<2 else 22; gap=2 if r<2 else 3
+                    rw=count*kw+(count-1)*gap; x=(240-rw)//2
+                    for pos in range(count):
+                        idx=base+pos; kbchar(x,y,kw,29,chars[idx],idx); x += kw+gap
+                    base += count
+            else:
+                rows=(10,10,6) if page==2 else (9,8); base=0
+                for r,count in enumerate(rows):
+                    y=76+r*37; kw=20 if count>=10 else 22; gap=2; rw=count*kw+(count-1)*gap; x=(240-rw)//2
+                    for pos in range(count):
+                        idx=base+pos
+                        if idx>=len(chars): break
+                        kbchar(x,y,kw,29,chars[idx],idx); x += kw+gap
+                    base += count
             n=len(chars)
             page_key="#+=" if page==2 else "123" if page==3 else ("abc" if page==1 else "SHIFT")
             alpha_key="ABC" if page in (2,3) else "123"
-            kbkey(10,190,50,27,page_key,n); kbkey(64,190,42,27,alpha_key,n+1); kbkey(110,190,66,27,"SPACE",n+2); kbkey(180,190,50,27,"DEL",n+3)
-            kbkey(10,224,142,32,"CONNECT",n+4); kbkey(158,224,72,32,"BACK",n+5)
-            text(120,264,"ROTATE CROWN  PRESS KEY",7,t["outline"],False,True)
+            def kbaction(x,y,w,h,label,index):
+                sel=(selected==index); self.m3_rr(x,y,w,h,8,t["primary"] if sel else t["high"]); text(x+w/2,y+9,label,7,t["on_primary"] if sel else t["on"],True,True)
+            kbaction(6,188,50,31,page_key,n); kbaction(60,188,42,31,alpha_key,n+1); kbaction(106,188,74,31,"SPACE",n+2); kbaction(184,188,50,31,"DEL",n+3)
+            kbaction(6,226,64,34,"BACK",n+5); kbaction(76,226,158,34,"CONNECT",n+4)
+            text(120,266,"ROTATE  /  PRESS",7,t["outline"],False,True)
 
         elif screen == 25:
             title("WI-FI"); self.m3_circle(120,102,38,t["surface"]); icon_wifi(120,102,t["primary"] if wifi_link_state==4 else t["outline"])
             states={4:("CONNECTED","TIME SYNC STARTED"),3:("GETTING ADDRESS","DHCP"),2:("LINK READY","STARTING NETWORK"),1:("CONNECTING","ASSOCIATING")}
             a,b=states.get(wifi_link_state,("NOT CONNECTED","PRESS TO RETURN")); text(120,159,a,11,t["primary"] if wifi_link_state==4 else t["on"],True,True); text(120,187,b,7,t["muted"],False,True)
             self.m3_rr(48,222,144,38,19,t["high"]); text(120,234,"DONE",8,t["on"],True,True)
+
+        elif screen == 26:
+            labels=("CLOCK","MEDIA","SETTINGS","CONNECTIVITY","SYSTEM INFO","ASSISTANT","GRID VIEW")
+            cur=min(cursor,6); start=max(0,min(cur-1,4))
+            for r in range(3):
+                i=min(start+r,6); y=44+r*66; sel=(i==cur)
+                if i==6:
+                    x,w,h=(22,196,54) if sel else (34,172,46)
+                    self.m3_rr(x,y,w,h,h/2,t["primary"] if sel else t["high"]); icon_grid(x+31,y+h/2,t["on_primary"] if sel else t["muted"]); text(x+58,y+17,"GRID VIEW",9,t["on_primary"] if sel else t["on"],True)
+                else:
+                    x,w,h,radius=(5,230,50,25) if sel else (17,206,42,21)
+                    self.m3_rr(x,y,w,h,radius,t["pc"] if sel else t["surface"]); self.m3_circle(x+25,y+h/2,12 if sel else 9,app_accents[i]); app_icon(i,x+25,y+h/2,"#0a2218"); text(x+48,y+14,labels[i],9 if len(labels[i])<12 else 7,t["on_pc"] if sel else t["on"],True)
+            self.m3_circle(228,72+(cur-start)*66,3,t["primary"])
+
+        elif screen == 27:
+            x,y=self.p(120,116); rr=70*self.scale
+            self.canvas.create_oval(x-rr,y-rr,x+rr,y+rr,outline=t["high"],width=max(1,int(2*self.scale)))
+            icon_assistant(120,91,t["primary"]); text(120,126,"ASK ASSISTANT",12,t["on"],True,True); text(120,158,"COMPANION APP REQUIRED",7,t["muted"],False,True)
+            for x0,x1,c in ((79,101,"#50beff"),(101,123,"#7ee1a5"),(123,145,"#e0bbff"),(145,167,"#ffb8a1")): line(x0,183,x1,183,c,3)
+            self.m3_rr(51,224,138,38,19,t["high"]); text(120,236,"PRESS TO RETURN",7,t["muted"],False,True)
 
         else:
             title("WEAR OS")

@@ -17,7 +17,7 @@ use esp_radio::{
 use heapless::{String as HString, Vec as HVec};
 use static_cell::StaticCell;
 
-use crate::{desktop::WifiCredentials, net::{LinkState, NetworkService}, runtime::RuntimeFrame};
+use crate::{desktop::WifiCredentials, net::{LinkState, NetworkService, WebRemoteEvent}, runtime::RuntimeFrame};
 
 static RADIO: StaticCell<Controller<'static>> = StaticCell::new();
 
@@ -74,6 +74,11 @@ pub struct RadioServices {
     wifi_requested: bool,
     bt_requested: bool,
     saved_wifi: Option<WifiCredentials>,
+    // Candidate credentials are not committed to persistent storage until the
+    // station actually associates. This prevents a one-key keyboard typo from
+    // replacing the last known-good profile and creating an endless retry loop.
+    connecting_wifi: Option<WifiCredentials>,
+    persist_wifi: Option<WifiCredentials>,
     wifi_connect_started: Option<u64>,
     wifi_reconnect_at: u64,
     wifi_failures: u8,
@@ -120,6 +125,8 @@ impl RadioServices {
             wifi_requested: false,
             bt_requested: false,
             saved_wifi: None,
+            connecting_wifi: None,
+            persist_wifi: None,
             wifi_connect_started: None,
             wifi_reconnect_at: 0,
             wifi_failures: 0,
@@ -140,12 +147,15 @@ impl RadioServices {
     pub fn ip_address(&self) -> Option<smoltcp::wire::Ipv4Address> { self.net.ip() }
     pub fn take_network_time(&mut self) -> Option<u32> { self.net.take_network_time() }
     pub fn request_network_time_sync(&mut self) { self.net.request_time_sync(); }
+    pub fn take_web_event(&mut self) -> Option<WebRemoteEvent> { self.net.take_web_event() }
+    pub fn take_connected_wifi_for_persist(&mut self) -> Option<WifiCredentials> { self.persist_wifi.take() }
     pub fn wifi_ap_count(&self) -> usize { self.wifi_aps.len() }
     pub fn wifi_ap_info(&self, index: usize) -> Option<(&str, i8)> {
         self.wifi_aps.get(index).map(|ap| (ap.ssid.as_str(), ap.rssi))
     }
 
     pub fn sync_frame(&mut self, frame: &RuntimeFrame) {
+        self.net.set_web_frame(frame);
         let RuntimeFrame::Material(m) = frame else { return; };
         if m.wifi != self.wifi_requested { self.set_wifi(m.wifi); }
         if m.bt != self.bt_requested { self.set_bluetooth(m.bt); }
@@ -159,6 +169,13 @@ impl RadioServices {
                 if !matches!(self.net.link_state(), LinkState::Dhcp | LinkState::Online) {
                     println!("radio: Wi-Fi associated; requesting DHCP");
                     self.net.set_link_state(LinkState::Dhcp);
+                }
+                if let Some(credentials) = self.connecting_wifi.take() {
+                    if self.saved_wifi != Some(credentials) {
+                        self.saved_wifi = Some(credentials);
+                        self.persist_wifi = Some(credentials);
+                        println!("radio: candidate Wi-Fi profile verified; queued for persistence");
+                    }
                 }
                 self.wifi_connect_started = None;
                 self.wifi_reconnect_at = 0;
@@ -176,7 +193,10 @@ impl RadioServices {
                     // with the phone hotspot in Zephyr 0.4/0.5.
                     let _ = self.wifi.disconnect();
                     if self.wifi_failures >= 3 {
-                        println!("radio: three failed associations; doing one hard STA reset");
+                        println!("radio: three failed associations; rejecting unverified candidate and resetting STA");
+                        if self.connecting_wifi.is_some() && self.connecting_wifi != self.saved_wifi {
+                            self.connecting_wifi = None;
+                        }
                         self.reset_wifi_station();
                         self.wifi_failures = 0;
                     }
@@ -190,10 +210,10 @@ impl RadioServices {
                     self.net.set_link_state(LinkState::LinkUp);
                     self.wifi_reconnect_at = now + 1_500;
                 }
-                if self.saved_wifi.is_some() && now >= self.wifi_reconnect_at {
+                if now >= self.wifi_reconnect_at {
                     self.wifi_reconnect_at = now + WIFI_RECONNECT_BACKOFF_MS;
-                    if let Some(credentials) = self.saved_wifi {
-                        println!("radio: reconnecting saved Wi-Fi profile");
+                    if let Some(credentials) = self.connecting_wifi.or(self.saved_wifi) {
+                        println!("radio: reconnecting {} Wi-Fi profile", if self.connecting_wifi.is_some() { "candidate" } else { "saved" });
                         let _ = self.connect_wifi(credentials);
                     }
                 }
@@ -353,7 +373,7 @@ impl RadioServices {
 
         match self.wifi.connect() {
             Ok(()) => {
-                self.saved_wifi = Some(credentials);
+                self.connecting_wifi = Some(credentials);
                 self.wifi_requested = true;
                 self.wifi_connect_started = Some(now_ms());
                 self.wifi_reconnect_at = 0;
@@ -400,6 +420,7 @@ impl RadioServices {
         }
         let _ = self.wifi.set_config(&ModeConfig::None);
         self.wifi_requested = false;
+        self.connecting_wifi = None;
         self.wifi_connect_started = None;
         self.wifi_reconnect_at = 0;
         self.wifi_failures = 0;
@@ -409,7 +430,7 @@ impl RadioServices {
 
     pub fn format_wifi_status<const N: usize>(&self, out: &mut HString<N>) {
         let _ = write!(out, "enabled={} state={:?} aps={}", self.wifi_requested as u8, self.net.link_state(), self.wifi_aps.len());
-        if let Some(ip) = self.net.ip() { let _ = write!(out, " ip={}", ip); }
+        if let Some(ip) = self.net.ip() { let _ = write!(out, " ip={} web=http://{}/", ip, ip); }
         if matches!(self.net.link_state(), LinkState::Online) {
             if let Ok(rssi) = self.wifi.rssi() { let _ = write!(out, " rssi={}", rssi); }
         }

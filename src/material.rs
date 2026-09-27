@@ -34,6 +34,11 @@ pub struct MaterialFrame {
     pub wifi_ap_ssid_len: u8,
     pub wifi_ap_rssi: i8,
     pub wifi_password_len: u8,
+    // On-device-only clear-text preview. Desktop/web serializers deliberately
+    // omit these bytes; they exist only so the physical keyboard can show
+    // exactly what was entered with the crown.
+    pub wifi_password_preview: [u8; 16],
+    pub wifi_password_preview_len: u8,
     pub wifi_editor_char: u8,
     pub wifi_link_state: u8,
 }
@@ -66,7 +71,7 @@ impl MaterialFrame {
             wifi, bt, adb, notes, time_minutes, timer_secs, stopwatch_secs,
             alarm_enabled, auto_time, time_valid, timezone_hours, swap_pages: 0,
             wifi_ap_count: 0, wifi_ap_index: 0, wifi_ap_ssid: [0; 32], wifi_ap_ssid_len: 0,
-            wifi_ap_rssi: -127, wifi_password_len: 0, wifi_editor_char: 0, wifi_link_state: 0,
+            wifi_ap_rssi: -127, wifi_password_len: 0, wifi_password_preview: [0; 16], wifi_password_preview_len: 0, wifi_editor_char: 0, wifi_link_state: 0,
         })
     }
 
@@ -100,6 +105,8 @@ impl MaterialFrame {
             23 => ("AVAILABLE NETWORKS", "SELECT NETWORK", "", ""),
             24 => ("WI-FI PASSWORD", "CROWN TO TYPE", "", ""),
             25 => ("WI-FI", "CONNECTING", "", ""),
+            26 => ("APPS", "LIST VIEW", "", ""),
+            27 => ("ASSISTANT", "READY", "", ""),
             _ => ("WEAR OS", "ANDROID 17", "", ""),
         }
     }
@@ -201,6 +208,8 @@ impl Surface {
             23 => self.wifi_networks(frame, t),
             24 => self.wifi_password(frame, t),
             25 => self.wifi_connecting(frame, t),
+            26 => self.list_launcher(frame, t),
+            27 => self.assistant_page(frame, t),
             _ => self.watchface(frame, t),
         }
         Rect::FULL
@@ -348,6 +357,49 @@ impl Surface {
         self.ring(cx, cy, 12, 2, c);
         self.circle(cx, cy - 6, 2, c);
         self.round_rect(cx - 2, cy - 1, 4, 10, 2, c);
+    }
+
+    fn icon_grid(&mut self, cx: i32, cy: i32, c: u16) {
+        for yy in [-7, 0, 7] { for xx in [-7, 0, 7] { self.circle(cx + xx, cy + yy, 2, c); } }
+    }
+
+    fn icon_assistant(&mut self, cx: i32, cy: i32, c: u16) {
+        // Four-point sparkle: recognizable assistant affordance without
+        // pretending to be a proprietary service logo.
+        self.line(cx, cy - 13, cx, cy + 13, 2, c);
+        self.line(cx - 13, cy, cx + 13, cy, 2, c);
+        self.line(cx - 8, cy - 8, cx + 8, cy + 8, 2, c);
+        self.line(cx - 8, cy + 8, cx + 8, cy - 8, 2, c);
+        self.circle(cx, cy, 3, c);
+    }
+
+    fn icon_connectivity(&mut self, cx: i32, cy: i32, c: u16) {
+        self.icon_wifi(cx - 3, cy - 2, c);
+        self.circle(cx + 10, cy + 10, 3, c);
+    }
+
+    fn app_icon(&mut self, icon: u8, cx: i32, cy: i32, c: u16) {
+        match icon {
+            0 => self.icon_clock(cx, cy, c),
+            1 => self.icon_media(cx, cy, c),
+            2 => self.icon_settings(cx, cy, c),
+            3 => self.icon_connectivity(cx, cy, c),
+            4 => self.icon_info(cx, cy, c),
+            5 => self.icon_assistant(cx, cy, c),
+            _ => self.icon_grid(cx, cy, c),
+        }
+    }
+
+    fn app_accent(icon: u8) -> u16 {
+        match icon {
+            0 => rgb565(181, 232, 211), // clock mint
+            1 => rgb565(255, 191, 171), // media coral
+            2 => rgb565(174, 203, 255), // settings blue
+            3 => rgb565(102, 221, 205), // connectivity teal
+            4 => rgb565(218, 190, 255), // system lavender
+            5 => rgb565(126, 225, 165), // assistant green
+            _ => rgb565(50, 59, 54),
+        }
     }
 
     fn icon_back(&mut self, cx: i32, cy: i32, c: u16) {
@@ -524,14 +576,9 @@ impl Surface {
             (17, 206, 42, 21, 42, 12, t.surface, t.on_surface)
         };
         self.round_rect(x, y, w, h, r, bg);
-        self.circle(cx, y + h / 2, icon_r, if selected { t.primary } else { t.surface_high });
-        let icon_fg = if selected { t.on_primary } else { t.on_surface_variant };
-        match icon {
-            0 => self.icon_clock(cx, y + h / 2, icon_fg),
-            1 => self.icon_media(cx, y + h / 2, icon_fg),
-            2 => self.icon_settings(cx, y + h / 2, icon_fg),
-            _ => self.icon_info(cx, y + h / 2, icon_fg),
-        }
+        self.circle(cx, y + h / 2, icon_r, Self::app_accent(icon));
+        let icon_fg = rgb565(10, 34, 24);
+        self.app_icon(icon, cx, y + h / 2, icon_fg);
         let scale = if label.len() > 12 { 1 } else { 2 };
         self.text(if selected { 64 } else { 70 }, y + (h - 7 * scale) / 2, label, scale, fg);
     }
@@ -612,14 +659,65 @@ impl Surface {
 
 
     fn launcher(&mut self, f: MaterialFrame, t: Theme) {
-        self.text_center(12, "APPS", 1, t.on_surface_variant);
-        let labels = ["CLOCK", "MEDIA CONTROLS", "SETTINGS", "SYSTEM INFO"];
-        let cur = f.cursor.min(3) as usize;
-        let start = cur.saturating_sub(1).min(1);
-        for row in 0..3 {
-            let i = (start + row).min(3);
-            self.app_row(48 + row as i32 * 64, labels[i], i == cur, i as u8, t);
+        // Honeycomb/grid launcher adapted from modern Wear OS.  The selected
+        // bubble grows slightly so the encoder always has an obvious focus.
+        let labels = ["CLOCK", "MEDIA", "SETTINGS", "CONNECTIVITY", "SYSTEM INFO", "ASSISTANT", "LIST VIEW"];
+        let cur = f.cursor.min(6) as usize;
+        let pos = [
+            (52, 70), (120, 58), (188, 70),
+            (52, 140), (120, 128), (188, 140),
+            (120, 208),
+        ];
+        for i in 0..7 {
+            let (cx, cy) = pos[i];
+            let selected = i == cur;
+            let r = if selected { 33 } else { if i == 6 { 26 } else { 28 } };
+            let bg = if i == 6 { t.surface_high } else { Self::app_accent(i as u8) };
+            let fg = if i == 6 { t.on_surface_variant } else { rgb565(10, 34, 24) };
+            if selected { self.ring(cx, cy, r + 3, 2, t.on_surface); }
+            self.circle(cx, cy, r, bg);
+            self.app_icon(i as u8, cx, cy, fg);
         }
+        // Only the focused app gets a label, keeping the grid glanceable like
+        // the round-screen launcher while still being usable with one encoder.
+        self.round_rect(31, 244, 178, 27, 13, t.surface);
+        self.text_center(254, labels[cur], 1, t.on_surface);
+    }
+
+    fn list_launcher(&mut self, f: MaterialFrame, t: Theme) {
+        let labels = ["CLOCK", "MEDIA", "SETTINGS", "CONNECTIVITY", "SYSTEM INFO", "ASSISTANT", "GRID VIEW"];
+        let cur = f.cursor.min(6) as usize;
+        let start = cur.saturating_sub(1).min(4);
+        for row in 0..3 {
+            let i = (start + row).min(6);
+            let y = 44 + row as i32 * 66;
+            let selected = i == cur;
+            if i == 6 {
+                let (x,w,h) = if selected { (22,196,54) } else { (34,172,46) };
+                self.round_rect(x, y, w, h, h/2, if selected { t.primary } else { t.surface_high });
+                self.icon_grid(x + 31, y + h/2, if selected { t.on_primary } else { t.on_surface_variant });
+                self.text(x + 58, y + (h-14)/2, "GRID VIEW", 2, if selected { t.on_primary } else { t.on_surface });
+            } else {
+                self.app_row(y, labels[i], selected, i as u8, t);
+            }
+        }
+        self.circle(228, 72 + (cur.saturating_sub(start) as i32 * 66), 3, t.primary);
+    }
+
+    fn assistant_page(&mut self, _f: MaterialFrame, t: Theme) {
+        // Assistant shell is ready for the future phone companion.  The UI is
+        // intentionally service-neutral: it mirrors the Wear assistant surface
+        // without claiming a Google/Gemini backend that does not exist here.
+        self.ring(120, 116, 70, 2, t.surface_high);
+        self.icon_assistant(120, 91, t.primary);
+        self.text_center(126, "ASK ASSISTANT", 2, t.on_surface);
+        self.text_center(158, "COMPANION APP REQUIRED", 1, t.on_surface_variant);
+        self.line(79, 183, 101, 183, 3, rgb565(80, 190, 255));
+        self.line(101, 183, 123, 183, 3, rgb565(126, 225, 165));
+        self.line(123, 183, 145, 183, 3, rgb565(224, 187, 255));
+        self.line(145, 183, 167, 183, 3, rgb565(255, 184, 161));
+        self.round_rect(51, 224, 138, 38, 19, t.surface_high);
+        self.text_center(236, "PRESS TO RETURN", 1, t.on_surface_variant);
     }
 
 
@@ -713,30 +811,44 @@ impl Surface {
         self.text_center(116, "AOSP WEAR", 2, t.on_surface);
         self.text_center(144, "ANDROID 17", 1, t.primary);
         self.round_rect(22, 168, 196, 36, 18, t.surface);
-        self.text_center(180, "BUILD 17.1.6", 1, t.on_surface);
+        self.text_center(180, "BUILD 17.2.1", 1, t.on_surface);
         self.text_center(216, "ESP32-S3-ZERO-N4R2", 1, t.on_surface_variant);
         self.text_center(238, if f.swap_pages > 0 { "SYSTEM STORAGE ACTIVE" } else { "SYSTEM STORAGE READY" }, 1, t.outline);
     }
 
 
     fn widgets(&mut self, f: MaterialFrame, t: Theme) {
-        self.title("TILES", t);
         let cur = f.cursor.min(2);
-        self.round_rect(14, 51, 212, 166, 38, t.surface);
-        if cur == 0 {
-            self.icon_wifi(120, 92, if f.wifi { t.primary } else { t.outline });
-            self.text_center(126, "CONNECTIVITY", 2, t.on_surface);
-            self.text_center(157, if f.wifi { "WI-FI ON" } else { "WI-FI OFF" }, 1, t.on_surface_variant);
+        // Edge-to-edge Wear tile card.  Each tile gets its own accent family
+        // instead of looking like another Settings page.
+        let (bg, fg, sub) = if cur == 0 {
+            (rgb565(58, 113, 94), rgb565(228, 255, 241), if f.wifi { "WI-FI CONNECTED" } else { "WI-FI OFF" })
         } else if cur == 1 {
-            self.icon_clock(120, 91, t.primary);
-            self.text_center(126, "TIMER", 2, t.on_surface);
-            self.text_center(157, if f.timer_secs > 0 { "RUNNING" } else { "5 MINUTES" }, 1, t.on_surface_variant);
+            (rgb565(47, 78, 126), rgb565(226, 236, 255), if f.timer_secs > 0 { "TIMER RUNNING" } else { "5 MINUTE TIMER" })
         } else {
-            self.icon_clock(120, 91, if f.alarm_enabled { t.primary } else { t.outline });
-            self.text_center(126, "ALARM", 2, t.on_surface);
-            self.text_center(157, if f.alarm_enabled { "ON" } else { "OFF" }, 1, t.on_surface_variant);
+            (rgb565(92, 67, 119), rgb565(247, 231, 255), if f.alarm_enabled { "ALARM ON" } else { "ALARM OFF" })
+        };
+        self.round_rect(10, 24, 220, 208, 42, bg);
+        if cur == 0 {
+            self.icon_wifi(52, 66, fg);
+            self.text(82, 55, "CONNECTIVITY", 1, fg);
+            self.text(27, 112, sub, 2, fg);
+            self.text(27, 153, "PRESS TO OPEN", 1, fg);
+        } else if cur == 1 {
+            self.icon_clock(52, 66, fg);
+            self.text(82, 55, "CLOCK", 1, fg);
+            self.text(27, 112, sub, 2, fg);
+            let timer = Self::mmss_text(if f.timer_secs == 0 { 300 } else { f.timer_secs });
+            let timer_s = core::str::from_utf8(&timer).unwrap_or("05:00");
+            self.text(27, 153, timer_s, 2, fg);
+        } else {
+            self.icon_clock(52, 66, fg);
+            self.text(82, 55, "ALARM", 1, fg);
+            self.text(27, 112, sub, 2, fg);
+            self.text(27, 153, "PRESS TO OPEN", 1, fg);
         }
-        for i in 0..3 { self.circle(108 + i * 12, 239, if i as u8 == cur { 4 } else { 2 }, if i as u8 == cur { t.primary } else { t.outline }); }
+        // Carousel dots deliberately sit outside the card like Wear tiles.
+        for i in 0..3 { self.circle(108 + i * 12, 254, if i as u8 == cur { 4 } else { 2 }, if i as u8 == cur { t.primary } else { t.outline }); }
     }
 
 
@@ -827,7 +939,7 @@ impl Surface {
     }
 
     fn wifi_password(&mut self, f: MaterialFrame, t: Theme) {
-        const ALPHA: &[u8] = b"qwertyuiopasdfghjklzxcvbnm.@_-";
+        const ALPHA: &[u8] = b"qwertyuiopasdfghjklzxcvbnm";
         const SYMBOLS_1: &[u8] = b"1234567890!@#$%^&*()_+-=[]";
         const SYMBOLS_2: &[u8] = b"{}.,:;?'\"/\\|<>`~";
 
@@ -835,50 +947,84 @@ impl Surface {
         let selected = (f.wifi_editor_char & 0x3f) as usize;
         let chars = match page { 2 => SYMBOLS_1, 3 => SYMBOLS_2, _ => ALPHA };
 
-        self.text_center(7, "WI-FI PASSWORD", 1, t.on_surface_variant);
-        self.text_center(22, Self::wifi_ssid(&f), 1, t.on_surface);
-        self.round_rect(14, 39, 212, 34, 14, t.surface);
+        // Compact Gboard-like password editor: no suggestion strip, only the
+        // field and keyboard.  It is laid out for one-dimensional encoder
+        // focus, so the selected key lifts/enlarges instead of relying on touch.
+        self.text_center(5, Self::wifi_ssid(&f), 1, t.on_surface_variant);
+        self.round_rect(12, 21, 216, 40, 18, t.surface);
         if f.wifi_password_len == 0 {
-            self.text_center(52, "PASSWORD", 1, t.outline);
+            self.text(26, 37, "PASSWORD", 1, t.outline);
         } else {
-            // Keep the entered passphrase private, like Android's password
-            // field, while making every key itself fully visible below.
-            let stars = match f.wifi_password_len {
-                1..=4 => "****", 5..=8 => "********", 9..=12 => "************", _ => "****************",
-            };
-            self.text_center(47, stars, 1, t.on_surface);
-            let count = if f.wifi_password_len < 10 {
-                [b'0' + f.wifi_password_len, b' ', b'C', b'H']
-            } else {
-                [b'0' + (f.wifi_password_len / 10), b'0' + (f.wifi_password_len % 10), b'C', b'H']
-            };
-            if let Ok(label) = core::str::from_utf8(&count) { self.text_center(60, label, 1, t.outline); }
+            // Crown-only input is easy to overshoot by one detent. Show the
+            // actual tail of the password on the physical watch so a wrong
+            // neighbouring key is visible before CONNECT is pressed. The
+            // preview is intentionally not serialized to desktop/web remotes.
+            let n = f.wifi_password_preview_len.min(16) as usize;
+            let visible = core::str::from_utf8(&f.wifi_password_preview[..n]).unwrap_or("?");
+            self.text(25, 35, visible, 1, t.on_surface);
+            if f.wifi_password_len as usize > n { self.text(15, 35, "~", 1, t.outline); }
         }
+        // Small lock-like dot shows that this is a password field.
+        self.circle(211, 41, 5, t.primary_container);
+        self.circle(211, 41, 2, t.primary);
 
-        let rows: &[usize] = match page {
-            2 => &[10, 10, 6],
-            3 => &[9, 8],
-            _ => &[10, 9, 7, 4],
+        let draw_char_key = |this: &mut Surface, x: i32, y: i32, w: i32, h: i32, ch: u8, idx: usize| {
+            let is_sel = selected == idx;
+            let yy = if is_sel { y - 3 } else { y };
+            let hh = if is_sel { h + 6 } else { h };
+            let bg = if is_sel { t.primary } else { t.surface_high };
+            let fg = if is_sel { t.on_primary } else { t.on_surface };
+            this.round_rect(x, yy, w, hh, 8, bg);
+            let one = [if page == 1 { ch.to_ascii_uppercase() } else { ch }];
+            let label = core::str::from_utf8(&one).unwrap_or("?");
+            let scale = if is_sel { 2 } else { 1 };
+            this.text_center_x(x + w/2, yy + (hh - 7*scale)/2, label, scale, fg);
         };
-        let mut base = 0usize;
-        let mut y = 80i32;
-        for &count in rows {
-            let key_w = 20i32;
-            let gap = 2i32;
-            let row_w = count as i32 * key_w + (count as i32 - 1) * gap;
-            let mut x = (WIDTH as i32 - row_w) / 2;
-            for pos in 0..count {
-                let idx = base + pos;
-                if idx >= chars.len() { break; }
-                let mut ch = chars[idx];
-                if page == 1 { ch = ch.to_ascii_uppercase(); }
-                let one = [ch];
-                let label = core::str::from_utf8(&one).unwrap_or("?");
-                self.keyboard_key(x, y, key_w, 23, label, selected == idx, t);
-                x += key_w + gap;
+
+        if page <= 1 {
+            // QWERTY rows matching a phone keyboard silhouette.
+            let rows = [10usize, 9usize, 7usize];
+            let mut base = 0usize;
+            for (r, count) in rows.into_iter().enumerate() {
+                let y = 76 + r as i32 * 37;
+                if r < 2 {
+                    let kw = 20; let gap = 2;
+                    let row_w = count as i32 * kw + (count as i32 - 1) * gap;
+                    let mut x = (WIDTH as i32 - row_w) / 2;
+                    for pos in 0..count {
+                        let idx = base + pos; let ch = chars[idx];
+                        draw_char_key(self, x, y, kw, 29, ch, idx);
+                        x += kw + gap;
+                    }
+                } else {
+                    // Third row is inset like Gboard; Shift/Delete live on the
+                    // service row below, so all letters remain large enough.
+                    let kw = 22; let gap = 3;
+                    let row_w = count as i32 * kw + (count as i32 - 1) * gap;
+                    let mut x = (WIDTH as i32 - row_w) / 2;
+                    for pos in 0..count {
+                        let idx = base + pos; let ch = chars[idx];
+                        draw_char_key(self, x, y, kw, 29, ch, idx);
+                        x += kw + gap;
+                    }
+                }
+                base += count;
             }
-            base += count;
-            y += 27;
+        } else {
+            let rows: &[usize] = if page == 2 { &[10, 10, 6] } else { &[9, 8] };
+            let mut base = 0usize;
+            for (r, &count) in rows.iter().enumerate() {
+                let y = 76 + r as i32 * 37;
+                let kw = if count >= 10 { 20 } else { 22 }; let gap = 2;
+                let row_w = count as i32 * kw + (count as i32 - 1) * gap;
+                let mut x = (WIDTH as i32 - row_w) / 2;
+                for pos in 0..count {
+                    let idx = base + pos; if idx >= chars.len() { break; }
+                    draw_char_key(self, x, y, kw, 29, chars[idx], idx);
+                    x += kw + gap;
+                }
+                base += count;
+            }
         }
 
         let n = chars.len();
@@ -887,14 +1033,21 @@ impl Surface {
             3 => ("123", "ABC"),
             _ => (if page == 1 { "abc" } else { "SHIFT" }, "123"),
         };
-        self.keyboard_key(10, 190, 50, 27, page_key, selected == n, t);
-        self.keyboard_key(64, 190, 42, 27, alpha_key, selected == n + 1, t);
-        self.keyboard_key(110, 190, 66, 27, "SPACE", selected == n + 2, t);
-        self.keyboard_key(180, 190, 50, 27, "DEL", selected == n + 3, t);
-        self.keyboard_key(10, 224, 142, 32, "CONNECT", selected == n + 4, t);
-        self.keyboard_key(158, 224, 72, 32, "BACK", selected == n + 5, t);
-        self.text_center(264, "ROTATE CROWN  PRESS KEY", 1, t.outline);
+        // Service row mirrors a phone keyboard, but every key remains a simple
+        // crown target in the same linear focus order.
+        self.keyboard_key(6, 188, 50, 31, page_key, selected == n, t);
+        self.keyboard_key(60, 188, 42, 31, alpha_key, selected == n + 1, t);
+        self.keyboard_key(106, 188, 74, 31, "SPACE", selected == n + 2, t);
+        self.keyboard_key(184, 188, 50, 31, "DEL", selected == n + 3, t);
+
+        self.keyboard_key(6, 226, 64, 34, "BACK", selected == n + 5, t);
+        self.keyboard_key(76, 226, 158, 34, "CONNECT", selected == n + 4, t);
+
+        // Make the encoder model discoverable without a permanent instruction
+        // banner: selected action is obvious from the raised accent key.
+        self.text_center(266, "ROTATE  /  PRESS", 1, t.outline);
     }
+
 
     fn wifi_connecting(&mut self, f: MaterialFrame, t: Theme) {
         self.title("WI-FI", t);
@@ -1022,7 +1175,7 @@ impl Surface {
             let y = 57 + i as i32 * 64;
             self.wear_row(y, labels[i], i == cur, t);
             if i == 0 { self.text(176, y + 19, if f.notes > 0 { "NEW" } else { "0" }, 1, t.on_surface_variant); }
-            if i == 1 { self.text(176, y + 19, "4", 1, t.on_surface_variant); }
+            if i == 1 { self.text(176, y + 19, "6", 1, t.on_surface_variant); }
         }
     }
 
@@ -1036,7 +1189,7 @@ impl Surface {
             let y = 57 + row as i32 * 64;
             self.wear_row(y, labels[i], i == cur, t);
             if i == 0 { self.toggle(174, y + 13, f.adb, t); }
-            if i == 1 { self.text(157, y + 19, "17.1.6", 1, t.primary); }
+            if i == 1 { self.text(157, y + 19, "17.2.1", 1, t.primary); }
         }
         if f.adb { self.text_center(253, "WIRELESS ADB IS A DEVELOPER FEATURE", 1, t.error); }
     }

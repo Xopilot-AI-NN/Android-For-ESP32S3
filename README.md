@@ -1,6 +1,6 @@
-# AOSP Wear OS Bootloader 17.1.6 — Android 17 QPR1 embedded runtime
+# AOSP Wear OS Bootloader 17.2.1 — Android 17 QPR1 embedded runtime
 
-Release 17.1.6 provides the Wear-parity Material 3 Expressive SystemUI flow, a real 32 MiB GPT `swap` backing partition for explicit ZPager state paging, a no-reset ZADB developer bridge, and the native ESP32-S3 Wi-Fi/BLE radio build. See [`SYSTEM_V03.md`](SYSTEM_V03.md).
+Release 17.2.1 provides the Wear-parity Material 3 Expressive SystemUI flow, a real 32 MiB GPT `swap` backing partition for explicit ZPager state paging, a no-reset ZADB developer bridge, and the native ESP32-S3 Wi-Fi/BLE radio build. See [`SYSTEM_V03.md`](SYSTEM_V03.md).
 
 Quick development boot:
 

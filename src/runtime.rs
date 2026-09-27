@@ -85,7 +85,7 @@ use rhai::{AST, CallFnOptions, Engine, ImmutableString, Scope};
 // Compact full QWERTY keyboard used by the crown-only Wi-Fi password editor.
 // The visible rows mirror a phone/watch keyboard instead of the old single-
 // character carousel.  Password bytes never leave this Runtime object.
-const WIFI_KB_ALPHA: &[u8] = b"qwertyuiopasdfghjklzxcvbnm.@_-";
+const WIFI_KB_ALPHA: &[u8] = b"qwertyuiopasdfghjklzxcvbnm";
 // Together these two symbol pages plus SPACE cover the complete printable
 // ASCII set used by WPA/WPA2 passphrases (0x20..=0x7e).
 const WIFI_KB_SYMBOLS_1: &[u8] = b"1234567890!@#$%^&*()_+-=[]";
@@ -135,6 +135,7 @@ pub enum RuntimeError { Script, NonZero, Protocol }
 pub enum RuntimeEvent {
     Sync,
     Home,
+    Back,
     Rotate(i32),
     Swipe(i32),
     Press,
@@ -316,6 +317,13 @@ impl Runtime {
             m.wifi_ap_ssid[..n].copy_from_slice(&bytes[..n]); m.wifi_ap_ssid_len = n as u8; m.wifi_ap_rssi = ap.rssi;
         }
         m.wifi_password_len = self.wifi_ui.password.len() as u8;
+        m.wifi_password_preview = [0; 16];
+        m.wifi_password_preview_len = 0;
+        let password = self.wifi_ui.password.as_bytes();
+        let start = password.len().saturating_sub(16);
+        let tail = &password[start..];
+        m.wifi_password_preview[..tail.len()].copy_from_slice(tail);
+        m.wifi_password_preview_len = tail.len() as u8;
         // High two bits carry the keyboard page; low six bits are the selected key.
         // This keeps the viewer protocol compatible while allowing a real full keyboard.
         m.wifi_editor_char = (self.wifi_ui.keyboard_page << 6) | (self.wifi_ui.editor_char & 0x3f);
@@ -336,6 +344,7 @@ impl Runtime {
         let (kind, value) = match event {
             RuntimeEvent::Sync => ("sync", 0),
             RuntimeEvent::Home => ("home", 0),
+            RuntimeEvent::Back => ("back", 0),
             RuntimeEvent::Rotate(delta) => ("rotate", delta),
             RuntimeEvent::Swipe(direction) => ("swipe", direction),
             RuntimeEvent::Press => ("press", 0),
@@ -388,7 +397,7 @@ impl Runtime {
                     } else { self.state = set_sc(self.state, 12, 1); }
                     true
                 }
-                RuntimeEvent::Swipe(2) | RuntimeEvent::Home => { self.state = set_sc(self.state, 12, 1); true }
+                RuntimeEvent::Swipe(2) | RuntimeEvent::Back => { self.state = set_sc(self.state, 12, 1); true }
                 RuntimeEvent::Sync => true,
                 _ => false,
             },
@@ -445,13 +454,14 @@ impl Runtime {
                     }
                     true
                 }
-                RuntimeEvent::Swipe(2) => { self.state = set_sc(self.state,23,self.wifi_ui.selected); true }
-                RuntimeEvent::Home => { self.wifi_ui.pending_connect = true; self.wifi_ui.link_state = 1; self.state = set_sc(self.state,25,0); true }
+                RuntimeEvent::Swipe(2) | RuntimeEvent::Back => { self.state = set_sc(self.state,23,self.wifi_ui.selected); true }
+                RuntimeEvent::Home => { self.state = set_sc(self.state,1,0); true }
                 RuntimeEvent::Sync => true,
                 _ => false,
             },
             25 => match event {
-                RuntimeEvent::Press | RuntimeEvent::Swipe(2) | RuntimeEvent::Home => { self.state = set_sc(self.state,12,1); true }
+                RuntimeEvent::Press | RuntimeEvent::Swipe(2) | RuntimeEvent::Back => { self.state = set_sc(self.state,12,1); true }
+                RuntimeEvent::Home => { self.state = set_sc(self.state,1,0); true }
                 RuntimeEvent::Sync => true,
                 _ => false,
             },

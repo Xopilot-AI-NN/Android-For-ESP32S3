@@ -81,7 +81,7 @@ fn main() -> ! {
         .with_cpu_clock(CpuClock::max())
         .with_psram(esp_hal::psram::PsramConfig::default());
     let p = esp_hal::init(hal_cfg);
-    println!("thermal: transport-safe profile active; CPU=max during USB-PC/radio runtime");
+    println!("performance: ESP32-S3 CPU=240MHz (CpuClock::max); USB-PC/radio profile active");
 
     let (_, psram_size) = esp_hal::psram::psram_raw_parts(&p.PSRAM);
     println!("PSRAM detected: {} bytes", psram_size);
@@ -374,11 +374,6 @@ fn main() -> ! {
                         if let Some(radios) = radios.as_mut() {
                             let ok = radios.connect_wifi(credentials);
                             if ok {
-                                if let Some(pager) = pager.as_ref() {
-                                    if save_wifi_credentials(pager, session.block_device(), credentials) {
-                                        println!("radio: saved Wi-Fi profile to ZPager");
-                                    }
-                                }
                                 if let Ok(frame) = set_runtime_flag(&mut os, 21, true) {
                                     let _ = display.runtime(&frame);
                                     session.block_device().viewer_runtime(&frame);
@@ -489,6 +484,8 @@ fn main() -> ! {
                 if matches!(screen, 0 | 1 | 6 | 10 | 11) {
                     if let Ok(mut frame) = os.render() {
                         frame.set_swap_pages(pager_used.count_ones().min(255) as u8);
+                        #[cfg(feature = "radio-services")]
+                        if let Some(radios) = radios.as_mut() { radios.sync_frame(&frame); }
                         let _ = display.runtime(&frame);
                         session.block_device().viewer_runtime(&frame);
                     }
@@ -496,8 +493,9 @@ fn main() -> ! {
             }
             #[cfg(feature = "radio-services")]
             if let Some(radios) = radios.as_mut() {
-                if let Some(mut frame) = service_radio_runtime(radios, &mut os, pager.as_ref(), session.block_device()) {
+                if let Some(mut frame) = service_radio_runtime(radios, &mut os, pager.as_ref(), session.block_device(), &mut pager_used) {
                     frame.set_swap_pages(pager_used.count_ones().min(255) as u8);
+                    radios.sync_frame(&frame);
                     let _ = display.runtime(&frame);
                     session.block_device().viewer_runtime(&frame);
                 }
@@ -677,7 +675,6 @@ fn main() -> ! {
 
         let mut last_power = keys.power_pressed();
         let mut power_hold_ticks: u16 = 0;
-        let mut power_long_handled = false;
         let mut ui_refresh_ticks: u8 = 0;
         loop {
             let rotation = keys.poll_rotation();
@@ -688,30 +685,27 @@ fn main() -> ! {
                     let _ = display.runtime(&frame);
                 }
             }
-            // The board has an encoder/crown but no touch panel. Short press is
-            // therefore the focused-item action; holding the crown for about
-            // 800 ms is the always-available Wear-style Home gesture.
+            // Encoder-only hardware contract: short press selects, a normal
+            // long press goes Back, and a very long press returns Home.  The
+            // decision is made on release so a long hold cannot accidentally
+            // trigger both Back and Home while the button is still down.
             let power = keys.power_pressed();
             if power {
                 power_hold_ticks = power_hold_ticks.saturating_add(1);
-                if power_hold_ticks >= 40 && !power_long_handled {
-                    if let Ok(frame) = dispatch_with_pager(&mut os, runtime::RuntimeEvent::Home, pager.as_ref(), session.block_device(), &mut pager_used) {
-                        #[cfg(feature = "radio-services")]
-                        if let Some(radios) = radios.as_mut() { radios.sync_frame(&frame); }
-                        let _ = display.runtime(&frame);
-                    }
-                    power_long_handled = true;
-                }
             } else if last_power {
-                if !power_long_handled {
-                    if let Ok(frame) = dispatch_with_pager(&mut os, runtime::RuntimeEvent::Press, pager.as_ref(), session.block_device(), &mut pager_used) {
-                        #[cfg(feature = "radio-services")]
-                        if let Some(radios) = radios.as_mut() { radios.sync_frame(&frame); }
-                        let _ = display.runtime(&frame);
-                    }
+                let action = if power_hold_ticks >= 90 {
+                    runtime::RuntimeEvent::Home       // ~1.8 s
+                } else if power_hold_ticks >= 35 {
+                    runtime::RuntimeEvent::Back       // ~0.7 s
+                } else {
+                    runtime::RuntimeEvent::Press
+                };
+                if let Ok(frame) = dispatch_with_pager(&mut os, action, pager.as_ref(), session.block_device(), &mut pager_used) {
+                    #[cfg(feature = "radio-services")]
+                    if let Some(radios) = radios.as_mut() { radios.sync_frame(&frame); }
+                    let _ = display.runtime(&frame);
                 }
                 power_hold_ticks = 0;
-                power_long_handled = false;
             }
             last_power = power;
 
@@ -756,7 +750,6 @@ fn main() -> ! {
                         #[cfg(feature = "radio-services")]
                         if let Some(radios) = radios.as_mut() {
                             if radios.connect_wifi(credentials) {
-                                if let Some(pager) = pager.as_ref() { let _ = save_wifi_credentials(pager, session.block_device(), credentials); }
                                 let _ = set_runtime_flag(&mut os, 21, true);
                             }
                         }
@@ -823,14 +816,17 @@ fn main() -> ! {
                 if matches!(screen, 0 | 1 | 6 | 10 | 11) {
                     if let Ok(mut frame) = os.render() {
                         frame.set_swap_pages(pager_used.count_ones().min(255) as u8);
+                        #[cfg(feature = "radio-services")]
+                        if let Some(radios) = radios.as_mut() { radios.sync_frame(&frame); }
                         let _ = display.runtime(&frame);
                     }
                 }
             }
             #[cfg(feature = "radio-services")]
             if let Some(radios) = radios.as_mut() {
-                if let Some(mut frame) = service_radio_runtime(radios, &mut os, pager.as_ref(), session.block_device()) {
+                if let Some(mut frame) = service_radio_runtime(radios, &mut os, pager.as_ref(), session.block_device(), &mut pager_used) {
                     frame.set_swap_pages(pager_used.count_ones().min(255) as u8);
+                    radios.sync_frame(&frame);
                     let _ = display.runtime(&frame);
                 }
             }
@@ -866,9 +862,37 @@ fn service_radio_runtime<D: BlockDevice>(
     os: &mut runtime::Runtime,
     pager: Option<&page_store::PageStore>,
     dev: &D,
+    pager_used: &mut u32,
 ) -> Option<runtime::RuntimeFrame> {
     if rtc::take_network_sync_request() { radios.request_network_time_sync(); }
     radios.tick(((os.state() >> 23) & 1) != 0);
+
+    // The browser remote uses the same RuntimeEvent path as the physical crown
+    // and desktop viewer, so it cannot bypass normal navigation semantics.
+    if let Some(web) = radios.take_web_event() {
+        let event = match web {
+            net::WebRemoteEvent::Rotate(d) => runtime::RuntimeEvent::Rotate(d as i32),
+            net::WebRemoteEvent::Press => runtime::RuntimeEvent::Press,
+            net::WebRemoteEvent::Back => runtime::RuntimeEvent::Back,
+            net::WebRemoteEvent::Home => runtime::RuntimeEvent::Home,
+            net::WebRemoteEvent::Swipe(d) => runtime::RuntimeEvent::Swipe(d as i32),
+        };
+        if let Ok(frame) = dispatch_with_pager(os, event, pager, dev, pager_used) {
+            radios.sync_frame(&frame);
+            return Some(frame);
+        }
+    }
+
+    // Commit Wi-Fi credentials only after real association succeeded. A typo in
+    // the crown keyboard must never overwrite the previous known-good profile.
+    if let Some(credentials) = radios.take_connected_wifi_for_persist() {
+        if let Some(pager) = pager {
+            if save_wifi_credentials(pager, dev, credentials) {
+                println!("radio: verified Wi-Fi profile persisted");
+            }
+        }
+    }
+
     let link = match radios.network_state() {
         net::LinkState::Down => 0,
         net::LinkState::Associating => 1,
@@ -899,7 +923,6 @@ fn service_radio_runtime<D: BlockDevice>(
             runtime::WifiUiAction::Connect { ssid, password } => {
                 if let Some(credentials) = WifiCredentials::from_parts(ssid.as_str(), password.as_str()) {
                     if radios.connect_wifi(credentials) {
-                        if let Some(pager) = pager { let _ = save_wifi_credentials(pager, dev, credentials); }
                         let _ = set_runtime_flag(os, 21, true);
                     }
                 }
