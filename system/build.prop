@@ -6,9 +6,9 @@ ro.product.system.device=aosp_wear
 ro.build.version.release=17
 ro.build.version.sdk=37
 ro.build.version.codename=REL
-ro.build.version.incremental=AOSP17QPR1.17.1.6
+ro.build.version.incremental=AOSP17QPR1.17.2.1
 ro.build.display.id=AOSP Wear OS Android 17 QPR1
-ro.build.fingerprint=aosp/aosp_wear/aosp_wear:17/QPR1/17.1.6:userdebug/test-keys
+ro.build.fingerprint=aosp/aosp_wear/aosp_wear:17/QPR1/17.2.1:userdebug/test-keys
 ro.build.flavor=aosp_wear-userdebug
 ro.build.type=userdebug
 ro.build.tags=test-keys
@@ -27,4 +27,4 @@ ro.wear.platform=aosp
 ro.aosp_esp32.ui=wearos-material3-expressive
 ro.aosp_esp32.shell=wear-runtime-v8
 
-ro.aosp_esp32.version=17.1.6
+ro.aosp_esp32.version=17.2.1
