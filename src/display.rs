@@ -1,10 +1,21 @@
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DisplayError { Bus }
 
+use crate::runtime::RuntimeFrame;
+
 pub trait BootDisplay {
     fn boot_logo(&mut self) -> Result<(), DisplayError>;
     fn boot_progress(&mut self, label: &str, phase: u8) -> Result<(), DisplayError>;
     fn status(&mut self, title: &str, l1: &str, l2: &str, l3: &str) -> Result<(), DisplayError>;
+    fn runtime(&mut self, frame: &RuntimeFrame) -> Result<(), DisplayError> {
+        match frame {
+            RuntimeFrame::Legacy(f) => self.status(&f.title, &f.line1, &f.line2, &f.line3),
+            RuntimeFrame::Material(f) => {
+                let (title, l1, l2, l3) = f.fallback();
+                self.status(title, l1, l2, l3)
+            }
+        }
+    }
     fn fastboot(&mut self) -> Result<(), DisplayError> {
         self.status("FASTBOOT MODE", "USB: READY", "PWR: REBOOT", "CMD: HELP")
     }
@@ -112,7 +123,7 @@ pub use oled::Display as Ssd1306Display;
 mod tft {
     use embedded_hal::{delay::DelayNs, digital::OutputPin, spi::SpiBus};
     use super::{BootDisplay, DisplayError};
-    use crate::{config, font::glyph};
+    use crate::{config, font::glyph, material::{Rect, Surface}, runtime::RuntimeFrame};
 
     const W: i32 = 240;
     const H: i32 = 280;
@@ -130,6 +141,7 @@ mod tft {
         dc: DC,
         _rst: RST,
         bl: BL,
+        material_surface: Surface,
     }
 
     impl<SPI, CS, DC, RST, BL> St7789Display<SPI, CS, DC, RST, BL>
@@ -148,7 +160,7 @@ mod tft {
             delay.delay_ms(20);
             rst.set_high().map_err(|_| DisplayError::Bus)?;
             delay.delay_ms(120);
-            let mut s = Self { spi, cs, dc, _rst: rst, bl };
+            let mut s = Self { spi, cs, dc, _rst: rst, bl, material_surface: Surface::new() };
             s.cmd(0x01, &[])?; // SWRESET
             delay.delay_ms(120);
             s.cmd(0x11, &[])?; // SLPOUT
@@ -221,6 +233,31 @@ mod tft {
 
         fn clear(&mut self, color: u16) -> Result<(), DisplayError> { self.fill_rect(0, 0, W, H, color) }
 
+        fn flush_material_rect(&mut self, rect: Rect) -> Result<(), DisplayError> {
+            let x0 = rect.x.max(0);
+            let y0 = rect.y.max(0);
+            let x1 = rect.x1().min(W - 1);
+            let y1 = rect.y1().min(H - 1);
+            if x1 < x0 || y1 < y0 { return Ok(()); }
+            self.set_window(x0, y0, x1, y1)?;
+            let pixels = self.material_surface.pixels();
+            let mut buf = [0u8; 256];
+            for y in y0..=y1 {
+                let row = &pixels[y as usize * W as usize + x0 as usize .. y as usize * W as usize + x1 as usize + 1];
+                let mut pos = 0;
+                while pos < row.len() {
+                    let count = (row.len() - pos).min(buf.len() / 2);
+                    for (i, &px) in row[pos..pos + count].iter().enumerate() {
+                        buf[i * 2] = (px >> 8) as u8;
+                        buf[i * 2 + 1] = px as u8;
+                    }
+                    self.spi.write(&buf[..count * 2]).map_err(|_| DisplayError::Bus)?;
+                    pos += count;
+                }
+            }
+            self.cs.set_high().map_err(|_| DisplayError::Bus)
+        }
+
         fn glyph(&mut self, x: i32, y: i32, ch: u8, scale: i32, color: u16) -> Result<(), DisplayError> {
             let g = glyph(ch.to_ascii_uppercase());
             for (col, bits) in g.iter().enumerate() {
@@ -287,6 +324,15 @@ mod tft {
             self.text(24, 104, l1, 2, WHITE)?;
             self.text(24, 142, l2, 2, WHITE)?;
             self.text(24, 180, l3, 2, WHITE)
+        }
+        fn runtime(&mut self, frame: &RuntimeFrame) -> Result<(), DisplayError> {
+            match frame {
+                RuntimeFrame::Material(scene) => {
+                    let dirty = self.material_surface.render(*scene);
+                    self.flush_material_rect(dirty)
+                }
+                RuntimeFrame::Legacy(f) => self.status(&f.title, &f.line1, &f.line2, &f.line3),
+            }
         }
         fn error(&mut self, code: &str, detail: &str) -> Result<(), DisplayError> {
             self.clear(BLACK)?;

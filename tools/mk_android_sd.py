@@ -229,6 +229,7 @@ def main():
         ("vendor_boot_a", 16), ("vendor_boot_b", 16),
         ("vbmeta_a", 1), ("vbmeta_b", 1),
         ("super", 128),
+        ("swap", 32),
     ]
     total_bytes = mib(args.size_mib)
     total_lba = total_bytes // SECTOR

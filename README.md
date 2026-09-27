@@ -1,3 +1,25 @@
+# Zephyr Watch Bootloader v1.6 — AOSP storage + Material SystemUI + ZPager
+
+Current bring-up adds a lock-screen/watchface/launcher Material flow, a real 32 MiB GPT `swap` backing partition for explicit ZPager state paging, a no-reset ZADB developer bridge, and an optional native ESP32-S3 Wi-Fi/BLE radio build. See [`SYSTEM_V03.md`](SYSTEM_V03.md).
+
+Quick development boot:
+
+```bash
+./flash.sh st7789 pc
+python desktop_viewer.py      # second terminal
+python zadb.py dumpsys        # optional third terminal
+```
+
+Native radio bring-up:
+
+```bash
+./flash.sh st7789 pc radio
+```
+
+> ZPager is explicit managed paging for serializable framework/app state, not Linux transparent swap. Standard USB ADB/TCP-5555 WADB transports are still separate milestones; v0.3 provides the ADB service/packet core plus ZADB over the existing no-reset bridge.
+
+---
+
 # Zephyr Watch Bootloader v1.2 — Android-style GPT/A-B/AVB + ST7789V3
 
 Законченный первый этап загрузки для **Waveshare ESP32-S3-Zero-N4R2** из проекта Zephyr Watch.
@@ -334,3 +356,18 @@ device_height();
 `bash -n`; Rust-код подготовлен под тот же `esp-hal 1.0.0`, который использовал предыдущий bootloader.
 
 Лицензия: GPL-3.0.
+
+### Solder-free PC block boot
+
+For development before the microSD socket is available, the bootloader can use
+a raw GPT image served by the attached PC over USB-Serial-JTAG:
+
+```bash
+./flash.sh st7789 pc
+python usb_block_server.py --image out/zephyr-watch-sd.img
+```
+
+See `USB_PC_BOOT.md`. This development mode uses the exact same GPT/A-B/AVB boot
+pipeline as microSD. Native USB host/hub/flash-drive support is documented in
+`USB_HOST_FUTURE.md` and requires suitable USB power/role hardware on the final
+board.

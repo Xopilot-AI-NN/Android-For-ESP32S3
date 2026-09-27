@@ -39,3 +39,13 @@ one USB packet are not silently lost.
 
 For the full watch UI, add dirty-tile packets with RGB565/RLE payloads. The renderer stays on the ESP32-S3; the PC
 only displays changed tiles.
+
+## Protocol v3: Material semantic scenes
+
+Firmware 0.2 adds:
+
+`@ZWUI|M3|screen|cursor|brightness|dnd|airplane|theme`
+
+The desktop viewer reconstructs the same Material scene without receiving a
+full framebuffer. This keeps USB-PC block traffic small and leaves the ESP32-S3
+as the authoritative UI computer.

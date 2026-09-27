@@ -160,7 +160,7 @@ def main():
         validate_backup_gpt(f, primary, entries)
         required = [
             'misc', 'metadata', 'boot_a', 'boot_b', 'init_boot_a', 'init_boot_b',
-            'vendor_boot_a', 'vendor_boot_b', 'vbmeta_a', 'vbmeta_b', 'super', 'userdata'
+            'vendor_boot_a', 'vendor_boot_b', 'vbmeta_a', 'vbmeta_b', 'super', 'swap', 'userdata'
         ]
         assert all(x in parts for x in required), 'required partition missing'
 

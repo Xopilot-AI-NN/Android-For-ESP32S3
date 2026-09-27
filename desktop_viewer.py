@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
-"""Zephyr Watch USB Desktop Display v2.1.
+"""Zephyr Watch USB Desktop Display v3.0.
 
-The ESP32-S3 remains the real computer. This viewer only mirrors UI state and
-sends input. The serial link is opened without intentionally toggling DTR/RTS,
-uses Linux no-HUPCL when possible, and reconnects in a background thread.
-
-Requirements:
-    python -m pip install pyserial
-
-Examples:
-    python desktop_viewer.py
-    python desktop_viewer.py --port /dev/ttyACM0
+When usb_block_server.py is active, this viewer NEVER opens /dev/ttyACM*.
+It attaches to the block server through a local Unix socket, so opening or
+closing the GUI cannot toggle DTR/RTS, steal protocol bytes, or reset the board.
+Direct serial mode remains available for normal SD-card boot.
 """
 
 from __future__ import annotations
@@ -18,9 +12,11 @@ from __future__ import annotations
 import argparse
 import os
 import queue
+import socket
 import threading
 import time
 import tkinter as tk
+from pathlib import Path
 from tkinter import ttk
 
 try:
@@ -37,6 +33,14 @@ except ImportError:  # Windows
 LOGICAL_W = 240
 LOGICAL_H = 280
 ESPRESSIF_VID = 0x303A
+
+
+def default_viewer_socket() -> Path:
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if runtime and os.path.isdir(runtime):
+        return Path(runtime) / "zephyr-watch-viewer.sock"
+    uid = os.getuid() if hasattr(os, "getuid") else 0
+    return Path(f"/tmp/zephyr-watch-viewer-{uid}.sock")
 
 
 def list_candidate_ports() -> list[str]:
@@ -62,12 +66,6 @@ def find_port() -> str | None:
 
 
 def _disable_hupcl(ser: serial.Serial) -> None:
-    """Keep Linux from applying modem hangup semantics on close.
-
-    DTR/RTS are already set inactive before open. HUPCL is an additional guard
-    for disconnect/reconnect cycles. Failure is harmless on drivers that do not
-    expose normal termios modem controls.
-    """
     if termios is None or os.name != "posix":
         return
     try:
@@ -79,21 +77,13 @@ def _disable_hupcl(ser: serial.Serial) -> None:
 
 
 def open_no_reset(port: str) -> serial.Serial:
-    # Important: construct CLOSED first. pySerial defaults DTR/RTS to active;
-    # passing the port to Serial(...) opens it before we can change those
-    # states and can create a short control-line pulse on ESP USB serial links.
     ser = serial.Serial()
     ser.baudrate = 115200
     ser.timeout = 0.05
-    # Writes happen only on the background worker.  Keep them blocking so a
-    # freshly-enumerated USB Serial/JTAG endpoint can finish becoming ready
-    # instead of killing the worker with SerialTimeoutException.
     ser.write_timeout = None
     ser.xonxoff = False
     ser.rtscts = False
     ser.dsrdtr = False
-
-    # Store inactive line states while the file descriptor is still closed.
     ser.dtr = False
     ser.rts = False
     ser.port = port
@@ -107,12 +97,125 @@ def open_no_reset(port: str) -> serial.Serial:
     return ser
 
 
-class Link:
-    """Asynchronous, auto-reconnecting board link.
+class BridgeLink:
+    """Viewer link that never touches the ESP serial device."""
 
-    Tk never owns the serial file descriptor. UI actions are queued to the
-    worker, so a slow/disconnected USB endpoint cannot freeze the viewer.
-    """
+    def __init__(self, path: Path, messages: queue.Queue[str]):
+        self.path = path
+        self.messages = messages
+        self.port: str | None = f"bridge:{path}"
+        self.stop_event = threading.Event()
+        self.outbox: queue.Queue[str] = queue.Queue(maxsize=64)
+        self.thread = threading.Thread(target=self._worker, name="zw-viewer-bridge", daemon=True)
+        self.thread.start()
+
+    def send(self, line: str) -> None:
+        try:
+            self.outbox.put_nowait(line)
+        except queue.Full:
+            try:
+                self.outbox.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self.outbox.put_nowait(line)
+            except queue.Full:
+                pass
+
+    def close(self) -> None:
+        self.stop_event.set()
+        self.thread.join(timeout=0.8)
+
+    def _worker(self) -> None:
+        sock: socket.socket | None = None
+        rx = bytearray()
+        last_attempt = 0.0
+        handshake_pending = False
+        handshake_at = 0.0
+        last_ping = 0.0
+
+        while not self.stop_event.is_set():
+            if sock is None:
+                now = time.monotonic()
+                if now - last_attempt < 0.25:
+                    time.sleep(0.03)
+                    continue
+                last_attempt = now
+                if not self.path.exists():
+                    self.messages.put("@HOST|WAITING")
+                    time.sleep(0.2)
+                    continue
+                self.messages.put(f"@HOST|CONNECTING|bridge:{self.path}")
+                candidate = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                candidate.settimeout(0.3)
+                try:
+                    candidate.connect(str(self.path))
+                except OSError as exc:
+                    candidate.close()
+                    self.messages.put(f"@HOST|DISCONNECTED|bridge:{self.path}|{exc}")
+                    time.sleep(0.2)
+                    continue
+                candidate.settimeout(0.05)
+                sock = candidate
+                rx.clear()
+                self.messages.put(f"@HOST|CONNECTED|bridge:{self.path}")
+                handshake_pending = True
+                handshake_at = time.monotonic() + 0.05
+                last_ping = time.monotonic()
+
+            try:
+                now = time.monotonic()
+                if handshake_pending and now >= handshake_at:
+                    sock.sendall(b"@ZWIN|SYNC\n@ZWIN|PING\n")
+                    handshake_pending = False
+                    last_ping = now
+
+                while True:
+                    try:
+                        line = self.outbox.get_nowait()
+                    except queue.Empty:
+                        break
+                    sock.sendall((line + "\n").encode("utf-8"))
+
+                now = time.monotonic()
+                if not handshake_pending and now - last_ping >= 5.0:
+                    sock.sendall(b"@ZWIN|PING\n")
+                    last_ping = now
+
+                try:
+                    chunk = sock.recv(4096)
+                except socket.timeout:
+                    chunk = None
+                if chunk == b"":
+                    raise ConnectionResetError("viewer bridge closed")
+                if chunk:
+                    rx.extend(chunk)
+                    while b"\n" in rx:
+                        raw, _, rest = rx.partition(b"\n")
+                        rx[:] = rest
+                        line = raw.rstrip(b"\r").decode("utf-8", errors="replace")
+                        if line:
+                            self.messages.put(line)
+            except (OSError, ConnectionError) as exc:
+                self.messages.put(f"@HOST|DISCONNECTED|bridge:{self.path}|{exc}")
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+                sock = None
+                handshake_pending = False
+                rx.clear()
+                time.sleep(0.15)
+
+        if sock is not None:
+            try:
+                sock.close()
+            except OSError:
+                pass
+
+
+class SerialLink:
+    """Direct no-reset serial link used when no PC-block bridge is active."""
 
     def __init__(self, requested_port: str | None, messages: queue.Queue[str]):
         self.requested_port = requested_port
@@ -127,7 +230,6 @@ class Link:
         try:
             self.outbox.put_nowait(line)
         except queue.Full:
-            # Interactive controls should prefer the latest command.
             try:
                 self.outbox.get_nowait()
             except queue.Empty:
@@ -144,7 +246,6 @@ class Link:
     def _pick_port(self) -> str | None:
         if self.requested_port and os.path.exists(self.requested_port):
             return self.requested_port
-        # If the board re-enumerated with another ttyACM number, recover it.
         auto = find_port()
         return auto or self.requested_port
 
@@ -180,9 +281,6 @@ class Link:
                 self.port = port
                 rx.clear()
                 self.messages.put(f"@HOST|CONNECTED|{port}")
-                # Do not write immediately after open.  Native ESP32-S3 USB can
-                # need a short moment after enumeration before the TX endpoint
-                # accepts host data.  No DTR/RTS reset sequence is used.
                 handshake_at = time.monotonic() + 0.35
                 handshake_pending = True
                 last_ping = time.monotonic()
@@ -203,7 +301,7 @@ class Link:
                     self._write_line(ser, line)
 
                 now = time.monotonic()
-                if not handshake_pending and now - last_ping >= 1.0:
+                if not handshake_pending and now - last_ping >= 5.0:
                     self._write_line(ser, "@ZWIN|PING")
                     last_ping = now
 
@@ -219,9 +317,6 @@ class Link:
                 else:
                     time.sleep(0.005)
             except (OSError, serial.SerialException) as exc:
-                # SerialTimeoutException is a SerialException too.  Any real
-                # transport failure tears down only this connection; the worker
-                # remains alive and auto-reconnects.
                 port = self.port or "?"
                 self.messages.put(f"@HOST|DISCONNECTED|{port}|{exc}")
                 try:
@@ -256,7 +351,7 @@ class Link:
 
 
 class WatchViewer:
-    def __init__(self, root: tk.Tk, link: Link, scale: float):
+    def __init__(self, root: tk.Tk, link, scale: float):
         self.root = root
         self.link = link
         self.scale = scale
@@ -367,6 +462,9 @@ class WatchViewer:
         self.last_state = state
         self.draw_screen_bg()
         kind = state[0]
+        if kind == "M3":
+            self.render_m3(state)
+            return
         if kind == "BOOT":
             self.mark()
             self.text_center(155, "ANDROID", 18, "#f1f3f4", "bold")
@@ -390,6 +488,103 @@ class WatchViewer:
             self.text_center(55, "BOOT FAILED", 18, "#ea4335", "bold")
             self.text_center(125, code, 14, "#f1f3f4", "bold")
             self.text_center(165, detail, 12, "#9aa0a6")
+
+
+    def m3_palette(self, idx: int):
+        palettes = [
+            dict(bg="#0a120d", surface="#141e18", high="#1e2b23", primary="#7edfa4", on_primary="#00391d", pc="#145130", on_pc="#9efbc1", secondary="#34463b", on="#e0e9e1", muted="#becac1", outline="#89958c", error="#ffb4ab"),
+            dict(bg="#0c1018", surface="#161b26", high="#202735", primary="#a7c7ff", on_primary="#002e5c", pc="#124474", on_pc="#d5e3ff", secondary="#374254", on="#e4e7ee", muted="#c2c7d1", outline="#8b919c", error="#ffb4ab"),
+            dict(bg="#140e18", surface="#1f1823", high="#2c2231", primary="#e0b8ff", on_primary="#461865", pc="#60307f", on_pc="#f3daff", secondary="#4d3952", on="#ede3ee", muted="#d1c2d3", outline="#998b9b", error="#ffb4ab"),
+            dict(bg="#180f0d", surface="#251916", high="#33231f", primary="#ffb59d", on_primary="#5c1d0b", pc="#7c341f", on_pc="#ffdbd0", secondary="#523a32", on="#f5e2dc", muted="#d8c2bb", outline="#a08c86", error="#ffb4ab"),
+        ]
+        return palettes[idx % len(palettes)]
+
+    def m3_rr(self, x, y, w, h, r, fill, outline=""):
+        a = self.p(x, y); b = self.p(x + w, y + h)
+        return self.round_rect(a[0], a[1], b[0], b[1], r * self.scale, fill=fill, outline=outline)
+
+    def m3_circle(self, cx, cy, r, fill):
+        x, y = self.p(cx, cy); rr = r * self.scale
+        self.canvas.create_oval(x-rr, y-rr, x+rr, y+rr, fill=fill, outline="")
+
+    def render_m3(self, state: tuple[str, ...]):
+        vals = list(state[1:14]) + ["0"] * 13
+        try:
+            screen, cursor, brightness, dnd, airplane, theme, locked, wifi, bt, adb, notes, mins, swap_pages = [int(v) for v in vals[:13]]
+        except ValueError:
+            return
+        t = self.m3_palette(theme)
+        self.canvas.delete("all")
+        self.m3_rr(0, 0, 240, 280, 34, t["bg"], outline="#4a4d52")
+
+        def text(x, y, value, size=12, color=None, bold=False, center=False):
+            px, py = self.p(x, y)
+            self.canvas.create_text(px, py, text=value, fill=color or t["on"],
+                font=("Sans", max(8, int(size*self.scale)), "bold" if bold else "normal"),
+                anchor="n" if center else "nw")
+
+        def appbar(title):
+            self.m3_rr(10, 8, 220, 34, 17, t["surface"])
+            self.m3_circle(28, 25, 7, t["primary"])
+            text(43, 16, title, 12, bold=True)
+
+        def status_icons():
+            self.m3_circle(18,18,5,t["primary"] if wifi else t["high"]); text(29,12,"W",8,t["primary"] if wifi else t["outline"],bold=True)
+            self.m3_circle(59,18,5,t["primary"] if bt else t["high"]); text(70,12,"B",8,t["primary"] if bt else t["outline"],bold=True)
+            if adb:
+                self.m3_rr(91,10,31,16,8,t["pc"]); text(97,12,"ADB",7,t["on_pc"],bold=True)
+            text(181,12,"USB",8,t["muted"])
+
+        def card(y, label, selected):
+            x,w,h,r = (8,224,46,22) if selected else (13,214,40,17)
+            bg=t["pc"] if selected else t["surface"]; fg=t["on_pc"] if selected else t["on"]
+            self.m3_rr(x,y,w,h,r,bg); self.m3_circle(x+21,y+h/2,9 if selected else 7,t["primary"] if selected else t["high"])
+            text(x+39,y+10,label,11,fg,bold=selected); text(x+w-20,y+8,"›",15,fg)
+
+        def toggle(x,y,on):
+            self.m3_rr(x,y,42,24,12,t["primary"] if on else t["high"])
+            self.m3_circle(x+(30 if on else 12),y+12,8,t["on_primary"] if on else t["muted"])
+
+        hour=(mins//60)%24; minute=mins%60; clock=f"{hour:02d}:{minute:02d}"
+
+        if screen == 0:
+            status_icons(); text(120,69,clock,34,t["on"],bold=True,center=True); text(120,120,"ZEPHYR WATCH",9,t["muted"],center=True)
+            self.m3_circle(120,158,22,t["pc"]); self.m3_rr(112,146,16,22,7,t["primary"]); self.m3_rr(115,141,10,15,5,t["primary"])
+            if notes:
+                self.m3_rr(34,194,172,42,21,t["surface"]); text(52,204,"1 NOTIFICATION",9,t["on"],bold=True); self.m3_circle(188,215,7,t["primary"])
+            text(120,253,"PRESS CROWN TO UNLOCK",8,t["outline"],center=True)
+        elif screen == 1:
+            status_icons(); text(120,59,clock,34,t["primary"],bold=True,center=True); text(120,111,"ZEPHYR",8,t["muted"],center=True)
+            self.m3_rr(18,143,96,58,25,t["pc"] if notes else t["surface"]); text(33,154,"MESSAGES",8,t["on_pc"] if notes else t["on"],bold=True); text(33,175,"1 NEW" if notes else "CLEAR",12,t["primary"] if notes else t["muted"],bold=True)
+            self.m3_rr(126,143,96,58,25,t["surface"]); text(143,154,"QUICK",8,t["on"],bold=True); text(143,175,"DND" if dnd else "READY",12,t["primary"] if dnd else t["muted"],bold=True)
+            self.m3_rr(46,215,148,30,15,t["secondary"]); text(120,222,"CROWN: APPS",8,t["on"],bold=True,center=True); text(120,256,"LEFT MESSAGES  RIGHT QUICK",7,t["outline"],center=True)
+        elif screen == 2:
+            appbar("APPS"); labels=("MESSAGES","SETTINGS","CLOCK","CONNECT","ABOUT"); cur=min(cursor,4); start=1 if cur>=4 else 0
+            for row in range(4): i=start+row; card(52+row*52,labels[i],cur==i)
+        elif screen == 3:
+            appbar("MESSAGES"); self.m3_rr(12,56,216,88,28,t["pc"]); self.m3_circle(38,83,12,t["primary"]); text(58,67,"SYSTEM",12,t["on_pc"],bold=True); text(58,94,"ZEPHYR IS READY",8,t["on_pc"]); text(58,112,"PHONE LINK WAITING",7,t["muted"])
+            self.m3_rr(12,156,216,66,25,t["surface"]); text(31,169,"CHATS",12,t["on"],bold=True); text(31,196,"NO PHONE SYNC YET",8,t["muted"]); text(120,251,"CROWN: BACK",8,t["outline"],center=True)
+        elif screen == 4:
+            appbar("QUICK"); tiles=((12,52,"WIFI",wifi),(124,52,"BT",bt),(12,112,"ADB",adb),(124,112,"DND",dnd))
+            for i,(x,y,label,on) in enumerate(tiles):
+                sel=cursor==i; self.m3_rr(x,y,104,52,25 if sel else 20,t["pc"] if sel or on else t["surface"]); self.m3_circle(x+22,y+20,9,t["primary"] if on else t["high"]); text(x+39,y+10,label,9,t["on_pc"] if sel or on else t["on"],bold=True); text(x+39,y+28,"ON" if on else "OFF",7,t["muted"])
+            sel=cursor==4; self.m3_rr(8 if sel else 12,174,224 if sel else 216,34,17,t["pc"] if sel or airplane else t["surface"]); text(29,182,"AIRPLANE",9,t["on_pc"] if sel or airplane else t["on"],bold=True); text(181,182,"ON" if airplane else "OFF",8,t["muted"])
+            sel=cursor==5; self.m3_rr(8 if sel else 12,218,224 if sel else 216,44,20,t["pc"] if sel else t["surface"]); text(26,226,"BRIGHT",8,t["on_pc"] if sel else t["on"]); self.m3_rr(92,235,116,8,4,t["high"]); active=int(108*brightness/100); self.m3_rr(92,235,active+8,8,4,t["primary"]); self.m3_circle(96+active,239,7,t["primary"])
+        elif screen == 5:
+            appbar("SETTINGS"); labels=("BRIGHTNESS","THEME","CONNECT","ABOUT","BACK"); cur=min(cursor,4); start=1 if cur>=4 else 0
+            for row in range(4):
+                i=start+row; y=52+row*52; card(y,labels[i],cur==i)
+                if i==0: text(170,y+14,f"{brightness}%",8,t["muted"])
+                if i==1: text(158,y+14,("GREEN","BLUE","PURPLE","CORAL")[theme%4],7,t["muted"])
+        elif screen == 6:
+            appbar("CLOCK"); self.m3_rr(12,58,216,158,34,t["surface"]); text(120,86,clock,34,t["primary"],bold=True,center=True); text(120,145,"UPTIME CLOCK",8,t["muted"],center=True); self.m3_rr(48,178,144,26,13,t["secondary"]); text(120,184,"RTC / NTP READY",7,t["on"],center=True); text(120,248,"CROWN: BACK",8,t["outline"],center=True)
+        elif screen == 7:
+            appbar("CONNECT"); labels=("WIFI","BLUETOOTH","WADB","AIRPLANE","BACK"); vals=(wifi,bt,adb,airplane,False); cur=min(cursor,4); start=1 if cur>=4 else 0
+            for row in range(4):
+                i=start+row; y=52+row*52; card(y,labels[i],cur==i)
+                if i<4: toggle(171,y+9,vals[i])
+        else:
+            appbar("ABOUT"); self.m3_rr(12,56,216,194,32,t["surface"]); self.m3_circle(120,91,25,t["pc"]); text(120,75,"Z",28,t["primary"],bold=True,center=True); text(120,126,"ZEPHYR ANDROID",12,t["on"],bold=True,center=True); text(120,154,"VERSION 0.4.0",8,t["muted"],center=True); self.m3_rr(31,178,178,27,13,t["secondary"]); text(120,185,"ESP32-S3 / RHAI",7,t["on"],center=True); text(120,212,"PSRAM 2M / SWAP 32M",7,t["muted"],center=True); text(120,231,"PAGER ACTIVE" if swap_pages else "PAGER READY",7,t["primary"] if swap_pages else t["outline"],center=True); text(120,257,"AVB ORANGE",7,t["error"],center=True)
 
     def append_log(self, text: str):
         self.log.configure(state="normal")
@@ -454,12 +649,20 @@ class WatchViewer:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--port", help="preferred CDC port, e.g. /dev/ttyACM0; auto-reconnect follows re-enumeration")
+    ap.add_argument("--port", help="preferred CDC port for direct-serial mode, e.g. /dev/ttyACM0")
+    ap.add_argument("--bridge", type=Path, default=default_viewer_socket(), help="Unix socket exposed by usb_block_server.py")
+    ap.add_argument("--direct-serial", action="store_true", help="bypass the local bridge and open the TTY directly")
     ap.add_argument("--scale", type=float, default=1.6)
     args = ap.parse_args()
 
     messages: queue.Queue[str] = queue.Queue()
-    link = Link(args.port, messages)
+    # Critical no-reset rule: if the PC block server owns the TTY, the GUI
+    # must attach to its local socket instead of opening /dev/ttyACM* again.
+    if not args.direct_serial and args.bridge.exists():
+        link = BridgeLink(args.bridge, messages)
+    else:
+        link = SerialLink(args.port, messages)
+
     root = tk.Tk()
     WatchViewer(root, link, max(1.0, args.scale))
     root.mainloop()

@@ -1,6 +1,6 @@
 [package]
 name = "zephyr-watch-bootloader"
-version = "1.2.0"
+version = "1.7.0"
 edition = "2024"
 rust-version = "1.88"
 
@@ -9,13 +9,15 @@ name = "bootloader"
 path = "src/main.rs"
 
 [features]
-default = ["rhai-runtime", "display-st7789"]
+default = ["rhai-runtime", "display-st7789", "pc-block-boot", "radio-services"]
 rhai-runtime = ["dep:rhai"]
 display-ssd1306 = []
 display-st7789 = []
+pc-block-boot = []
+radio-services = ["dep:esp-radio", "dep:esp-rtos", "dep:static_cell", "dep:smoltcp"]
 
 [dependencies]
-esp-hal = { version = "=1.0.0", features = ["esp32s3", "unstable"] }
+esp-hal = { version = "=1.0.0", features = ["esp32s3", "unstable", "psram"] }
 esp-backtrace = { version = "=0.18.1", features = ["esp32s3", "panic-handler", "println"] }
 esp-println = { version = "=0.16.1", features = ["esp32s3"] }
 esp-alloc = "=0.9.0"
@@ -24,7 +26,12 @@ embedded-hal = "=1.0.0"
 embedded-hal-bus = "=0.3.0"
 embedded-sdmmc = { version = "=0.10.0", default-features = false }
 sha2 = { version = "=0.10.9", default-features = false }
-rhai = { version = "=1.26.1", optional = true, default-features = false, features = ["no_std", "only_i32", "no_float", "no_index", "no_object"] }
+rhai = { version = "=1.25.1", optional = true, default-features = false, features = ["no_std", "only_i32", "no_float", "no_index", "no_object"] }
+esp-radio = { version = "=0.17.0", optional = true, default-features = false, features = ["esp32s3", "wifi", "ble", "coex", "esp-alloc", "unstable", "smoltcp"] }
+esp-rtos = { version = "=0.2.0", optional = true, features = ["esp32s3", "esp-radio", "esp-alloc"] }
+static_cell = { version = "=2.1.1", optional = true }
+smoltcp = { version = "=0.12.0", optional = true, default-features = false, features = ["alloc", "medium-ethernet", "proto-ipv4", "socket-dhcpv4", "socket-tcp", "socket-tcp-reno"] }
+heapless = { version = "=0.9.3", default-features = false }
 
 [profile.dev]
 opt-level = "s"
@@ -38,3 +45,8 @@ lto = true
 opt-level = "z"
 overflow-checks = false
 panic = "abort"
+
+# Espressif's RF binary/adapter path requires optimization >= 2 for reliable
+# Wi-Fi/BLE operation even though the rest of the tiny boot runtime uses `z`.
+[profile.release.package.esp-radio]
+opt-level = 3

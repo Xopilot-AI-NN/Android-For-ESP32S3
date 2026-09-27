@@ -1,6 +1,6 @@
 extern crate alloc;
 
-use alloc::string::String;
+use alloc::{string::String, string::ToString};
 use embedded_hal::{delay::DelayNs, spi::SpiDevice};
 use embedded_sdmmc::{BlockDevice, SdCard};
 
@@ -8,7 +8,10 @@ use crate::{
     android_boot,
     avb,
     boot_control::{BootControl, Slot},
+    config::MAX_RUNTIME_BUNDLE_BYTES,
+    cpio,
     gpt::{self, Partition},
+    lp,
 };
 
 #[derive(Debug)]
@@ -19,6 +22,9 @@ pub enum AndroidBootError {
     MissingSlot,
     Avb(avb::AvbError),
     BootImage(android_boot::BootImageError),
+    Lp(lp::LpError),
+    Cpio(cpio::CpioError),
+    RuntimeBundleTooLarge,
 }
 
 pub struct SystemImage {
@@ -43,21 +49,89 @@ impl<D: BlockDevice> BootSession<D> {
             .mark_successful(&self.card, self.misc, self.image.slot)
             .map_err(|_| AndroidBootError::BootControl)
     }
+
+    /// Load the AOSP-like userspace from real Android liblp metadata inside
+    /// `super`. The early `/init.rhai` still originates in init_boot, while
+    /// framework/vendor/product code lives in slot-suffixed logical partitions.
+    pub fn load_userspace_bundle(&mut self) -> Result<String, AndroidBootError> {
+        let super_part = gpt::find_partition(&self.card, "super").map_err(AndroidBootError::Gpt)?;
+        let metadata_slot = match self.image.slot { Slot::A => 0, Slot::B => 1 };
+        let suffix = self.image.slot.suffix();
+
+        let init_script = core::mem::take(&mut self.image.script);
+        let mut bundle = String::with_capacity(
+            init_script.len().saturating_add(8 * 1024).min(MAX_RUNTIME_BUNDLE_BYTES),
+        );
+        append_component(&mut bundle, "/* init_boot:/init.rhai */\n", &init_script)?;
+        drop(init_script);
+
+        let components = [
+            ("vendor", "etc/zephyr/vendor_runtime.rhai"),
+            ("odm", "etc/zephyr/odm_runtime.rhai"),
+            ("system_ext", "etc/zephyr/system_ext_runtime.rhai"),
+            ("system", "framework/zephyr-framework.rhai"),
+            ("product", "etc/zephyr/product_runtime.rhai"),
+        ];
+
+        for (logical_base, path) in components {
+            let mut logical_name = logical_base.to_string();
+            logical_name.push_str(suffix);
+            let logical = lp::find_logical(&self.card, super_part, metadata_slot, &logical_name)
+                .map_err(AndroidBootError::Lp)?;
+            let text = cpio::extract_text(
+                &self.card,
+                super_part,
+                logical,
+                path,
+                MAX_RUNTIME_BUNDLE_BYTES,
+            )
+            .map_err(AndroidBootError::Cpio)?;
+            append_component(&mut bundle, "\n/* logical-partition component */\n", &text)?;
+        }
+
+        if bundle.len() > MAX_RUNTIME_BUNDLE_BYTES {
+            return Err(AndroidBootError::RuntimeBundleTooLarge);
+        }
+        Ok(bundle)
+    }
+
+    /// Access the underlying block device without taking ownership.
+    pub fn block_device(&self) -> &D { &self.card }
 }
 
-pub fn load_system<SPI, DELAY, POST_INIT>(
+fn append_component(bundle: &mut String, marker: &str, text: &str) -> Result<(), AndroidBootError> {
+    let new_len = bundle
+        .len()
+        .checked_add(marker.len())
+        .and_then(|v| v.checked_add(text.len()))
+        .ok_or(AndroidBootError::RuntimeBundleTooLarge)?;
+    if new_len > MAX_RUNTIME_BUNDLE_BYTES {
+        return Err(AndroidBootError::RuntimeBundleTooLarge);
+    }
+    bundle.push_str(marker);
+    bundle.push_str(text);
+    Ok(())
+}
+
+pub fn load_system<SPI, DELAY, PostInit>(
     spi: SPI,
     delay: DELAY,
-    post_init: POST_INIT,
+    post_init: PostInit,
 ) -> Result<BootSession<SdCard<SPI, DELAY>>, AndroidBootError>
 where
     SPI: SpiDevice<u8>,
     DELAY: DelayNs,
-    POST_INIT: FnOnce(&SdCard<SPI, DELAY>),
+    PostInit: FnOnce(&SdCard<SPI, DELAY>),
 {
     let card = SdCard::new(spi, delay);
     card.num_bytes().map_err(|_| AndroidBootError::Card)?;
     post_init(&card);
+    load_block_device(card)
+}
+
+/// Load the Android-like system from any synchronous 512-byte block device.
+pub fn load_block_device<D: BlockDevice>(card: D) -> Result<BootSession<D>, AndroidBootError> {
+    card.num_blocks().map_err(|_| AndroidBootError::Card)?;
     gpt::probe(&card).map_err(AndroidBootError::Gpt)?;
     let misc = gpt::find_partition(&card, "misc").map_err(AndroidBootError::Gpt)?;
     let mut control = BootControl::load_or_init(&card, misc).map_err(|_| AndroidBootError::BootControl)?;
@@ -67,17 +141,11 @@ where
     let image = match first {
         Ok(image) => image,
         Err(first_error) => {
-            // A transient SD I/O failure must not permanently kill a slot. The
-            // AOSP-compatible tries_remaining counter was already consumed by
-            // begin_attempt(). Only verified metadata/image corruption is
-            // promoted to an unbootable slot immediately.
             if should_mark_unbootable(&first_error) {
                 let _ = control.mark_unbootable(&card, misc, preferred);
             }
             let fallback = preferred.other();
-            if !control.is_bootable(fallback) {
-                return Err(first_error);
-            }
+            if !control.is_bootable(fallback) { return Err(first_error); }
             match try_slot(&card, misc, &mut control, fallback) {
                 Ok(image) => image,
                 Err(_) => return Err(first_error),
@@ -120,7 +188,9 @@ fn try_slot<D: BlockDevice>(
         entry: "/init.rhai",
         script,
         rollback_index,
-        avb_unsigned: boot_avb.unsigned_development_vbmeta || init_avb.unsigned_development_vbmeta || vendor_avb.unsigned_development_vbmeta,
+        avb_unsigned: boot_avb.unsigned_development_vbmeta
+            || init_avb.unsigned_development_vbmeta
+            || vendor_avb.unsigned_development_vbmeta,
     })
 }
 
@@ -136,12 +206,12 @@ fn should_mark_unbootable(error: &AndroidBootError) -> bool {
         AndroidBootError::Avb(_) => true,
         AndroidBootError::BootImage(android_boot::BootImageError::Io) => false,
         AndroidBootError::BootImage(_) => true,
-        // GPT/card/control failures are media/global-state failures rather
-        // than proof that one A/B slot is corrupt. Let retries/fallback deal
-        // with them without rewriting slot priority.
         AndroidBootError::Card
         | AndroidBootError::Gpt(_)
         | AndroidBootError::BootControl
-        | AndroidBootError::MissingSlot => false,
+        | AndroidBootError::MissingSlot
+        | AndroidBootError::Lp(_)
+        | AndroidBootError::Cpio(_)
+        | AndroidBootError::RuntimeBundleTooLarge => false,
     }
 }

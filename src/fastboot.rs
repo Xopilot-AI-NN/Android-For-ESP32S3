@@ -121,7 +121,7 @@ fn handle_command(tx: &mut UsbSerialJtagTx<'_, Blocking>, cmd: &str, delay: &Del
             write_line(tx, "OKAY");
         }
         "memory" => {
-            write_line(tx, "INFOheap:esp-alloc 96KiB internal");
+            write_line(tx, "INFOheap:esp-alloc 96KiB internal + N4R2 PSRAM");
             write_line(tx, "INFOdesktop:command-mirror, no full framebuffer required");
             write_line(tx, "INFOpsram:available to later system runtime");
             write_line(tx, "OKAY");

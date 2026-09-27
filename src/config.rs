@@ -27,5 +27,6 @@ pub const TFT_MADCTL: u8 = 0x00; // RGB portrait; use 0x08 if panel needs BGR
 pub const SD_INIT_KHZ: u32 = 400;
 pub const SD_DATA_MHZ: u32 = 20;
 pub const MAX_SCRIPT_BYTES: usize = 24 * 1024;
+pub const MAX_RUNTIME_BUNDLE_BYTES: usize = 32 * 1024;
 pub const BOOT_SPLASH_MS: u32 = 950;
 pub const BOOT_KEY_SAMPLE_MS: u32 = 450;
