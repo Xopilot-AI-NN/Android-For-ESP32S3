@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build Zephyr Android Firmware for the ESP32-S3 Zephyr Watch.
+"""Build AOSP Wear OS Android 17 QPR1 firmware for ESP32-S3.
 
 Outputs Android-style boot images, AOSP liblp `super.img`, logical partition
 images, and a complete raw GPT disk image for microSD/USB-PC block boot.
@@ -111,7 +111,7 @@ def android_boot_v4(ramdisk: bytes, version: str) -> bytes:
     struct.pack_into("<I", header, 20, 1584)
     struct.pack_into("<I", header, 40, 4)
     cmdline = (
-        f"androidboot.hardware=esp32s3 androidboot.product=zephyr_watch "
+        f"androidboot.hardware=esp32s3 androidboot.product=aosp_wear "
         f"androidboot.slot_suffix=_a androidboot.zephyr.version={version}"
     ).encode()
     header[44:44 + min(len(cmdline), 1535)] = cmdline[:1535]
@@ -127,7 +127,7 @@ def vendor_boot_v4(version: str) -> bytes:
     struct.pack_into("<I", header, 12, 4096)
     cmdline = f"androidboot.hardware=esp32s3 androidboot.zephyr.version={version}".encode()
     header[28:28 + min(len(cmdline), 2047)] = cmdline[:2047]
-    header[2080:2096] = b"zephyr-watch\0\0\0\0"
+    header[2080:2096] = b"aosp-wear\0\0\0\0\0\0\0"
     struct.pack_into("<I", header, 2096, 2128)
     struct.pack_into("<I", header, 2120, 108)
     return bytes(header)
@@ -164,7 +164,7 @@ def vbmeta_image(images: dict[str, bytes], rollback_index: int = 0) -> bytes:
     struct.pack_into(">Q", header, 96, 0)
     struct.pack_into(">Q", header, 104, len(descriptors))
     struct.pack_into(">Q", header, 112, rollback_index)
-    release = b"Zephyr Android avb development"
+    release = b"AOSP Wear OS Android 17 QPR1 dev"
     header[128:128 + len(release)] = release
     return bytes(header) + aux
 
@@ -481,7 +481,7 @@ def main() -> None:
         "system.img", "system_ext.img", "vendor.img", "product.img", "odm.img",
     ]
     manifest = {
-        "product": "zephyr_watch",
+        "product": "aosp_wear",
         "device": "zero",
         "version": version,
         "runtime": "rhai",
@@ -504,7 +504,7 @@ def main() -> None:
         "product/etc/zephyr/product_runtime.rhai",
     ))
     bundle_estimate = framework_size + init_size + component_size + 512
-    print(f"Zephyr Android {version}")
+    print(f"AOSP Wear OS / Android 17 QPR1 ({version})")
     print(f"  output           : {out}")
     print(f"  boot.img         : {len(boot)} bytes")
     print(f"  init_boot.img    : {len(init_boot)} bytes")

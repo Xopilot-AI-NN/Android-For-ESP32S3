@@ -1,4 +1,4 @@
-# Zephyr Android init model (documentation/source of truth for Rhai init)
+# AOSP Wear OS Android 17 QPR1 init model (documentation/source of truth for Rhai init)
 on early-init
     setprop ro.hardware esp32s3
     setprop ro.boot.dynamic_partitions true

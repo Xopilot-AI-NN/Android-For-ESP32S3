@@ -1,4 +1,4 @@
-; Zephyr Android policy model. Enforcement hooks are implemented by Rust runtime.
+; AOSP Wear OS policy model. Enforcement hooks are implemented by Rust runtime.
 (type system_server)
 (type system_file)
 (type servicemanager)

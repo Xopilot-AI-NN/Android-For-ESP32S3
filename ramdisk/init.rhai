@@ -1,4 +1,4 @@
-// Zephyr Android first-stage init. Boot enters a real lock screen.
+// AOSP Wear OS / Android 17 QPR1 first-stage init. Boot enters a real lock screen.
 fn init() {
     if boot_version() < 2 { return -20; }
     if android_api_level() < 1 { return -21; }

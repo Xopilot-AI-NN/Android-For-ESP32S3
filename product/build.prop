@@ -1,4 +1,6 @@
-ro.product.brand=Xopilot
-ro.product.manufacturer=Xopilot-AI-NN
-ro.product.model=Zephyr Watch
-ro.product.name=zephyr_watch
+ro.product.brand=Android
+ro.product.manufacturer=AOSP
+ro.product.model=AOSP Wear OS
+ro.product.name=aosp_wear
+ro.product.device=aosp_wear
+ro.product.marketname=AOSP Wear OS

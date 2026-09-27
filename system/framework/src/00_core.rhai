@@ -1,4 +1,4 @@
-// Zephyr Android Runtime State ABI v5.
+// AOSP Wear OS Android 17 QPR1 Runtime State ABI v6.
 // [0..3] screen, [4..7] cursor, [8..14] brightness,
 // [15] DND, [16] airplane, [17..18] theme, [19] locked,
 // [20] wifi, [21] bluetooth, [22] ADB/WADB, [23..25] notification count.

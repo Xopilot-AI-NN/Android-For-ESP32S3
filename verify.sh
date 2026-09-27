@@ -7,7 +7,7 @@ OUT="$ROOT/out/target/product/zero"
 
 cd "$ROOT"
 
-echo '== Zephyr Android Firmware verify =='
+echo '== AOSP Wear OS Firmware verify =='
 
 python -m py_compile tools/build_firmware.py tools/inspect_super.py
 bash -n build.sh

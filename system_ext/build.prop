@@ -1,2 +1,2 @@
-ro.system_ext.zephyr.security=avb-development
-ro.system_ext.zephyr.framework_api=1
+ro.system_ext.aosp_esp32.security=avb-development
+ro.system_ext.aosp_esp32.framework_api=37
