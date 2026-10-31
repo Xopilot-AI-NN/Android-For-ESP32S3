@@ -54,6 +54,10 @@ mod runtime;
 mod rtc;
 #[cfg(feature = "radio-services")]
 mod radio;
+#[cfg(feature = "ble-hid")]
+mod ble_host;
+#[cfg(feature = "ble-hid")]
+mod ble_bonds;
 #[cfg(feature = "pc-block-boot")]
 mod usb_pc_block;
 

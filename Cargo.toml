@@ -9,6 +9,7 @@ name = "bootloader"
 path = "src/main.rs"
 
 [features]
+ble-hid = ["radio-services", "dep:trouble-host", "dep:embassy-futures", "dep:embassy-time", "dep:embassy-time-driver", "dep:rand_core"]
 default = ["rhai-runtime", "display-st7789", "pc-block-boot", "radio-services"]
 rhai-runtime = ["dep:rhai"]
 display-ssd1306 = []
@@ -17,6 +18,11 @@ pc-block-boot = []
 radio-services = ["dep:esp-radio", "dep:esp-rtos", "dep:static_cell", "dep:smoltcp"]
 
 [dependencies]
+trouble-host = { version = "=0.5.1", default-features = false, features = ["peripheral", "gatt", "derive", "default-packet-pool", "security"], optional = true }
+embassy-futures = { version = "0.1", optional = true }
+embassy-time = { version = "0.5", default-features = false, features = ["tick-hz-1_000_000"], optional = true }
+embassy-time-driver = { version = "0.2.1", optional = true }
+rand_core = { version = "0.6", default-features = false, optional = true }
 esp-hal = { version = "=1.0.0", features = ["esp32s3", "unstable", "psram"] }
 esp-backtrace = { version = "=0.18.1", features = ["esp32s3", "panic-handler", "println"] }
 esp-println = { version = "=0.16.1", features = ["esp32s3"] }
