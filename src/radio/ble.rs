@@ -23,6 +23,7 @@ impl RadioServices {
             self.ble_scanning_until = None;
             self.ble_advertising = false;
             self.ble_pending_address = None;
+            self.ble_pending_since = None;
             self.ble_connection = None;
             self.bt_requested = false;
             println!("radio: bluetooth service disabled");
@@ -132,6 +133,7 @@ impl RadioServices {
         params[23..25].copy_from_slice(&0u16.to_le_bytes());
         if hci_command(ble, 0x200d, &params) {
             self.ble_pending_address = Some(address);
+            self.ble_pending_since = Some(now_ms());
             println!("radio: BLE connection requested");
             true
         } else {
@@ -141,7 +143,14 @@ impl RadioServices {
 
     pub fn disconnect_ble(&mut self) -> bool {
         let Some(connection) = self.ble_connection else {
-            self.ble_pending_address = None;
+            // Cancel an in-flight LE Create Connection before clearing state.
+            let pending = self.ble_pending_address.take().is_some();
+            self.ble_pending_since = None;
+            if pending {
+                if let Some(ble) = self.ble.as_mut() {
+                    return hci_command(ble, 0x200e, &[]);
+                }
+            }
             return false;
         };
         let Some(ble) = self.ble.as_mut() else { return false; };
@@ -166,6 +175,19 @@ impl RadioServices {
                     &mut self.ble_connection,
                     &mut self.ble_pending_address,
                 );
+            }
+            // A lost LE Connection Complete event must not leave BLE
+            // permanently pending (and unable to advertise or reconnect).
+            if self.ble_pending_address.is_none() {
+                self.ble_pending_since = None;
+            } else if self.ble_pending_since
+                .map(|since| now_ms().saturating_sub(since) >= 15_000)
+                .unwrap_or(false)
+            {
+                let _ = hci_command(ble, 0x200e, &[]); // LE Create Connection Cancel
+                self.ble_pending_address = None;
+                self.ble_pending_since = None;
+                println!("radio: BLE connection request timed out; canceled");
             }
             if let Some(until) = self.ble_scanning_until {
                 if now_ms() >= until {

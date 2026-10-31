@@ -87,6 +87,7 @@ pub struct RadioServices {
     ble_scanning_until: Option<u64>,
     ble_advertising: bool,
     ble_pending_address: Option<[u8; 6]>,
+    ble_pending_since: Option<u64>,
     ble_connection: Option<BleConnection>,
 }
 
@@ -135,6 +136,7 @@ impl RadioServices {
             ble_scanning_until: None,
             ble_advertising: false,
             ble_pending_address: None,
+            ble_pending_since: None,
             ble_connection: None,
         })
     }
