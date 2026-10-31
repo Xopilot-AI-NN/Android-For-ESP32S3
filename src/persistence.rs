@@ -1,0 +1,66 @@
+//! Versioned persistent settings and Wi-Fi credentials in reserved ZPager slots.
+//! Keep these slots disjoint from Activity slots 0..31.
+use crate::*;
+
+// Keep framework Activity pages in slots 0..31.  Older 17.1.1 builds used
+// slot 16 for Wi-Fi credentials, which collided with the Date & time Activity
+// page and could silently erase the saved network when that screen was left.
+const WIFI_CRED_SLOT: u32 = 64;
+const WIFI_CRED_LEGACY_SLOT: u32 = 16;
+const WIFI_CRED_TAG: u32 = 0x5a57_4946; // "ZWIF"
+const TIME_HOLDOVER_SLOT: u32 = 65;
+const TIME_HOLDOVER_TAG: u32 = 0x5a54_494d; // "ZTIM"
+const SYSTEM_SETTINGS_SLOT: u32 = 66;
+const SYSTEM_SETTINGS_TAG: u32 = 0x5a53_4554; // "ZSET"
+const RTC_CONFIG_SLOT: u32 = 67;
+const RTC_CONFIG_TAG: u32 = 0x5a52_5443; // "ZRTC"
+// brightness..wireless-debugging, excluding screen/cursor and notifications.
+const SYSTEM_SETTINGS_MASK: i32 = 0x00ff_fe00;
+
+pub(crate) fn load_wifi_credentials<D: BlockDevice>(
+    pager: &page_store::PageStore,
+    dev: &D,
+) -> Option<WifiCredentials> {
+    let mut raw = [0u8; 98];
+    let n = match pager.read(dev, WIFI_CRED_SLOT, WIFI_CRED_TAG, &mut raw) {
+        Ok(n) => n,
+        Err(_) => pager.read(dev, WIFI_CRED_LEGACY_SLOT, WIFI_CRED_TAG, &mut raw).ok()?,
+    };
+    WifiCredentials::decode_page(&raw[..n])
+}
+
+pub(crate) fn save_wifi_credentials<D: BlockDevice>(
+    pager: &page_store::PageStore,
+    dev: &D,
+    credentials: WifiCredentials,
+) -> bool {
+    let mut raw = [0u8; 98];
+    let n = credentials.encode_page(&mut raw);
+    pager.write(dev, WIFI_CRED_SLOT, WIFI_CRED_TAG, &raw[..n]).is_ok()
+}
+
+
+pub(crate) fn load_time_holdover<D: BlockDevice>(pager: &page_store::PageStore, dev: &D) -> Option<u16> {
+    let value = pager.read_i32(dev, TIME_HOLDOVER_SLOT, TIME_HOLDOVER_TAG).ok()?;
+    if (0..1440).contains(&value) { Some(value as u16) } else { None }
+}
+
+pub(crate) fn save_time_holdover<D: BlockDevice>(pager: &page_store::PageStore, dev: &D, minutes: u16) -> bool {
+    pager.write_i32(dev, TIME_HOLDOVER_SLOT, TIME_HOLDOVER_TAG, (minutes % 1440) as i32).is_ok()
+}
+
+pub(crate) fn load_system_settings<D: BlockDevice>(pager: &page_store::PageStore, dev: &D) -> Option<i32> {
+    pager.read_i32(dev, SYSTEM_SETTINGS_SLOT, SYSTEM_SETTINGS_TAG).ok()
+}
+
+pub(crate) fn save_system_settings<D: BlockDevice>(pager: &page_store::PageStore, dev: &D, state: i32) -> bool {
+    pager.write_i32(dev, SYSTEM_SETTINGS_SLOT, SYSTEM_SETTINGS_TAG, state & SYSTEM_SETTINGS_MASK).is_ok()
+}
+
+pub(crate) fn load_rtc_config<D: BlockDevice>(pager: &page_store::PageStore, dev: &D) -> Option<i32> {
+    pager.read_i32(dev, RTC_CONFIG_SLOT, RTC_CONFIG_TAG).ok()
+}
+
+pub(crate) fn save_rtc_config<D: BlockDevice>(pager: &page_store::PageStore, dev: &D, config: i32) -> bool {
+    pager.write_i32(dev, RTC_CONFIG_SLOT, RTC_CONFIG_TAG, config).is_ok()
+}
