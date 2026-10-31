@@ -2,10 +2,14 @@
 // Compact i32 state: [0..4] screen, [5..8] cursor, [9..15] brightness,
 // [16] DND, [17] airplane, [18..19] theme, [20] locked,
 // [21] wifi, [22] bluetooth, [23] ADB/WADB, [24..26] notification count.
+// Rust preserves extended preferences: [27..28] crown sensitivity,
+// [29] reverse crown, [30] readability. Bit 31 stays clear (i32 must be positive).
 fn wrap(value, count) {
-    let x = value;
-    if x < 0 { x = count - 1; }
-    if x >= count { x = 0; }
+    // Hardware PCNT can accumulate several steps while a frame is sent.
+    // Preserve that movement in both directions, including several turns.
+    if count < 1 { return 0; }
+    let x = value % count;
+    if x < 0 { x = x + count; }
     x
 }
 fn pack_state(screen,cursor,brightness,dnd,airplane,theme,locked,wifi,bt,adb,notes) {
