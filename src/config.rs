@@ -14,10 +14,10 @@ pub const BOOTLOADER_VERSION: &str = env!("CARGO_PKG_VERSION");
 #[cfg(feature = "display-ssd1306")]
 pub const OLED_ADDR: u8 = 0x3C;
 
-// ST7789V3 / SPI3: BL=GPIO1, CS=GPIO2, DC=GPIO3, RST=GPIO4,
-// MOSI=GPIO5, SCK=GPIO6.
+// ST7789V3 / SPI3: SCK=GPIO1, MOSI=GPIO2, RST=GPIO3, DC=GPIO4,
+// CS=GPIO5, BL=GPIO6. Matches the user's physical wiring.
 #[cfg(feature = "display-st7789")]
-pub const TFT_MHZ: u32 = 40;
+pub const TFT_MHZ: u32 = 20; // Conservative SPI clock for wired ST7789V3.
 #[cfg(feature = "display-st7789")]
 pub const TFT_Y_OFFSET: u16 = 20;
 #[cfg(feature = "display-st7789")]
@@ -29,7 +29,7 @@ pub const TFT_MADCTL: u8 = 0x00; // RGB portrait; use 0x08 if panel needs BGR
 #[cfg(not(feature = "pc-block-boot"))]
 pub const SD_INIT_KHZ: u32 = 400;
 #[cfg(not(feature = "pc-block-boot"))]
-pub const SD_DATA_MHZ: u32 = 20;
+pub const SD_DATA_MHZ: u32 = 10; // Safer for external microSD modules and jumper wires.
 pub const MAX_SCRIPT_BYTES: usize = 24 * 1024;
 pub const MAX_RUNTIME_BUNDLE_BYTES: usize = 32 * 1024;
 #[cfg(not(feature = "pc-block-boot"))]

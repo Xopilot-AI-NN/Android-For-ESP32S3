@@ -183,8 +183,10 @@ mod tft {
             s.cmd(0x21, &[])?; // INVON (IPS panels commonly require inversion)
             s.cmd(0x29, &[])?; // DISPON
             delay.delay_ms(120);
-            s.bl.set_high().map_err(|_| DisplayError::Bus)?;
+            // Keep the backlight off until the first complete black frame is sent.
+            // This avoids a visible gray/uninitialized flash at power-on.
             s.clear(BLACK)?;
+            s.bl.set_high().map_err(|_| DisplayError::Bus)?;
             Ok(s)
         }
 

@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
+python tools/check_board_wiring.py
+
 rm -rf out/verify
 mkdir -p out/verify
 

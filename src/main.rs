@@ -141,12 +141,12 @@ fn main() -> ! {
                 .with_mode(Mode::_0),
         )
         .expect("SPI3 TFT config")
-        .with_sck(p.GPIO6)
-        .with_mosi(p.GPIO5);
-        let cs = Output::new(p.GPIO2, Level::High, OutputConfig::default());
-        let dc = Output::new(p.GPIO3, Level::Low, OutputConfig::default());
-        let rst = Output::new(p.GPIO4, Level::High, OutputConfig::default());
-        let bl = Output::new(p.GPIO1, Level::Low, OutputConfig::default());
+        .with_sck(p.GPIO1)
+        .with_mosi(p.GPIO2);
+        let cs = Output::new(p.GPIO5, Level::High, OutputConfig::default());
+        let dc = Output::new(p.GPIO4, Level::Low, OutputConfig::default());
+        let rst = Output::new(p.GPIO3, Level::High, OutputConfig::default());
+        let bl = Output::new(p.GPIO6, Level::Low, OutputConfig::default());
         let mut init_delay = delay;
         St7789Display::new(spi, cs, dc, rst, bl, &mut init_delay).expect("ST7789V3 init failed")
     };
@@ -572,7 +572,12 @@ fn main() -> ! {
         .with_miso(p.GPIO7);
 
         let _ = cs.set_high();
-        let _ = spi.write(&[0xFF; 10]); // 80 idle clocks
+        if let Err(err) = spi.write(&[0xFF; 10]) { // 80 idle clocks, CS high.
+            println!("microSD: idle clock transfer failed: {:?}", err);
+            let _ = display.error("SD SPI ERROR", "CHECK GPIO7-10");
+            enter_fastboot(display, desktop_input, &mut keys, &delay);
+        }
+        println!("microSD: SPI2 MISO=7 SCK=8 MOSI=9 CS=10");
         let device = ExclusiveDevice::new(spi, cs, delay).expect("SD CS pin");
 
         let _ = display.boot_progress("LOADING", 2);
@@ -583,8 +588,9 @@ fn main() -> ! {
                 let fast = SpiConfig::default()
                     .with_frequency(Rate::from_mhz(config::SD_DATA_MHZ))
                     .with_mode(Mode::_0);
-                if let Err(err) = sd_device.bus_mut().apply_config(&fast) {
-                    println!("warning: failed to switch SD bus to {} MHz: {:?}", config::SD_DATA_MHZ, err);
+                match sd_device.bus_mut().apply_config(&fast) {
+                    Ok(()) => println!("microSD: switched to {} MHz", config::SD_DATA_MHZ),
+                    Err(err) => println!("microSD: staying at init speed; switch failed: {:?}", err),
                 }
             });
         }) {

@@ -107,6 +107,9 @@ impl MaterialFrame {
             25 => ("WI-FI", "CONNECTING", "", ""),
             26 => ("APPS", "LIST VIEW", "", ""),
             27 => ("ASSISTANT", "READY", "", ""),
+            28 => ("BRIGHTNESS", "CROWN TO ADJUST", "", ""),
+            29 => ("FLASHLIGHT", "WHITE SCREEN", "", ""),
+            30 => ("BLUETOOTH", "PAIR NEW DEVICE", "", ""),
             _ => ("WEAR OS", "ANDROID 17", "", ""),
         }
     }
@@ -210,6 +213,9 @@ impl Surface {
             25 => self.wifi_connecting(frame, t),
             26 => self.list_launcher(frame, t),
             27 => self.assistant_page(frame, t),
+            28 => self.brightness_editor(frame, t),
+            29 => self.fill_rect(0, 0, WIDTH as i32, HEIGHT as i32, rgb565(255, 255, 255)),
+            30 => self.bluetooth_pairing(frame, t),
             _ => self.watchface(frame, t),
         }
         Rect::FULL
@@ -1092,6 +1098,21 @@ impl Surface {
         self.text_center(219, "BACK", 1, t.on_surface);
     }
 
+    fn brightness_editor(&mut self, f: MaterialFrame, t: Theme) {
+        self.title("BRIGHTNESS", t);
+        self.icon_sun(120, 100, t.primary);
+        self.text_center(139, "ROTATE CROWN", 1, t.on_surface_variant);
+        self.slider(28, 179, 184, f.brightness, t);
+        self.text_center(224, "PRESS OR BACK TO EXIT", 1, t.on_surface);
+    }
+
+    fn bluetooth_pairing(&mut self, f: MaterialFrame, t: Theme) {
+        self.title("BLUETOOTH", t);
+        self.icon_bt(120, 96, t.primary);
+        self.text_center(143, if f.bt { "PAIRING" } else { "BLUETOOTH OFF" }, 2, t.on_surface);
+        self.text_center(186, "PAIRING NOT YET WIRED", 1, t.on_surface_variant);
+        self.text_center(229, "HOME TO EXIT", 1, t.on_surface_variant);
+    }
 
     fn system_page(&mut self, f: MaterialFrame, t: Theme) {
         self.title("SYSTEM", t);
