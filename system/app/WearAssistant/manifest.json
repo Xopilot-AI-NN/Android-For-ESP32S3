@@ -1,0 +1,1 @@
+{"package":"com.android.wear.assistant","label":"Assistant","runtime":"rhai","api":37,"system":true,"characteristics":"watch","companion_required":true}
