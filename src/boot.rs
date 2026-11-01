@@ -30,7 +30,14 @@ pub(crate) fn run() -> ! {
         );
         esp_hal::rtc_cntl::Rtc::new(p.LPWR).sleep_deep(&[&source]);
     }
-    println!("performance: ESP32-S3 CPU=240MHz (CpuClock::max); USB-PC/radio profile active");
+    println!(
+        "performance: ESP32-S3 CPU=240MHz (CpuClock::max); storage={}",
+        if cfg!(feature = "pc-block-boot") {
+            "usb-pc-block"
+        } else {
+            "sd-spi"
+        }
+    );
 
     let (_, psram_size) = esp_hal::psram::psram_raw_parts(&p.PSRAM);
     println!("PSRAM detected: {} bytes", psram_size);
@@ -758,8 +765,16 @@ pub(crate) fn run() -> ! {
         }) {
             Ok(session) => session,
             Err(err) => {
-                println!("android boot error: {:?}", err);
-                let _ = display.error("NO SYSTEM", "USB FASTBOOT");
+                println!("android boot error: {}", err);
+                let title = match &err {
+                    android_storage::AndroidBootError::SdInit(_) => "SD INIT FAILED",
+                    android_storage::AndroidBootError::Card => "SD BLOCK ERROR",
+                    android_storage::AndroidBootError::Gpt(_) => "SD GPT ERROR",
+                    _ => "NO SYSTEM",
+                };
+                let mut detail = heapless::String::<96>::new();
+                let _ = core::fmt::write(&mut detail, format_args!("{err}"));
+                let _ = display.error(title, detail.as_str());
                 enter_fastboot(display, desktop_input, &mut keys, &delay);
             }
         };

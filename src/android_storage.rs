@@ -19,6 +19,8 @@ use crate::{
 #[derive(Debug)]
 pub enum AndroidBootError {
     Card,
+    #[cfg(not(feature = "pc-block-boot"))]
+    SdInit(embedded_sdmmc::SdCardError),
     Gpt(gpt::GptError),
     BootControl,
     MissingSlot,
@@ -33,6 +35,8 @@ impl core::fmt::Display for AndroidBootError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Card => f.write_str("card I/O error"),
+            #[cfg(not(feature = "pc-block-boot"))]
+            Self::SdInit(error) => write!(f, "SD initialization: {error:?}"),
             Self::Gpt(e) => write!(f, "GPT error: {:?}", e),
             Self::BootControl => f.write_str("boot-control error"),
             Self::MissingSlot => f.write_str("no bootable slot"),
@@ -147,11 +151,33 @@ pub fn load_system<SPI, DELAY, PostInit>(
 ) -> Result<BootSession<SdCard<SPI, DELAY>>, AndroidBootError>
 where
     SPI: SpiDevice<u8>,
-    DELAY: DelayNs,
+    DELAY: DelayNs + Clone,
     PostInit: FnOnce(&SdCard<SPI, DELAY>),
 {
+    let mut retry_delay = delay.clone();
     let card = SdCard::new(spi, delay);
-    card.num_bytes().map_err(|_| AndroidBootError::Card)?;
+    // Retry only card acquisition, before GPT/A-B writes. Preserve the actual
+    // command/CRC/transport failure instead of collapsing everything to Card.
+    for attempt in 1..=3 {
+        match card.num_bytes() {
+            Ok(bytes) => {
+                esp_println::println!(
+                    "microSD: initialized, {} MiB, {:?}",
+                    bytes / (1024 * 1024),
+                    card.get_card_type()
+                );
+                break;
+            }
+            Err(error) => {
+                esp_println::println!("microSD: initialization attempt {attempt}/3: {error:?}");
+                if attempt == 3 {
+                    return Err(AndroidBootError::SdInit(error));
+                }
+                card.mark_card_uninit();
+                retry_delay.delay_ms(100);
+            }
+        }
+    }
     post_init(&card);
     load_block_device(card)
 }
@@ -250,6 +276,8 @@ fn partition_name(prefix: &str, slot: Slot) -> String {
 
 fn should_mark_unbootable(error: &AndroidBootError) -> bool {
     match error {
+        #[cfg(not(feature = "pc-block-boot"))]
+        AndroidBootError::SdInit(_) => false,
         AndroidBootError::Avb(avb::AvbError::Io) => false,
         AndroidBootError::Avb(_) => true,
         AndroidBootError::BootImage(android_boot::BootImageError::Io) => false,
