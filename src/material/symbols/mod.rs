@@ -11,6 +11,7 @@ pub(super) enum Symbol {
     Bell,
     Clock,
     Play,
+    Pause,
     Info,
     Grid,
     Assistant,
@@ -30,4 +31,4 @@ pub(super) enum Symbol {
     Devices,
 }
 pub(super) const SIZE: usize = 24;
-pub(super) const ATLAS: &[u8; 7488] = include_bytes!("atlas.bin");
+pub(super) const ATLAS: &[u8; 7776] = include_bytes!("atlas.bin");

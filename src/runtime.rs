@@ -198,6 +198,7 @@ pub struct Runtime {
     watch_face: u8,
     wallpaper_enabled: bool,
     has_wallpaper: bool,
+    playback: Option<crate::media::Playback>,
     power_menu: bool,
     power_cursor: u8,
     system_action: Option<SystemAction>,
@@ -316,6 +317,7 @@ impl Runtime {
             watch_face: 0,
             wallpaper_enabled: true,
             has_wallpaper: false,
+            playback: None,
             power_menu: false,
             power_cursor: 0,
             system_action: None,
@@ -410,6 +412,13 @@ impl Runtime {
             if let Some((day, month)) = crate::rtc::calendar() {
                 m.date_day = day;
                 m.date_month = month;
+            }
+            if matches!(self.bluetooth_status, 2 | 3) {
+                if let Some((playing, progress)) = self.playback.and_then(|p| p.progress(now_ms)) {
+                    m.media_known = true;
+                    m.media_playing = playing;
+                    m.media_progress = progress;
+                }
             }
             m.animation_phase = (now_ms % 1000 * 255 / 1000) as u8;
         }
@@ -513,9 +522,15 @@ impl Runtime {
         self.bluetooth_action.take()
     }
 
+    pub fn set_playback(&mut self, playback: crate::media::Playback) {
+        self.playback = Some(playback);
+    }
     pub fn set_bluetooth_status(&mut self, status: u8, pin: Option<u32>) -> bool {
         let changed = self.bluetooth_status != status || self.bluetooth_pin != pin;
         self.bluetooth_status = status;
+        if !matches!(status, 2 | 3) {
+            self.playback = None;
+        }
         self.bluetooth_pin = pin;
         changed
     }
@@ -916,6 +931,12 @@ impl Runtime {
             }
             return self.render();
         }
+        if screen == 27 && event == RuntimeEvent::Press {
+            if self.bluetooth_status == 3 {
+                self.bluetooth_action = Some(BluetoothUiAction::Media(0x00CF));
+            }
+            return self.render();
+        }
         if screen == 10 && event == RuntimeEvent::Press {
             if let Some(usage) = [0x00B6, 0x00CD, 0x00B5, 0x00EA, 0x00E9].get(cursor as usize) {
                 self.bluetooth_action = Some(BluetoothUiAction::Media(*usage));
@@ -1213,6 +1234,7 @@ impl Runtime {
     pub fn take_bluetooth_action(&mut self) -> Option<BluetoothUiAction> {
         None
     }
+    pub fn set_playback(&mut self, _playback: crate::media::Playback) {}
     pub fn set_bluetooth_status(&mut self, _status: u8, _pin: Option<u32>) -> bool {
         false
     }

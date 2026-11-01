@@ -75,6 +75,9 @@ pub struct MaterialFrame {
     pub power_menu: bool,
     pub wallpaper_enabled: bool,
     pub wallpaper_available: bool,
+    pub media_known: bool,
+    pub media_playing: bool,
+    pub media_progress: u16,
 }
 
 impl MaterialFrame {
@@ -165,6 +168,9 @@ impl MaterialFrame {
             power_menu: false,
             wallpaper_enabled: true,
             wallpaper_available: false,
+            media_known: false,
+            media_playing: false,
+            media_progress: 0,
         })
     }
 

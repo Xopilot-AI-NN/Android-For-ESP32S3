@@ -8,7 +8,7 @@ const root = path.resolve(__dirname, '../src/material/symbols');
 const symbols = {
     Wifi: 'wifi', Bluetooth: 'bluetooth', Dnd: 'do_not_disturb_on',
     Airplane: 'flight', Sun: 'light_mode', Settings: 'settings',
-    Bell: 'notifications', Clock: 'schedule', Play: 'play_arrow',
+    Bell: 'notifications', Clock: 'schedule', Play: 'play_arrow', Pause: 'pause',
     Info: 'info', Grid: 'apps', Assistant: 'auto_awesome',
     Back: 'arrow_back', Lock: 'lock', Sound: 'volume_up',
     Person: 'accessibility_new', Connectivity: 'settings_input_antenna',

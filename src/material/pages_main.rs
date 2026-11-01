@@ -184,7 +184,7 @@ impl Surface {
             if index == 6 {
                 self.round_rect(
                     55,
-                    203,
+                    208,
                     130,
                     72,
                     32,
@@ -206,20 +206,29 @@ impl Surface {
         self.scroll_indicator(cur as u8, 7, t);
     }
 
-    pub(super) fn assistant_page(&mut self, _f: MaterialFrame, t: Theme) {
+    pub(super) fn assistant_page(&mut self, f: MaterialFrame, t: Theme) {
         // Assistant shell is ready for the future phone companion.  The UI is
         // intentionally service-neutral: it mirrors the Wear assistant surface
         // without claiming a Google/Gemini backend that does not exist here.
         self.ring(120, 116, 70, 2, t.surface_high);
         self.icon_assistant(120, 91, t.primary);
         self.text_center(126, "ASK ASSISTANT", 2, t.on_surface);
-        self.text_center(158, "COMPANION APP REQUIRED", 1, t.on_surface_variant);
+        self.text_center(
+            158,
+            if f.bt_status == 3 {
+                "Ассистент устройства"
+            } else {
+                "Подключите устройство"
+            },
+            1,
+            t.on_surface_variant,
+        );
         self.line(79, 183, 101, 183, 3, rgb565(80, 190, 255));
         self.line(101, 183, 123, 183, 3, rgb565(126, 225, 165));
         self.line(123, 183, 145, 183, 3, rgb565(224, 187, 255));
         self.line(145, 183, 167, 183, 3, rgb565(255, 184, 161));
         self.round_rect(51, 224, 138, 38, 19, t.surface_high);
-        self.text_center(236, "PRESS TO RETURN", 1, t.on_surface_variant);
+        self.text_center(236, "Нажмите для запуска", 1, t.on_surface_variant);
     }
 
     pub(super) fn notifications(&mut self, f: MaterialFrame, t: Theme) {
@@ -517,10 +526,49 @@ impl Surface {
                 t.surface_high
             },
         );
-        self.symbol(Symbol::Play, 120, 151, ink);
+        self.symbol(
+            if f.media_playing {
+                Symbol::Pause
+            } else {
+                Symbol::Play
+            },
+            120,
+            151,
+            ink,
+        );
+        if f.media_known {
+            self.round_rect(36, 198, 168, 4, 2, t.surface_high);
+            self.round_rect(
+                36,
+                198,
+                (168 * i32::from(f.media_progress) / 1000).max(2),
+                4,
+                2,
+                t.primary,
+            );
+            if f.media_playing {
+                for i in 0..3 {
+                    let h = 3 + ((u16::from(f.animation_phase) / 20 + i * 3) % 7) as i32;
+                    self.round_rect(111 + i as i32 * 7, 230 - h, 3, h, 1, t.primary);
+                }
+            }
+        }
         // HID reports do not contain playback state: Play/Pause is one toggle,
         // and the watch must not fabricate a paused/playing status or metadata.
-        self.text_center(208, "Play / pause", 1, t.on_surface_variant);
+        self.text_center(
+            208,
+            if f.media_known {
+                if f.media_playing {
+                    "Воспроизведение"
+                } else {
+                    "Пауза"
+                }
+            } else {
+                "Play / pause"
+            },
+            1,
+            t.on_surface_variant,
+        );
         for (i, x, label) in [(3, 43, "Vol -"), (4, 120, "Vol +"), (5, 197, "Back")] {
             self.round_rect(
                 x - 33,

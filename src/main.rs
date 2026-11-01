@@ -54,6 +54,7 @@ mod gpt;
 mod input;
 mod lp;
 mod material;
+mod media;
 #[cfg(feature = "radio-services")]
 mod net;
 mod page_store;

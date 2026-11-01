@@ -36,6 +36,8 @@ pub use display::St7789Display;
 mod material;
 #[path = "../../../src/rtc.rs"]
 mod rtc;
+#[path = "../../../src/media.rs"]
+mod media;
 #[path = "../../../src/runtime.rs"]
 mod runtime;
 
