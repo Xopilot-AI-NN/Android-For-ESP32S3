@@ -758,7 +758,11 @@ pub(crate) fn run() -> ! {
             } else {
                 "SPI2"
             },
-            config::SD_INIT_KHZ
+            if cfg!(feature = "sd-software-spi") {
+                100
+            } else {
+                config::SD_INIT_KHZ
+            }
         );
         let _ = cs.set_high();
         if let Err(err) = spi.write(&[0xFF; 10]) {
@@ -769,8 +773,19 @@ pub(crate) fn run() -> ! {
         }
         println!("microSD: MISO=7 SCK=8 MOSI=9 CS=10");
         // SPI2 belongs only to SD; keep command and response in one CS session.
+        #[cfg(feature = "sd-checked-startup")]
         let device = sd_spi::SdSpiSession::new(spi, cs, delay);
-        println!("microSD: continuous CS session (command/response/data)");
+        #[cfg(not(feature = "sd-checked-startup"))]
+        let device =
+            embedded_hal_bus::spi::ExclusiveDevice::new(spi, cs, delay).expect("SD CS pin");
+        println!(
+            "microSD: transport={}",
+            if cfg!(feature = "sd-checked-startup") {
+                "checked session"
+            } else {
+                "original ExclusiveDevice"
+            }
+        );
 
         let _ = display.boot_progress("LOADING", 2);
         let mut session = match android_storage::load_system(device, delay, |card| {
@@ -795,7 +810,10 @@ pub(crate) fn run() -> ! {
             Err(err) => {
                 println!("android boot error: {}", err);
                 let title = match &err {
+                    #[cfg(feature = "sd-checked-startup")]
                     android_storage::AndroidBootError::SdInit(_) => "SD INIT FAILED",
+                    #[cfg(not(feature = "sd-checked-startup"))]
+                    android_storage::AndroidBootError::SdAcquire(_) => "SD INIT FAILED",
                     android_storage::AndroidBootError::Card => "SD BLOCK ERROR",
                     android_storage::AndroidBootError::Gpt(_) => "SD GPT ERROR",
                     _ => "NO SYSTEM",

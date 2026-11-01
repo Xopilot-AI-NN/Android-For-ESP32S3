@@ -43,6 +43,7 @@ mod config;
 mod cpio;
 mod desktop;
 mod device_commands;
+mod disk_probe;
 mod display;
 mod fastboot;
 mod font;
@@ -62,9 +63,9 @@ mod rtc;
 mod runtime;
 #[cfg(all(not(feature = "pc-block-boot"), feature = "sd-software-spi"))]
 mod sd_bitbang;
-#[cfg(not(feature = "pc-block-boot"))]
+#[cfg(all(not(feature = "pc-block-boot"), feature = "sd-checked-startup"))]
 mod sd_init;
-#[cfg(not(feature = "pc-block-boot"))]
+#[cfg(all(not(feature = "pc-block-boot"), feature = "sd-checked-startup"))]
 mod sd_spi;
 #[cfg(feature = "display-software-spi")]
 mod soft_spi;

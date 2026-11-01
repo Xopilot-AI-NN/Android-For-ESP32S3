@@ -29,7 +29,11 @@ pub const TFT_MADCTL: u8 = 0x08; // BGR portrait: physical panel swaps red/blue 
 // Encoder / button: A=GPIO11, B=GPIO12, power/crown=GPIO13.
 // GPIO21 is reserved for a future board status LED/runtime.
 #[cfg(not(feature = "pc-block-boot"))]
-pub const SD_INIT_KHZ: u32 = 100;
+pub const SD_INIT_KHZ: u32 = if cfg!(feature = "sd-checked-startup") {
+    100
+} else {
+    400
+};
 #[cfg(all(not(feature = "pc-block-boot"), not(feature = "sd-software-spi")))]
 pub const SD_DATA_MHZ: u32 = 10; // Safer for external microSD modules and jumper wires.
 pub const MAX_SCRIPT_BYTES: usize = 24 * 1024;

@@ -40,6 +40,8 @@ mod sd_spi;
 mod sd_init;
 #[path = "../../../src/sd_bitbang.rs"]
 mod sd_bitbang;
+#[path = "../../../src/disk_probe.rs"]
+mod disk_probe;
 #[path = "../../../src/rtc.rs"]
 mod rtc;
 #[path = "../../../src/media.rs"]

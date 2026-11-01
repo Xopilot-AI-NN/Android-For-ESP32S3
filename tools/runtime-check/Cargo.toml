@@ -12,6 +12,7 @@ display-ssd1306 = []
 display-diagnostic = []
 pc-block-boot = []
 sd-software-spi = []
+sd-checked-startup = []
 radio-services = []
 
 [dependencies]

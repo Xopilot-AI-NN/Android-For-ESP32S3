@@ -33,7 +33,7 @@ checks = {
     'SD SCK GPIO8': '.with_sck(p.GPIO8)' in sd,
     'SD MOSI GPIO9': '.with_mosi(p.GPIO9)' in sd,
     'SD CS GPIO10': 'Output::new(p.GPIO10, Level::High' in sd,
-    'SD initial 100 kHz': 'pub const SD_INIT_KHZ: u32 = 100;' in config,
+    'SD original 400 kHz, checked 100 kHz': 'if cfg!(feature = "sd-checked-startup")' in config and '400' in config,
     'SD 80 idle clocks': 'spi.write(&[0xFF; 10])' in sd,
     'Backlight after first clear': display.index('s.clear(BLACK)?;') < display.index('s.bl.set_high().map_err'),
 }
