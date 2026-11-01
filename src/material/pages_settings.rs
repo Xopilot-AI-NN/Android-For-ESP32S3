@@ -80,57 +80,152 @@ impl Surface {
         self.unavailable_page("SOUND & VIBRATION", "S", "AUDIO HARDWARE", t);
     }
 
-    pub(super) fn gestures_page(&mut self, _f: MaterialFrame, t: Theme) {
-        self.title("GESTURES", t);
-        self.info_card(65, "CROWN", "ROTATE TO SCROLL", true, t);
-        self.info_card(132, "CROWN PRESS", "SELECT / APPS", false, t);
-        self.info_card(199, "HOME", "RETURN TO WATCH FACE", false, t);
-    }
-
-    pub(super) fn accessibility_page(&mut self, _f: MaterialFrame, t: Theme) {
-        self.title("ACCESSIBILITY", t);
-        self.info_card(68, "INPUT", "CROWN-ONLY MODE", true, t);
-        self.info_card(135, "CONTRAST", "DARK WATCH UI", false, t);
-        self.round_rect(45, 213, 150, 40, 20, t.surface_high);
-        self.text_center(226, "BACK", 1, t.on_surface);
-    }
-
-    pub(super) fn security_page(&mut self, f: MaterialFrame, t: Theme) {
-        self.title("SECURITY", t);
-        self.round_rect(
-            18,
-            65,
-            204,
-            64,
-            32,
-            if f.cursor == 0 {
-                t.primary_container
-            } else {
-                t.surface
-            },
+    pub(super) fn gestures_page(&mut self, f: MaterialFrame, t: Theme) {
+        self.photo_header(f, "GESTURES", t);
+        self.info_card(
+            63,
+            "Чувствительность",
+            ["Низкая", "Обычная", "Высокая"][f.crown_sensitivity.min(2) as usize],
+            f.cursor == 0,
+            t,
         );
-        self.text(42, 78, "SCREEN LOCK", 1, t.on_surface);
-        self.text(
-            42,
-            99,
-            if f.locked { "ENABLED" } else { "NONE" },
+        self.info_card(
+            130,
+            "Направление",
+            if f.crown_reverse {
+                "Обратное"
+            } else {
+                "Обычное"
+            },
+            f.cursor == 1,
+            t,
+        );
+        self.info_card(197, "BACK", "К настройкам", f.cursor == 2, t);
+    }
+    pub(super) fn accessibility_page(&mut self, f: MaterialFrame, t: Theme) {
+        self.photo_header(f, "ACCESSIBILITY", t);
+        self.info_card(
+            72,
+            "Контрастность",
+            if f.high_contrast {
+                "Повышенная"
+            } else {
+                "Обычная"
+            },
+            f.cursor == 0,
+            t,
+        );
+        self.info_card(150, "BACK", "К настройкам", f.cursor == 1, t);
+    }
+    pub(super) fn security_page(&mut self, f: MaterialFrame, t: Theme) {
+        self.photo_header(f, "SECURITY", t);
+        let labels = [
+            if f.has_pin {
+                "Изменить PIN"
+            } else {
+                "Задать PIN"
+            },
+            "Автоблокировка",
+            "Заблокировать",
+            "Отключить PIN",
+            "BACK",
+        ];
+        let cur = f.cursor.min(4) as usize;
+        let start = cur.saturating_sub(1).min(2);
+        for row in 0..3 {
+            let index = start + row;
+            let y = 62 + row as i32 * 62;
+            if index == 1 {
+                let value = if f.lock_timeout_secs == 30 {
+                    alloc::string::String::from("30 секунд")
+                } else {
+                    alloc::format!("{} мин", f.lock_timeout_secs / 60)
+                };
+                self.info_card(y, "Автоблокировка", &value, index == cur, t);
+                continue;
+            }
+            self.wear_row(y, labels[index], index == cur, t);
+        }
+        let message = if f.security_pending {
+            "Сохранение настроек..."
+        } else {
+            match f.security_message {
+                1 => "Неверный PIN",
+                2 => "PIN не совпали",
+                3 => "Слишком много попыток",
+                4 => "Нет хранилища для PIN",
+                5 => "PIN задан",
+                6 => "PIN отключён",
+                7 => "Дождитесь сохранения",
+                _ => "PIN защищает доступ к часам",
+            }
+        };
+        self.text_center(262, message, 1, t.on_surface_variant);
+    }
+    pub(super) fn pin_entry(&mut self, f: MaterialFrame, t: Theme) {
+        if f.security_view == 7 {
+            self.symbol(Symbol::Lock, 120, 65, t.error);
+            self.text_center(115, "Ошибка хранилища PIN", 1, t.error);
+            self.text_center(156, "Восстановите резервную", 1, t.on_surface);
+            self.text_center(178, "копию образа системы", 1, t.on_surface);
+            return;
+        }
+        if f.security_view == 5 {
+            self.photo_header(f, "Автоблокировка", t);
+            let label = if f.pin_digit == 0 {
+                alloc::string::String::from("30 секунд")
+            } else {
+                alloc::format!("{} мин", f.pin_digit)
+            };
+            self.text_center(116, &label, 2, t.primary);
+            self.text_center(175, "Вращайте для выбора", 1, t.on_surface_variant);
+            self.info_card(216, "Применить", "Нажмите колёсико", true, t);
+            return;
+        }
+        self.symbol(Symbol::Lock, 120, 35, t.primary);
+        self.text_center(
+            65,
+            match f.security_view {
+                1 => "Новый PIN",
+                2 => "Повторите PIN",
+                3 => "Введите PIN",
+                _ => "Текущий PIN",
+            },
+            2,
+            t.on_surface,
+        );
+        for i in 0..4 {
+            self.circle(
+                87 + i * 22,
+                108,
+                if i < i32::from(f.pin_count) { 6 } else { 3 },
+                t.primary,
+            );
+        }
+        if f.lockout_secs > 0 {
+            self.text_center(
+                150,
+                &alloc::format!("Повтор через {} с", f.lockout_secs),
+                1,
+                t.error,
+            );
+        } else {
+            self.clock_text(143, &[b'0' + f.pin_digit.min(9)], t.primary);
+        }
+        self.text_center(
+            218,
+            if f.security_message == 1 {
+                "Неверный PIN"
+            } else if f.security_message == 2 {
+                "PIN не совпали"
+            } else {
+                "Вращайте: цифра"
+            },
             1,
             t.on_surface_variant,
         );
-        self.toggle(169, 85, f.locked, t);
-        self.round_rect(
-            45,
-            194,
-            150,
-            42,
-            21,
-            if f.cursor == 1 {
-                t.primary_container
-            } else {
-                t.surface
-            },
-        );
-        self.text_center(207, "BACK", 1, t.on_surface);
+        self.text_center(243, "Нажмите: выбрать", 1, t.on_surface_variant);
+        self.text_center(264, "Удержание: стереть", 1, t.on_surface_variant);
     }
 
     pub(super) fn apps_notifications_page(&mut self, f: MaterialFrame, t: Theme) {

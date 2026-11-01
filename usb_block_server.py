@@ -17,7 +17,27 @@ import socket
 import sys
 import threading
 import zlib
+from contextlib import contextmanager
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+
+
+@contextmanager
+def locked_image(image_path: Path, mode: str):
+    # Acquire before opening the image: the builder may atomically replace it.
+    with image_path.with_suffix(image_path.suffix + ".lock").open("a+b") as lock:
+        if fcntl is not None:
+            try:
+                operation = fcntl.LOCK_SH if mode == "rb" else fcntl.LOCK_EX
+                fcntl.flock(lock, operation | fcntl.LOCK_NB)
+            except BlockingIOError as error:
+                raise SystemExit("image is in use or being rebuilt; stop the other owner first") from error
+        with image_path.open(mode, buffering=0) as disk:
+            yield disk
 
 SECTOR = 512
 PREFIX = b"@ZBLK|"
@@ -298,7 +318,7 @@ def serve(
         bridge.start()
 
     try:
-        with image_path.open(mode, buffering=0) as disk:
+        with locked_image(image_path, mode) as disk:
             size = os.fstat(disk.fileno()).st_size
             if size == 0 or size % SECTOR:
                 raise SystemExit(f"image size must be a non-zero multiple of {SECTOR}: {size}")

@@ -27,7 +27,7 @@ The firmware build properties and local getprop report the same default locale.
   and licenses. Both render offline from checked-in antialiased masks.
 - The follow-up Wear references guide the black background, pastel cyan
   palette, round complication rings with real clock/connection data, large
-  Roboto Light watch numerals, lavender/lime timer presets, scalloped media
+  Roboto Light watch numerals, theme-aware timer presets, scalloped media
   button and list launcher's Grid view footer. No health/weather values or
   song metadata are fabricated to imitate the reference photos.
 - Bluetooth uses the existing TrouBLE HID host in the default build and
@@ -53,13 +53,35 @@ The firmware build properties and local getprop report the same default locale.
 - Physical crown input works in both PC-storage and SD modes. Button input
   has 25 ms debounce; release selects (<700 ms), goes Back (700–1799 ms), or
   Home (≥1800 ms), measured against the monotonic counter.
+- Crown rotation uses ESP32-S3 PCNT quadrature counting with a hardware glitch
+  filter, so SPI rendering no longer loses intermediate edges. Settings →
+  Gestures provides low/normal/high sensitivity (8/4/2 edges per UI step) and
+  reverse direction. Accessibility provides a working high-contrast option.
+  Preferences persist in reserved page 71.
+- ST7789 BLK/GPIO6 uses LEDC hardware PWM at 20 kHz, 10-bit resolution. The
+  brightness editor changes the actual duty (5–100%). Flashlight temporarily
+  uses 100% and restores the selected brightness on exit. Media, timer, tiles
+  and watch face derive colors from the selected theme.
+- Security provides four-digit PIN enrollment with confirmation, current-PIN
+  verification to change/disable, immediate locking and an idle timeout of
+  30 seconds or 1–10 minutes. PIN entry uses crown rotation and press; Back
+  erases a digit. A configured PIN is required again after reboot. Five wrong
+  attempts impose a 30-second delay; the attempt state survives normal restarts.
+  Only a salted, iterated SHA-256 verifier is stored (page 70), never the PIN
+  digits. UI actions, Home and state replacement cannot dismiss the PIN gate.
+  New settings show a pending-save status until storage confirms the write.
+  Timer/alarm alerts remain visible while locked; dismissing an alert does not
+  unlock the watch. Auto-lock activates after a PIN has been enrolled and saved.
 - Removed unused renderer helpers and the unused compiler feature. A local
   [HAL linker correction](ld/README.md) removes the spurious writable flag
   from the flash alignment reservation without suppressing warnings.
 
-Assistant/phone notification forwarding, audio, sensors, a secure PIN lock,
-and Google's apps are not implemented by this restoration. Existing gesture
-and accessibility pages describe the available input/display behavior.
+Assistant/phone notification forwarding, audio, sensors and Google's apps are
+not implemented by this restoration. PIN is a local UI lock, not a hardware
+anti-theft/activation lock: this development board does not have configured
+secure boot, flash encryption or protected internal credential storage. Removing
+or replacing the external disk, modifying its contents or reflashing can bypass
+it. Keep a private backup of the disk; forgetting the PIN requires recovery.
 The current desktop viewer uses its own renderer; the preview below is
 rendered from the actual firmware surface, not from that viewer.
 
@@ -77,6 +99,13 @@ rendered from the actual firmware surface, not from that viewer.
   card replaces that card's data. The existing image and recovery dump were
   not modified. Existing cards need the updated Rhai framework as well as the
   Rust application for the new menu actions.
+
+Rebuilding an existing compatible PC image now validates its GPT layout and
+preserves `metadata`, `swap` (PIN/settings/bonds) and `userdata`. System images
+are replaced atomically. A layout/size mismatch or failed build leaves the old
+disk intact. Stop the block server before rebuilding: POSIX file locks prevent
+replacing an actively served image. A new output path still produces a fresh
+disk. Writing that fresh whole-disk image onto a physical card erases its data.
 
 No device or SD card was flashed as part of this work. For an application-only
 update on an existing compatible ESP partition table:

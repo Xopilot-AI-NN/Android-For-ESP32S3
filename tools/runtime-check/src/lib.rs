@@ -27,6 +27,8 @@ mod button;
 mod config;
 #[path = "../../../src/display.rs"]
 mod display;
+#[path = "../../../src/input/encoder.rs"]
+mod encoder;
 #[path = "../../../src/font.rs"]
 mod font;
 pub use display::St7789Display;
@@ -142,6 +144,96 @@ mod tests {
         assert_eq!(frame(&mut os).clock_alert, 2);
         os.dispatch(RuntimeEvent::Press).unwrap();
     }
+    #[test]
+    fn preferences_and_pin_gate_survive_restore() {
+        time::set(2000);
+        let mut os = start();
+        os.set_security_storage(true, [9; 16]);
+        os.replace_state(18).unwrap();
+        os.dispatch(RuntimeEvent::Press).unwrap();
+        assert_eq!(os.crown_sensitivity(), 2);
+        os.dispatch(RuntimeEvent::Rotate(1)).unwrap();
+        os.dispatch(RuntimeEvent::Press).unwrap();
+        let prefs = os.preference_config();
+        let mut other = start();
+        other.restore_preferences(&prefs);
+        assert!(frame(&mut other).crown_reverse);
+        assert_eq!(other.crown_sensitivity(), 2);
+        // Positive editor deltas remain monotonic before explicitly reversing direction.
+        other.restore_preferences(&[1, 1, 0, 0]);
+        other.replace_state(28 | (50 << 9)).unwrap();
+        for expected in [55, 60, 65, 70] {
+            other.dispatch(RuntimeEvent::Rotate(1)).unwrap();
+            assert_eq!(frame(&mut other).brightness, expected);
+        }
+
+        fn enter(os: &mut Runtime, pin: [u8; 4]) {
+            for digit in pin {
+                let current = frame(os).pin_digit;
+                os.dispatch(RuntimeEvent::Rotate(i32::from(digit) - i32::from(current)))
+                    .unwrap();
+                os.dispatch(RuntimeEvent::Press).unwrap();
+            }
+        }
+        other.set_security_storage(true, [11; 16]);
+        other.replace_state(20).unwrap();
+        other.dispatch(RuntimeEvent::Press).unwrap();
+        enter(&mut other, [1, 2, 3, 4]);
+        enter(&mut other, [1, 2, 3, 4]);
+        assert!(frame(&mut other).has_pin);
+        assert!(frame(&mut other).security_pending);
+        let raw = other.security_config();
+        other.security_saved();
+        other.replace_state(11).unwrap();
+        other.dispatch(RuntimeEvent::Press).unwrap();
+        other.dispatch(RuntimeEvent::Rotate(4)).unwrap();
+        other.dispatch(RuntimeEvent::Press).unwrap();
+        other.dispatch(RuntimeEvent::Rotate(-1000)).unwrap();
+        other.dispatch(RuntimeEvent::Press).unwrap();
+        time::set(2031);
+        assert_eq!(frame(&mut other).screen, 0);
+        other.dispatch(RuntimeEvent::Home).unwrap();
+        assert_eq!(frame(&mut other).screen, 0);
+        other.dispatch(RuntimeEvent::Swipe(2)).unwrap();
+        assert_eq!(frame(&mut other).screen, 0);
+        other.replace_state(5).unwrap();
+        assert_eq!(frame(&mut other).screen, 0);
+        time::set(2061);
+        assert_eq!(frame(&mut other).clock_alert, 1);
+        other.dispatch(RuntimeEvent::Press).unwrap();
+        assert_eq!(frame(&mut other).screen, 0);
+        assert_eq!(frame(&mut other).clock_alert, 0);
+        enter(&mut other, [1, 2, 3, 4]);
+        assert_eq!(frame(&mut other).screen, 1);
+        let mut restored = start();
+        restored.set_security_storage(true, [12; 16]);
+        restored.restore_security(&raw);
+        assert_eq!(frame(&mut restored).screen, 0);
+        enter(&mut restored, [1, 2, 3, 4]);
+        assert_eq!(frame(&mut restored).screen, 1);
+        restored.replace_state(20 | (1 << 5)).unwrap();
+        restored.dispatch(RuntimeEvent::Press).unwrap();
+        restored.dispatch(RuntimeEvent::Rotate(1)).unwrap();
+        restored.dispatch(RuntimeEvent::Press).unwrap();
+        assert!(frame(&mut restored).security_pending); // Simulate storage not acknowledging the new timeout.
+        time::set(2122);
+        assert_eq!(frame(&mut restored).screen, 0);
+        enter(&mut restored, [1, 2, 3, 4]);
+        assert_eq!(frame(&mut restored).screen, 1);
+        restored.replace_state(20 | (3 << 5)).unwrap();
+        restored.dispatch(RuntimeEvent::Press).unwrap();
+        enter(&mut restored, [0, 0, 0, 0]);
+        assert!(frame(&mut restored).has_pin);
+        enter(&mut restored, [1, 2, 3, 4]);
+        assert!(!frame(&mut restored).has_pin);
+        let mut damaged = raw;
+        damaged[4] = 99;
+        restored.restore_security(&damaged);
+        assert_eq!(frame(&mut restored).security_view, 7);
+        restored.dispatch(RuntimeEvent::Home).unwrap();
+        assert_eq!(frame(&mut restored).screen, 0);
+    }
+
     #[test]
     fn timer_presets_and_custom_duration() {
         time::set(1000);

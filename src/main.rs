@@ -34,6 +34,8 @@ mod adb;
 mod android_boot;
 mod android_storage;
 mod avb;
+#[cfg(feature = "display-st7789")]
+mod backlight;
 #[cfg(feature = "ble-hid")]
 mod ble_bonds;
 #[cfg(feature = "ble-hid")]

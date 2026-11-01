@@ -4,6 +4,9 @@ pub enum DisplayError {
 }
 
 use crate::runtime::RuntimeFrame;
+pub trait Backlight: embedded_hal::digital::OutputPin {
+    fn set_brightness(&mut self, percent: u8) -> Result<(), Self::Error>;
+}
 
 pub trait BootDisplay {
     fn boot_logo(&mut self) -> Result<(), DisplayError>;
@@ -141,7 +144,7 @@ pub use oled::Display as Ssd1306Display;
 // ---------------------------------------------------------------------------
 #[cfg(feature = "display-st7789")]
 mod tft {
-    use super::{BootDisplay, DisplayError};
+    use super::{Backlight, BootDisplay, DisplayError};
     use crate::{
         config,
         font::glyph,
@@ -175,7 +178,7 @@ mod tft {
         CS: OutputPin,
         DC: OutputPin,
         RST: OutputPin,
-        BL: OutputPin,
+        BL: Backlight,
     {
         pub fn new<D: DelayNs>(
             spi: SPI,
@@ -462,7 +465,7 @@ mod tft {
         CS: OutputPin,
         DC: OutputPin,
         RST: OutputPin,
-        BL: OutputPin,
+        BL: Backlight,
     {
         fn boot_logo(&mut self) -> Result<(), DisplayError> {
             self.clear(BLACK)?;
@@ -493,6 +496,13 @@ mod tft {
         fn runtime(&mut self, frame: &RuntimeFrame) -> Result<(), DisplayError> {
             match frame {
                 RuntimeFrame::Material(scene) => {
+                    self.bl
+                        .set_brightness(if scene.screen == 29 {
+                            100
+                        } else {
+                            scene.brightness.clamp(5, 100)
+                        })
+                        .map_err(|_| DisplayError::Bus)?;
                     let dirty = self.material_surface.render(*scene);
                     self.flush_material_rect(dirty)
                 }
@@ -520,6 +530,7 @@ mod tft {
             cs_high: bool,
             dc_high: bool,
             bytes: usize,
+            brightness: u8,
         }
         struct Bus(Rc<RefCell<Wire>>);
         impl SpiErrorType for Bus {
@@ -578,6 +589,13 @@ mod tft {
                 Ok(())
             }
         }
+        impl Backlight for Pin {
+            fn set_brightness(&mut self, percent: u8) -> Result<(), Infallible> {
+                assert!(percent <= 100);
+                self.wire.borrow_mut().brightness = percent;
+                Ok(())
+            }
+        }
         struct NoDelay;
         impl DelayNs for NoDelay {
             fn delay_ns(&mut self, _: u32) {}
@@ -606,6 +624,17 @@ mod tft {
                 crate::material::MaterialFrame::parse("M3|1|0|70|0|0|0|0|0|0|0|0|131|0|0|0|1|1|3")
                     .unwrap();
             display.runtime(&RuntimeFrame::Material(frame)).unwrap();
+            assert_eq!(wire.borrow().brightness, 70);
+            let mut dim = frame;
+            dim.brightness = 25;
+            display.runtime(&RuntimeFrame::Material(dim)).unwrap();
+            assert_eq!(wire.borrow().brightness, 25);
+            dim.screen = 29;
+            display.runtime(&RuntimeFrame::Material(dim)).unwrap();
+            assert_eq!(wire.borrow().brightness, 100);
+            dim.screen = 1;
+            display.runtime(&RuntimeFrame::Material(dim)).unwrap();
+            assert_eq!(wire.borrow().brightness, 25);
             let wire = wire.borrow();
             assert!(!wire.busy);
             assert!(wire.cs_high);

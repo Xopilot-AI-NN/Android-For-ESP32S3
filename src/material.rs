@@ -51,6 +51,17 @@ pub struct MaterialFrame {
     pub wifi_ip: Option<[u8; 4]>,
     pub timer_editor: u8,
     pub timer_duration_secs: u16,
+    pub crown_sensitivity: u8,
+    pub crown_reverse: bool,
+    pub high_contrast: bool,
+    pub has_pin: bool,
+    pub security_pending: bool,
+    pub security_view: u8,
+    pub pin_count: u8,
+    pub pin_digit: u8,
+    pub security_message: u8,
+    pub lockout_secs: u16,
+    pub lock_timeout_secs: u16,
 }
 
 impl MaterialFrame {
@@ -117,6 +128,17 @@ impl MaterialFrame {
             wifi_ip: None,
             timer_editor: 0,
             timer_duration_secs: 300,
+            crown_sensitivity: 1,
+            crown_reverse: false,
+            high_contrast: false,
+            has_pin: false,
+            security_pending: false,
+            security_view: 0,
+            pin_count: 0,
+            pin_digit: 0,
+            security_message: 0,
+            lockout_secs: 0,
+            lock_timeout_secs: 30,
         })
     }
 
@@ -280,8 +302,33 @@ impl Surface {
     }
 
     pub fn render(&mut self, frame: MaterialFrame) -> Rect {
-        let t = theme(frame.theme);
+        let mut t = theme(frame.theme);
+        if frame.high_contrast {
+            t.surface = 0;
+            t.surface_high = rgb565(28, 28, 28);
+            t.on_surface = 0xffff;
+            t.on_surface_variant = 0xffff;
+            t.outline = 0xffff;
+        }
         self.fill_rect(0, 0, WIDTH as i32, HEIGHT as i32, t.bg);
+        if frame.security_view != 0 && (frame.screen == 0 || frame.screen == 20) {
+            self.pin_entry(frame, t);
+            if frame.clock_alert != 0 {
+                self.round_rect(8, 90, 224, 108, 30, t.primary);
+                self.text_center(
+                    113,
+                    if frame.clock_alert == 2 {
+                        "Alarm"
+                    } else {
+                        "Timer finished"
+                    },
+                    2,
+                    t.on_primary,
+                );
+                self.text_center(157, "PRESS TO DISMISS", 1, t.on_primary);
+            }
+            return Rect::FULL;
+        }
         match frame.screen {
             0 => self.lock_screen(frame, t),
             1 => self.watchface(frame, t),
@@ -355,3 +402,28 @@ mod typography;
 #[path = "material/symbols/mod.rs"]
 mod symbols;
 use symbols::Symbol;
+
+#[cfg(test)]
+mod theme_tests {
+    use super::*;
+    #[test]
+    fn media_and_timer_follow_every_selected_theme() {
+        for index in 0..4 {
+            let mut frame =
+                MaterialFrame::parse("M3|10|0|70|0|0|0|0|0|0|0|0|131|0|0|0|1|1|3").unwrap();
+            frame.theme = index;
+            let colors = theme(index);
+            let mut surface = Surface::new();
+            surface.render(frame);
+            assert_eq!(surface.pixels()[126 * WIDTH + 39], colors.primary);
+            frame.screen = 11;
+            frame.timer_editor = 1;
+            surface.render(frame);
+            assert_eq!(surface.pixels()[120 * WIDTH + 20], colors.primary);
+            assert_eq!(
+                surface.pixels()[120 * WIDTH + 125],
+                colors.primary_container
+            );
+        }
+    }
+}

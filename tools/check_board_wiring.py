@@ -20,7 +20,13 @@ checks = {
     'TFT RST GPIO3': 'Output::new(p.GPIO3, Level::High' in tft,
     'TFT DC GPIO4': 'Output::new(p.GPIO4, Level::Low' in tft,
     'TFT CS GPIO5': 'Output::new(p.GPIO5, Level::High' in tft,
-    'TFT BLK GPIO6': 'Output::new(p.GPIO6, Level::Low' in tft,
+    'TFT BLK GPIO6 PWM': (
+        'Channel0, p.GPIO6' in boot
+        and 'crate::backlight::PwmBacklight(channel)' in boot
+        and 'let bl = pwm_backlight;' in tft
+        and 'frequency: Rate::from_khz(20)' in boot
+    ),
+    'Encoder hardware PCNT': 'BootKeys::new(p.PCNT, p.GPIO11, p.GPIO12, p.GPIO13)' in boot,
     'SD SPI2': 'p.SPI2' in sd,
     'SD MISO GPIO7': '.with_miso(p.GPIO7)' in sd,
     'SD SCK GPIO8': '.with_sck(p.GPIO8)' in sd,

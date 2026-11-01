@@ -10,6 +10,8 @@ use heapless::{String as HString, Vec as HVec};
 
 #[path = "runtime/clock.rs"]
 mod clock;
+#[path = "runtime/security.rs"]
+mod security;
 use clock::{clock_action, clock_snapshot};
 
 use crate::material::MaterialFrame;
@@ -173,6 +175,11 @@ pub struct Runtime {
     bluetooth_pin: Option<u32>,
     wifi_ip: Option<[u8; 4]>,
     timer_editor: u8,
+    security: security::Security,
+    security_saved: [u8; 58],
+    crown_sensitivity: u8,
+    crown_reverse: bool,
+    high_contrast: bool,
 }
 
 #[cfg(feature = "rhai-runtime")]
@@ -277,12 +284,29 @@ impl Runtime {
             bluetooth_pin: None,
             wifi_ip: None,
             timer_editor: 0,
+            security: security::Security::new(Instant::now().duration_since_epoch().as_secs()),
+            security_saved: security::Security::new(0).encode(),
+            crown_sensitivity: 1,
+            crown_reverse: false,
+            high_contrast: false,
         };
         let frame = runtime.render()?;
         Ok((runtime, frame))
     }
 
     pub fn render(&mut self) -> Result<RuntimeFrame, RuntimeError> {
+        if self.security_saved[5] != 0 || self.security.encode() == self.security_saved {
+            self.security
+                .tick(Instant::now().duration_since_epoch().as_secs());
+        }
+        if self.security.locked {
+            self.state &= !0x1ff;
+        }
+        if self.security.has_pin {
+            self.state |= 1 << 20;
+        } else {
+            self.state &= !(1 << 20);
+        }
         if self.state & 31 != 11 {
             self.timer_editor = 0;
         }
@@ -325,12 +349,69 @@ impl Runtime {
             m.wifi_ip = self.wifi_ip;
             m.timer_editor = self.timer_editor;
             m.timer_duration_secs = clock::timer_duration();
+            m.crown_sensitivity = self.crown_sensitivity;
+            m.crown_reverse = self.crown_reverse;
+            m.high_contrast = self.high_contrast;
+            m.has_pin = self.security.has_pin;
+            m.security_pending = self.security.encode() != self.security_saved;
+            m.security_view = self.security.view;
+            m.pin_count = self.security.count;
+            m.pin_digit = self.security.digit;
+            m.security_message = self.security.message;
+            m.lockout_secs = self
+                .security
+                .remaining(Instant::now().duration_since_epoch().as_secs());
+            m.lock_timeout_secs = self.security.timeout;
         }
         Ok(frame)
     }
 
     pub fn state(&self) -> i32 {
         self.state
+    }
+
+    pub fn crown_sensitivity(&self) -> u8 {
+        self.crown_sensitivity
+    }
+    pub fn preference_config(&self) -> [u8; 4] {
+        [
+            1,
+            self.crown_sensitivity,
+            u8::from(self.crown_reverse),
+            u8::from(self.high_contrast),
+        ]
+    }
+    pub fn restore_preferences(&mut self, raw: &[u8]) {
+        if raw.len() == 4 && raw[0] == 1 && raw[1] <= 2 && raw[2] <= 1 && raw[3] <= 1 {
+            self.crown_sensitivity = raw[1];
+            self.crown_reverse = raw[2] != 0;
+            self.high_contrast = raw[3] != 0;
+        }
+    }
+    pub fn security_saved(&mut self) {
+        self.security_saved = self.security.encode();
+    }
+    pub fn security_config(&self) -> [u8; 58] {
+        self.security.encode()
+    }
+    pub fn restore_security(&mut self, raw: &[u8]) {
+        if self
+            .security
+            .restore(raw, Instant::now().duration_since_epoch().as_secs())
+        {
+            self.security_saved = self.security.encode();
+        } else {
+            self.security_storage_error();
+        }
+    }
+    pub fn security_storage_error(&mut self) {
+        self.security.has_pin = true;
+        self.security.lock();
+        self.security.view = 7;
+    }
+    pub fn set_security_storage(&mut self, available: bool, entropy: [u8; 16]) {
+        self.security.storage = available;
+        self.security.entropy(entropy);
     }
 
     pub fn clock_config(&self) -> i32 {
@@ -437,8 +518,103 @@ impl Runtime {
     }
 
     pub fn dispatch(&mut self, event: RuntimeEvent) -> Result<RuntimeFrame, RuntimeError> {
+        let now = Instant::now().duration_since_epoch().as_secs();
+        if self.security_saved[5] != 0 || self.security.encode() == self.security_saved {
+            self.security.tick(now);
+        }
+        if event != RuntimeEvent::Sync {
+            self.security.activity(now);
+        }
+        let event = match event {
+            RuntimeEvent::Rotate(d) if self.crown_reverse => {
+                RuntimeEvent::Rotate(d.saturating_neg())
+            }
+            other => other,
+        };
+        if self.security.locked {
+            // A timer/alarm may be dismissed without unlocking private screens.
+            if clock::alert() != 0 && event == RuntimeEvent::Press {
+                clock_action(6);
+                return self.render();
+            }
+            self.security.event(event, now);
+            if !self.security.locked {
+                self.state = (self.state & !0x1ff) | 1;
+            }
+            return self.render();
+        }
         let screen = (self.state & 0x1f) as u8;
         let cursor = ((self.state >> 5) & 15) as u8;
+        if screen == 20 {
+            if self.security.view != 0 {
+                self.security.event(event, now);
+                if event == RuntimeEvent::Home {
+                    self.state = (self.state & !0x1ff) | 1;
+                }
+                return self.render();
+            }
+            match event {
+                RuntimeEvent::Rotate(d) => {
+                    self.state =
+                        (self.state & !0x1e0) | ((i32::from(cursor) + d).rem_euclid(5) << 5)
+                }
+                RuntimeEvent::Press => match cursor {
+                    0 => self
+                        .security
+                        .begin(if self.security.has_pin { 4 } else { 1 }),
+                    1 => self.security.begin(5),
+                    2 => {
+                        if self.security_saved[5] == 0
+                            && self.security.encode() != self.security_saved
+                        {
+                            self.security.message = 7;
+                        } else {
+                            self.security.lock();
+                        }
+                    }
+                    3 => {
+                        if self.security.has_pin {
+                            self.security.begin(6);
+                        } else {
+                            self.security.message = 6;
+                        }
+                    }
+                    _ => self.state = (self.state & !0x1ff) | 5 | (6 << 5),
+                },
+                RuntimeEvent::Back => self.state = (self.state & !0x1ff) | 5 | (6 << 5),
+                RuntimeEvent::Home => self.state = (self.state & !0x1ff) | 1,
+                _ => {}
+            }
+            return self.render();
+        }
+        if screen == 18 || screen == 19 {
+            let count = if screen == 18 { 3 } else { 2 };
+            match event {
+                RuntimeEvent::Rotate(d) => {
+                    self.state =
+                        (self.state & !0x1e0) | ((i32::from(cursor) + d).rem_euclid(count) << 5)
+                }
+                RuntimeEvent::Press => {
+                    if screen == 18 && cursor == 0 {
+                        self.crown_sensitivity = (self.crown_sensitivity + 1) % 3;
+                    } else if screen == 18 && cursor == 1 {
+                        self.crown_reverse = !self.crown_reverse;
+                    } else if screen == 19 && cursor == 0 {
+                        self.high_contrast = !self.high_contrast;
+                    } else {
+                        self.state =
+                            (self.state & !0x1ff) | 5 | ((if screen == 18 { 4 } else { 5 }) << 5);
+                    }
+                }
+                RuntimeEvent::Back => {
+                    self.state =
+                        (self.state & !0x1ff) | 5 | ((if screen == 18 { 4 } else { 5 }) << 5)
+                }
+                RuntimeEvent::Home => self.state = (self.state & !0x1ff) | 1,
+                _ => {}
+            }
+            return self.render();
+        }
         if clock::alert() != 0 && event == RuntimeEvent::Press {
             clock_action(6);
             return self.render();
@@ -782,6 +958,20 @@ impl Runtime {
     pub fn dispatch(&mut self, _event: RuntimeEvent) -> Result<RuntimeFrame, RuntimeError> {
         self.render()
     }
+    pub fn crown_sensitivity(&self) -> u8 {
+        1
+    }
+    pub fn preference_config(&self) -> [u8; 4] {
+        [1, 1, 0, 0]
+    }
+    pub fn restore_preferences(&mut self, _raw: &[u8]) {}
+    pub fn security_saved(&mut self) {}
+    pub fn security_config(&self) -> [u8; 58] {
+        [0; 58]
+    }
+    pub fn restore_security(&mut self, _raw: &[u8]) {}
+    pub fn security_storage_error(&mut self) {}
+    pub fn set_security_storage(&mut self, _available: bool, _entropy: [u8; 16]) {}
     pub fn state(&self) -> i32 {
         0
     }

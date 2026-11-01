@@ -19,6 +19,43 @@ const CLOCK_CONFIG_TAG: u32 = 0x5a43_4c4b; // "ZCLK"
 // brightness..wireless-debugging, excluding screen/cursor and notifications.
 pub(crate) const SYSTEM_SETTINGS_MASK: i32 = 0x00ff_fe00;
 
+pub(crate) fn restore_watch_config<D: BlockDevice>(
+    os: &mut runtime::Runtime,
+    pager: Option<&page_store::PageStore>,
+    dev: &D,
+) {
+    let mut entropy = [0; 16];
+    esp_hal::rng::Rng::new().read(&mut entropy);
+    os.set_security_storage(pager.is_some(), entropy);
+    if let Some(pager) = pager {
+        let mut preferences = [0; 4];
+        if let Ok(n) = pager.read(dev, 71, 0x5750_5246, &mut preferences) {
+            os.restore_preferences(&preferences[..n]);
+        }
+        let mut security = [0; 58];
+        match pager.read(dev, 70, 0x5753_4543, &mut security) {
+            Ok(n) => os.restore_security(&security[..n]),
+            Err(page_store::PageStoreError::Empty) => {}
+            Err(_) => os.security_storage_error(),
+        }
+    }
+}
+
+pub(crate) fn save_watch_preferences<D: BlockDevice>(
+    pager: &page_store::PageStore,
+    dev: &D,
+    bytes: &[u8; 4],
+) -> bool {
+    pager.write(dev, 71, 0x5750_5246, bytes).is_ok()
+}
+pub(crate) fn save_watch_security<D: BlockDevice>(
+    pager: &page_store::PageStore,
+    dev: &D,
+    bytes: &[u8; 58],
+) -> bool {
+    pager.write(dev, 70, 0x5753_4543, bytes).is_ok()
+}
+
 pub(crate) fn load_clock_config<D: BlockDevice>(
     pager: &page_store::PageStore,
     dev: &D,

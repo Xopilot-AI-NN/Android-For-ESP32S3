@@ -78,6 +78,36 @@ pub(crate) fn run() -> ! {
         Ssd1306Display::new(i2c).expect("SSD1306 not responding on GPIO5/6 address 0x3C")
     };
 
+    #[cfg(feature = "display-st7789")]
+    let mut backlight_ledc = esp_hal::ledc::Ledc::new(p.LEDC);
+    #[cfg(feature = "display-st7789")]
+    let backlight_timer = {
+        use esp_hal::ledc::timer::TimerIFace;
+        backlight_ledc.set_global_slow_clock(esp_hal::ledc::LSGlobalClkSource::APBClk);
+        let mut timer =
+            backlight_ledc.timer::<esp_hal::ledc::LowSpeed>(esp_hal::ledc::timer::Number::Timer0);
+        timer
+            .configure(esp_hal::ledc::timer::config::Config {
+                duty: esp_hal::ledc::timer::config::Duty::Duty10Bit,
+                clock_source: esp_hal::ledc::timer::LSClockSource::APBClk,
+                frequency: Rate::from_khz(20),
+            })
+            .expect("backlight PWM timer");
+        timer
+    };
+    #[cfg(feature = "display-st7789")]
+    let pwm_backlight = {
+        use esp_hal::ledc::channel::ChannelIFace;
+        let mut channel = backlight_ledc.channel(esp_hal::ledc::channel::Number::Channel0, p.GPIO6);
+        channel
+            .configure(esp_hal::ledc::channel::config::Config {
+                timer: &backlight_timer,
+                duty_pct: 0,
+                drive_mode: esp_hal::gpio::DriveMode::PushPull,
+            })
+            .expect("backlight PWM channel");
+        crate::backlight::PwmBacklight(channel)
+    };
     #[cfg(all(feature = "display-st7789", not(feature = "display-software-spi")))]
     let physical_display = {
         let spi = Spi::new(
@@ -92,7 +122,7 @@ pub(crate) fn run() -> ! {
         let cs = Output::new(p.GPIO5, Level::High, OutputConfig::default());
         let dc = Output::new(p.GPIO4, Level::Low, OutputConfig::default());
         let rst = Output::new(p.GPIO3, Level::High, OutputConfig::default());
-        let bl = Output::new(p.GPIO6, Level::Low, OutputConfig::default());
+        let bl = pwm_backlight;
         let mut init_delay = delay;
         St7789Display::new(spi, cs, dc, rst, bl, &mut init_delay).expect("ST7789V3 init failed")
     };
@@ -110,7 +140,7 @@ pub(crate) fn run() -> ! {
         let cs = Output::new(p.GPIO5, Level::High, OutputConfig::default());
         let dc = Output::new(p.GPIO4, Level::Low, OutputConfig::default());
         let rst = Output::new(p.GPIO3, Level::High, OutputConfig::default());
-        let bl = Output::new(p.GPIO6, Level::Low, OutputConfig::default());
+        let bl = pwm_backlight;
         let mut init_delay = delay;
         St7789Display::new(spi, cs, dc, rst, bl, &mut init_delay)
             .expect("ST7789V3 software SPI init failed")
@@ -196,6 +226,7 @@ pub(crate) fn run() -> ! {
 
         println!("heap after Rhai startup:\n{}", esp_alloc::HEAP.stats());
         let pager = page_store::PageStore::open(session.block_device()).ok();
+        restore_watch_config(&mut os, pager.as_ref(), session.block_device());
         let mut pager_used: u32 = 0;
         if let Some(p) = pager {
             println!(
@@ -255,6 +286,8 @@ pub(crate) fn run() -> ! {
         let mut persisted_time = rtc::snapshot_minutes();
         let mut persisted_rtc_config = rtc::config_snapshot();
         let mut persisted_clock_config = os.clock_config();
+        let mut persisted_preferences = os.preference_config();
+        let mut persisted_security = os.security_config();
         first_frame.set_swap_pages(0);
         #[cfg(feature = "radio-services")]
         if let Some(radios) = radios.as_mut() {
@@ -271,18 +304,20 @@ pub(crate) fn run() -> ! {
         // viewer talks to the block-server bridge and never reopens ttyACM0.
         session.block_device().viewer_interactive();
         let mut ui_refresh_ticks: u8 = 0;
-        let mut keys = BootKeys::new(p.GPIO11, p.GPIO12, p.GPIO13);
+        let mut keys = BootKeys::new(p.PCNT, p.GPIO11, p.GPIO12, p.GPIO13);
 
         loop {
+            keys.set_sensitivity(os.crown_sensitivity());
             let rotation = keys.poll_rotation();
-            let event = keys.poll_button_event().or_else(|| {
+            let events = [
                 if rotation != 0 {
                     Some(runtime::RuntimeEvent::Rotate(rotation as i32))
                 } else {
                     None
-                }
-            });
-            if let Some(event) = event {
+                },
+                keys.poll_button_event(),
+            ];
+            for event in events.into_iter().flatten() {
                 if let Ok(frame) = dispatch_with_pager(
                     &mut os,
                     event,
@@ -615,6 +650,19 @@ pub(crate) fn run() -> ! {
                         persisted_time = Some(now);
                     }
                 }
+                let preferences = os.preference_config();
+                if preferences != persisted_preferences
+                    && save_watch_preferences(pager, session.block_device(), &preferences)
+                {
+                    persisted_preferences = preferences;
+                }
+                let security = os.security_config();
+                if security != persisted_security
+                    && save_watch_security(pager, session.block_device(), &security)
+                {
+                    persisted_security = security;
+                    os.security_saved();
+                }
                 let clock_config = os.clock_config();
                 if clock_config != persisted_clock_config
                     && save_clock_config(pager, session.block_device(), clock_config)
@@ -646,7 +694,7 @@ pub(crate) fn run() -> ! {
         #[cfg(feature = "display-ssd1306")]
         let mut display = DesktopMirror::new(physical_display, usb_tx, DesktopSurface::Ssd1306);
 
-        let mut keys = BootKeys::new(p.GPIO11, p.GPIO12, p.GPIO13);
+        let mut keys = BootKeys::new(p.PCNT, p.GPIO11, p.GPIO12, p.GPIO13);
 
         let _ = display.boot_logo();
         delay.delay_millis(config::BOOT_SPLASH_MS);
@@ -751,6 +799,7 @@ pub(crate) fn run() -> ! {
 
         println!("heap after Rhai startup:\n{}", esp_alloc::HEAP.stats());
         let pager = page_store::PageStore::open(session.block_device()).ok();
+        restore_watch_config(&mut os, pager.as_ref(), session.block_device());
         let mut pager_used: u32 = 0;
         if let Some(p) = pager {
             println!(
@@ -810,6 +859,8 @@ pub(crate) fn run() -> ! {
         let mut persisted_time = rtc::snapshot_minutes();
         let mut persisted_rtc_config = rtc::config_snapshot();
         let mut persisted_clock_config = os.clock_config();
+        let mut persisted_preferences = os.preference_config();
+        let mut persisted_security = os.security_config();
         first_frame.set_swap_pages(0);
         #[cfg(feature = "radio-services")]
         if let Some(radios) = radios.as_mut() {
@@ -823,6 +874,7 @@ pub(crate) fn run() -> ! {
 
         let mut ui_refresh_ticks: u8 = 0;
         loop {
+            keys.set_sensitivity(os.crown_sensitivity());
             let rotation = keys.poll_rotation();
             if rotation != 0 {
                 if let Ok(frame) = dispatch_with_pager(
@@ -1035,6 +1087,19 @@ pub(crate) fn run() -> ! {
                     {
                         persisted_time = Some(now);
                     }
+                }
+                let preferences = os.preference_config();
+                if preferences != persisted_preferences
+                    && save_watch_preferences(pager, session.block_device(), &preferences)
+                {
+                    persisted_preferences = preferences;
+                }
+                let security = os.security_config();
+                if security != persisted_security
+                    && save_watch_security(pager, session.block_device(), &security)
+                {
+                    persisted_security = security;
+                    os.security_saved();
                 }
                 let clock_config = os.clock_config();
                 if clock_config != persisted_clock_config

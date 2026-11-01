@@ -11,8 +11,8 @@ impl Surface {
 
     pub(super) fn watchface(&mut self, f: MaterialFrame, t: Theme) {
         self.status_strip(f, t);
-        let accent = rgb565(166, 222, 239);
-        let muted = rgb565(44, 69, 80);
+        let accent = t.primary;
+        let muted = t.surface_high;
         for (x, y, progress) in [
             (56, 65, if f.alarm_enabled { 100 } else { 0 }),
             (
@@ -396,8 +396,8 @@ impl Surface {
         // instead of looking like another Settings page.
         let (bg, fg, sub) = if cur == 0 {
             (
-                rgb565(58, 113, 94),
-                rgb565(228, 255, 241),
+                t.primary_container,
+                t.on_primary_container,
                 if f.wifi {
                     "WI-FI CONNECTED"
                 } else {
@@ -406,8 +406,8 @@ impl Surface {
             )
         } else if cur == 1 {
             (
-                rgb565(47, 78, 126),
-                rgb565(226, 236, 255),
+                t.primary_container,
+                t.on_primary_container,
                 if f.timer_secs > 0 {
                     "TIMER RUNNING"
                 } else {
@@ -416,8 +416,8 @@ impl Surface {
             )
         } else {
             (
-                rgb565(92, 67, 119),
-                rgb565(247, 231, 255),
+                t.primary_container,
+                t.on_primary_container,
                 if f.alarm_enabled {
                     "ALARM ON"
                 } else {
@@ -478,8 +478,8 @@ impl Surface {
             1,
             t.on_surface_variant,
         );
-        let cream = rgb565(255, 224, 165);
-        let ink = rgb565(57, 42, 18);
+        let cream = t.primary;
+        let ink = t.on_primary;
         for (i, x) in [(0, 39), (2, 201)] {
             self.circle(x, 151, if f.cursor == i { 29 } else { 26 }, cream);
             self.symbol(
@@ -530,17 +530,17 @@ impl Surface {
     }
 
     pub(super) fn timer_presets(&mut self, f: MaterialFrame, t: Theme) {
-        let lavender = rgb565(207, 198, 255);
-        let lime = rgb565(222, 244, 148);
-        let ink = rgb565(36, 30, 57);
-        self.symbol(Symbol::Timer, 120, 23, lavender);
+        let lavender = t.primary_container;
+        let lime = t.primary;
+        let ink = t.on_primary_container;
+        self.symbol(Symbol::Timer, 120, 23, t.primary);
         self.text_center(45, "Timer", 2, t.on_surface);
         if f.timer_editor == 2 {
             let duration = Self::mmss_text(f.timer_duration_secs);
-            self.clock_text(104, &duration, lavender);
+            self.clock_text(104, &duration, t.primary);
             self.text_center(188, "Crown: adjust minutes", 1, t.on_surface_variant);
             self.round_rect(55, 229, 130, 38, 19, lime);
-            self.text_center(242, "Start timer", 1, ink);
+            self.text_center(242, "Start timer", 1, t.on_primary);
             return;
         }
         if f.timer_secs > 0 {
@@ -562,8 +562,28 @@ impl Surface {
                     lavender
                 },
             );
-            self.text_center_x(x + 49, y + 12, label, 2, ink);
-            self.text_center_x(x + 49, y + 39, "Min", 1, ink);
+            self.text_center_x(
+                x + 49,
+                y + 12,
+                label,
+                2,
+                if f.cursor as usize == i {
+                    t.on_primary
+                } else {
+                    ink
+                },
+            );
+            self.text_center_x(
+                x + 49,
+                y + 39,
+                "Min",
+                1,
+                if f.cursor as usize == i {
+                    t.on_primary
+                } else {
+                    ink
+                },
+            );
         }
         self.round_rect(
             63,
@@ -573,7 +593,16 @@ impl Surface {
             17,
             if f.cursor == 4 { lavender } else { lime },
         );
-        self.text_center(244, "+", 2, ink);
+        self.text_center(
+            244,
+            "+",
+            2,
+            if f.cursor == 4 {
+                t.on_primary_container
+            } else {
+                t.on_primary
+            },
+        );
     }
 
     pub(super) fn clock_tools(&mut self, f: MaterialFrame, t: Theme) {

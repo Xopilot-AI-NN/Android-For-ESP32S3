@@ -100,6 +100,7 @@ impl Surface {
         self.photo_header(f, "Brightness", t);
         self.circle(120, 105, 39, t.primary_container);
         self.icon_sun(120, 105, t.primary);
+        self.text_center(155, &alloc::format!("{} %", f.brightness), 2, t.on_surface);
         self.slider(24, 187, 192, f.brightness, t);
         self.text_center(224, "ROTATE CROWN", 1, t.on_surface);
         self.text_center(245, "PRESS TO CLOSE", 1, t.on_surface_variant);

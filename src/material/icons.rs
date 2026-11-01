@@ -125,6 +125,14 @@ impl Surface {
 
     pub(super) fn row_icon(&mut self, label: &str, cx: i32, cy: i32, color: u16) {
         match label {
+            "Чувствительность" | "Направление" => {
+                self.symbol(Symbol::Gestures, cx, cy, color)
+            }
+            "Задать PIN" | "Изменить PIN" | "Отключить PIN" | "Заблокировать" => {
+                self.icon_lock(cx, cy, color)
+            }
+            "Автоблокировка" | "Применить" => self.icon_clock(cx, cy, color),
+            "Контрастность" => self.icon_sun(cx, cy, color),
             "Connectivity" | "Wi-Fi" | "CONNECTIVITY" | "WI-FI" => self.icon_wifi(cx, cy, color),
             "Bluetooth" | "BLUETOOTH" => self.icon_bt(cx, cy, color),
             "Apps & notifications" | "Notifications" | "APPS & NOTIFS" | "NOTIFICATIONS" => {

@@ -32,6 +32,10 @@ fn main() {
         ("timer-alert", 11, 0),
         ("brightness", 28, 0),
         ("keyboard", 24, 0),
+        ("gestures", 18, 0),
+        ("security", 20, 1),
+        ("pin-entry", 0, 0),
+        ("lock-timeout", 20, 0),
     ] {
         let raw = format!("M3|{screen}|{cursor}|60|0|0|0|0|1|1|0|0|131|0|0|1|1|1|3");
         let mut frame = material::MaterialFrame::parse(&raw).unwrap();
@@ -40,6 +44,17 @@ fn main() {
         }
         if name == "timer-custom" {
             frame.timer_editor = 2;
+        }
+        if name == "pin-entry" {
+            frame.has_pin = true;
+            frame.security_view = 3;
+            frame.pin_count = 2;
+            frame.pin_digit = 5;
+        }
+        if name == "lock-timeout" {
+            frame.has_pin = true;
+            frame.security_view = 5;
+            frame.pin_digit = 10;
         }
         frame.bt_status = 3;
         frame.wifi_link_state = 4;
