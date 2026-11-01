@@ -15,6 +15,7 @@ radio-services = []
 
 [dependencies]
 embedded-hal = "=1.0.0"
+embedded-hal-bus = "=0.3.0"
 rhai = { version = "=1.25.1", default-features = false, features = ["no_std", "only_i32", "no_float", "no_index", "no_object"] }
 heapless = { version = "=0.9.3", default-features = false }
 

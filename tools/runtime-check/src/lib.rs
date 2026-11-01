@@ -34,6 +34,8 @@ mod font;
 pub use display::St7789Display;
 #[path = "../../../src/material.rs"]
 mod material;
+#[path = "../../../src/sd_spi.rs"]
+mod sd_spi;
 #[path = "../../../src/rtc.rs"]
 mod rtc;
 #[path = "../../../src/media.rs"]

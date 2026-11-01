@@ -745,7 +745,9 @@ pub(crate) fn run() -> ! {
             enter_fastboot(display, desktop_input, &mut keys, &delay);
         }
         println!("microSD: SPI2 MISO=7 SCK=8 MOSI=9 CS=10");
-        let device = ExclusiveDevice::new(spi, cs, delay).expect("SD CS pin");
+        // SPI2 belongs only to SD; keep command and response in one CS session.
+        let device = sd_spi::SdSpiSession::new(spi, cs, delay);
+        println!("microSD: continuous CS session (command/response/data)");
 
         let _ = display.boot_progress("LOADING", 2);
         let mut session = match android_storage::load_system(device, delay, |card| {

@@ -9,8 +9,6 @@ compile_error!("enable exactly one display backend: display-ssd1306 OR display-s
 #[cfg(not(any(feature = "display-ssd1306", feature = "display-st7789")))]
 compile_error!("enable a display backend: display-ssd1306 OR display-st7789");
 
-#[cfg(not(feature = "pc-block-boot"))]
-use embedded_hal_bus::spi::ExclusiveDevice;
 use embedded_sdmmc::BlockDevice;
 #[cfg(feature = "display-ssd1306")]
 use esp_hal::i2c::master::{Config as I2cConfig, I2c};
@@ -62,6 +60,8 @@ mod page_store;
 mod radio;
 mod rtc;
 mod runtime;
+#[cfg(not(feature = "pc-block-boot"))]
+mod sd_spi;
 #[cfg(feature = "display-software-spi")]
 mod soft_spi;
 #[cfg(feature = "pc-block-boot")]
