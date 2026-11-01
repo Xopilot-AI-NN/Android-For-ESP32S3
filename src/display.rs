@@ -12,6 +12,10 @@ pub trait Backlight: embedded_hal::digital::OutputPin {
 }
 
 pub trait BootDisplay {
+    fn set_wallpaper(&mut self, _pixels: alloc::vec::Vec<u16>) {}
+    fn snapshot_rgb565(&self) -> Option<&[u16]> {
+        None
+    }
     fn boot_logo(&mut self) -> Result<(), DisplayError>;
     fn boot_progress(&mut self, label: &str, phase: u8) -> Result<(), DisplayError>;
     fn status(&mut self, title: &str, l1: &str, l2: &str, l3: &str) -> Result<(), DisplayError>;
@@ -458,6 +462,17 @@ mod tft {
         RST: OutputPin,
         BL: Backlight,
     {
+        fn set_wallpaper(&mut self, pixels: Vec<u16>) {
+            self.material_surface.set_wallpaper(pixels);
+            self.frame_valid = false;
+        }
+        fn snapshot_rgb565(&self) -> Option<&[u16]> {
+            if self.frame_valid {
+                Some(&self.displayed)
+            } else {
+                None
+            }
+        }
         fn boot_logo(&mut self) -> Result<(), DisplayError> {
             self.frame_valid = false;
             for phase in 1..=12 {

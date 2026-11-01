@@ -44,6 +44,7 @@ pub(crate) fn sample_boot_mode<D: BootDisplay>(
                 DesktopEvent::Swipe(_) => {}
                 DesktopEvent::Normal => return BootMode::Normal,
                 DesktopEvent::CompanionTime(_)
+                | DesktopEvent::AdbCommand(_)
                 | DesktopEvent::AdbGetProp
                 | DesktopEvent::AdbServices
                 | DesktopEvent::AdbPackages

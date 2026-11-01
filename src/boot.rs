@@ -225,6 +225,10 @@ pub(crate) fn run() -> ! {
         println!("heap after Rhai startup:\n{}", esp_alloc::HEAP.stats());
         let pager = page_store::PageStore::open(session.block_device()).ok();
         restore_watch_config(&mut os, pager.as_ref(), session.block_device());
+        if let Some(pixels) = wallpaper::load(session.block_device()) {
+            display.set_wallpaper(pixels);
+            os.wallpaper_available(true);
+        }
         let mut pager_used: u32 = 0;
         if let Some(p) = pager {
             println!(
@@ -350,6 +354,16 @@ pub(crate) fn run() -> ! {
                     }
                     DesktopEvent::Power => Some(runtime::RuntimeEvent::Press),
                     DesktopEvent::Normal => Some(runtime::RuntimeEvent::Home),
+                    DesktopEvent::AdbCommand(cmd) => {
+                        let out = device_commands::execute(
+                            cmd.as_str(),
+                            &mut os,
+                            &mut display,
+                            session.block_device(),
+                        );
+                        session.block_device().viewer_adb_output("shell", &out);
+                        None
+                    }
                     DesktopEvent::AdbGetProp => {
                         session
                             .block_device()
@@ -788,6 +802,10 @@ pub(crate) fn run() -> ! {
         println!("heap after Rhai startup:\n{}", esp_alloc::HEAP.stats());
         let pager = page_store::PageStore::open(session.block_device()).ok();
         restore_watch_config(&mut os, pager.as_ref(), session.block_device());
+        if let Some(pixels) = wallpaper::load(session.block_device()) {
+            display.set_wallpaper(pixels);
+            os.wallpaper_available(true);
+        }
         let mut pager_used: u32 = 0;
         if let Some(p) = pager {
             println!(
@@ -918,6 +936,16 @@ pub(crate) fn run() -> ! {
                     }
                     DesktopEvent::Power => Some(runtime::RuntimeEvent::Press),
                     DesktopEvent::Normal => Some(runtime::RuntimeEvent::Home),
+                    DesktopEvent::AdbCommand(cmd) => {
+                        let out = device_commands::execute(
+                            cmd.as_str(),
+                            &mut os,
+                            &mut display,
+                            session.block_device(),
+                        );
+                        display.adb_output("shell", &out);
+                        None
+                    }
                     DesktopEvent::AdbGetProp
                     | DesktopEvent::AdbServices
                     | DesktopEvent::AdbPackages

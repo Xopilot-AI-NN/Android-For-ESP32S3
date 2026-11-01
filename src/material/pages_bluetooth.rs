@@ -63,6 +63,7 @@ impl Surface {
             "COLOR THEME",
             "Сон экрана",
             "Циферблат",
+            "Обои",
             "BACK",
         ];
         let values = [
@@ -70,10 +71,17 @@ impl Surface {
             theme_name,
             timeout.as_str(),
             face_name,
+            if !f.wallpaper_available {
+                "Не загружены"
+            } else if f.wallpaper_enabled {
+                "Включены"
+            } else {
+                "Выключены"
+            },
             "К настройкам",
         ];
-        let cur = f.cursor.min(4);
-        let start = cur.saturating_sub(1).min(2);
+        let cur = f.cursor.min(5);
+        let start = cur.saturating_sub(1).min(3);
         for row in 0..3 {
             let index = (start + row) as usize;
             self.info_card(
@@ -84,7 +92,7 @@ impl Surface {
                 t,
             );
         }
-        self.scroll_indicator(cur, 5, t);
+        self.scroll_indicator(cur, 6, t);
     }
 
     pub(super) fn brightness_editor(&mut self, f: MaterialFrame, t: Theme) {

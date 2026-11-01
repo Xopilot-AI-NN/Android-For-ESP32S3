@@ -44,6 +44,7 @@ mod boot_control;
 mod config;
 mod cpio;
 mod desktop;
+mod device_commands;
 mod display;
 mod fastboot;
 mod font;
@@ -64,6 +65,7 @@ mod runtime;
 mod soft_spi;
 #[cfg(feature = "pc-block-boot")]
 mod usb_pc_block;
+mod wallpaper;
 
 use desktop::{DesktopEvent, WifiCredentials};
 #[cfg(not(feature = "pc-block-boot"))]

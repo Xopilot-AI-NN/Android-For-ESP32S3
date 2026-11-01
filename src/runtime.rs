@@ -196,6 +196,8 @@ pub struct Runtime {
     timeout_parent: u8,
     transition_started_ms: u64,
     watch_face: u8,
+    wallpaper_enabled: bool,
+    has_wallpaper: bool,
     power_menu: bool,
     power_cursor: u8,
     system_action: Option<SystemAction>,
@@ -312,6 +314,8 @@ impl Runtime {
             timeout_parent: 20,
             transition_started_ms: 0,
             watch_face: 0,
+            wallpaper_enabled: true,
+            has_wallpaper: false,
             power_menu: false,
             power_cursor: 0,
             system_action: None,
@@ -395,6 +399,8 @@ impl Runtime {
             m.transition_alpha =
                 (now_ms.saturating_sub(self.transition_started_ms) * 255 / 180).min(255) as u8;
             m.watch_face = self.watch_face;
+            m.wallpaper_enabled = self.wallpaper_enabled;
+            m.wallpaper_available = self.has_wallpaper;
             m.stopwatch_running = clock::stopwatch_running();
             m.power_menu = self.power_menu;
             if self.power_menu {
@@ -415,6 +421,19 @@ impl Runtime {
     }
     pub fn take_system_action(&mut self) -> Option<SystemAction> {
         self.system_action.take()
+    }
+    pub fn is_locked(&self) -> bool {
+        self.security.locked
+    }
+    pub fn request_system_action(&mut self, action: SystemAction) -> bool {
+        if self.is_locked() {
+            return false;
+        }
+        self.system_action = Some(action);
+        true
+    }
+    pub fn wallpaper_available(&mut self, available: bool) {
+        self.has_wallpaper = available;
     }
     fn idle_brightness(&self, now_ms: u64) -> u8 {
         idle::level(
@@ -437,7 +456,7 @@ impl Runtime {
             u8::from(self.crown_reverse),
             u8::from(self.high_contrast),
             self.watch_face,
-            0,
+            u8::from(self.wallpaper_enabled),
             0,
             0,
         ]
@@ -453,6 +472,7 @@ impl Runtime {
             self.high_contrast = raw[3] != 0;
             if raw.len() == 8 {
                 self.watch_face = raw[4].min(2);
+                self.wallpaper_enabled = raw[5] != 0;
             }
         }
     }
@@ -656,7 +676,7 @@ impl Runtime {
             match event {
                 RuntimeEvent::Rotate(d) => {
                     self.state =
-                        (self.state & !0x1e0) | ((i32::from(cursor) + d).rem_euclid(4) << 5)
+                        (self.state & !0x1e0) | ((i32::from(cursor) + d).rem_euclid(6) << 5)
                 }
                 RuntimeEvent::Press => match cursor {
                     0 => self.state = (self.state & !0x1ff) | 28,
@@ -670,6 +690,7 @@ impl Runtime {
                         self.state = (self.state & !0x1ff) | 20;
                     }
                     3 => self.watch_face = (self.watch_face + 1) % 3,
+                    4 => self.wallpaper_enabled = !self.wallpaper_enabled,
                     _ => self.state = (self.state & !0x1ff) | 5 | (2 << 5),
                 },
                 RuntimeEvent::Back => self.state = (self.state & !0x1ff) | 5 | (2 << 5),
@@ -1154,7 +1175,7 @@ impl Runtime {
     pub fn crown_sensitivity(&self) -> u8 {
         1
     }
-    pub fn preference_config(&self) -> [u8; 4] {
+    pub fn preference_config(&self) -> [u8; 8] {
         [2, 1, 0, 0, 0, 0, 0, 0]
     }
     pub fn restore_preferences(&mut self, _raw: &[u8]) {}
@@ -1171,6 +1192,13 @@ impl Runtime {
     pub fn take_system_action(&mut self) -> Option<SystemAction> {
         None
     }
+    pub fn is_locked(&self) -> bool {
+        false
+    }
+    pub fn request_system_action(&mut self, _action: SystemAction) -> bool {
+        false
+    }
+    pub fn wallpaper_available(&mut self, _available: bool) {}
     pub fn replace_state(&mut self, _state: i32) -> Result<RuntimeFrame, RuntimeError> {
         self.render()
     }

@@ -73,6 +73,8 @@ pub struct MaterialFrame {
     pub date_month: u8,
     pub stopwatch_running: bool,
     pub power_menu: bool,
+    pub wallpaper_enabled: bool,
+    pub wallpaper_available: bool,
 }
 
 impl MaterialFrame {
@@ -161,6 +163,8 @@ impl MaterialFrame {
             date_month: 0,
             stopwatch_running: false,
             power_menu: false,
+            wallpaper_enabled: true,
+            wallpaper_available: false,
         })
     }
 
@@ -311,16 +315,23 @@ fn theme(index: u8) -> Theme {
 
 pub struct Surface {
     pixels: Vec<u16>,
+    wallpaper: Option<Vec<u16>>,
 }
 
 impl Surface {
     pub fn new() -> Self {
         Self {
             pixels: vec![0; WIDTH * HEIGHT],
+            wallpaper: None,
         }
     }
     pub fn pixels(&self) -> &[u16] {
         &self.pixels
+    }
+    pub fn set_wallpaper(&mut self, pixels: Vec<u16>) {
+        if pixels.len() == WIDTH * HEIGHT {
+            self.wallpaper = Some(pixels);
+        }
     }
 
     pub fn render(&mut self, frame: MaterialFrame) -> Rect {
@@ -333,6 +344,12 @@ impl Surface {
             t.outline = 0xffff;
         }
         self.fill_rect(0, 0, WIDTH as i32, HEIGHT as i32, t.bg);
+        if frame.screen == 1 && frame.wallpaper_enabled {
+            if let Some(wallpaper) = self.wallpaper.as_ref() {
+                self.pixels.copy_from_slice(wallpaper);
+                self.scale_pixels(40);
+            }
+        }
         if frame.power_menu {
             self.power_page(frame, t);
             return Rect::FULL;

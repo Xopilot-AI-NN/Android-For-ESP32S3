@@ -115,6 +115,18 @@ fn hex_nibble(v: u8) -> Option<u8> {
     }
 }
 
+/// Small copyable command buffer; malformed UTF-8 never enters the runtime.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DebugRequest {
+    bytes: [u8; 80],
+    len: u8,
+}
+impl DebugRequest {
+    pub fn as_str(&self) -> &str {
+        core::str::from_utf8(&self.bytes[..self.len as usize]).unwrap_or("")
+    }
+}
+
 /// Commands sent by the PC viewer/ZADB client to the real ESP32-S3.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DesktopEvent {
@@ -127,6 +139,7 @@ pub enum DesktopEvent {
     Swipe(i8),
     CompanionTime(u16),
     Power,
+    AdbCommand(DebugRequest),
     AdbGetProp,
     AdbServices,
     AdbPackages,
@@ -243,6 +256,15 @@ pub(crate) fn parse_event(line: &str) -> Option<DesktopEvent> {
         "@ZADB|BT_DISCONNECT" => return Some(DesktopEvent::BtDisconnect),
         _ => {}
     }
+    if let Some(hex) = line.strip_prefix("@ZADB|CMD|") {
+        let mut bytes = [0; 80];
+        let len = decode_hex(hex, &mut bytes)?;
+        core::str::from_utf8(&bytes[..len]).ok()?;
+        return Some(DesktopEvent::AdbCommand(DebugRequest {
+            bytes,
+            len: len as u8,
+        }));
+    }
     // Explicit Wear companion debug hook. The desktop viewer never sends
     // this automatically; production time comes from a paired companion.
     if let Some(rest) = line.strip_prefix("@ZADB|COMPANION_TIME|") {
@@ -347,6 +369,9 @@ impl<'d, D> DesktopMirror<'d, D> {
         (self.inner, self.tx)
     }
 
+    pub fn adb_output(&mut self, topic: &str, text: &str) {
+        self.send_parts(&["@ZADB", "OUT", topic, text]);
+    }
     fn send_parts(&mut self, parts: &[&str]) {
         for (idx, part) in parts.iter().enumerate() {
             if idx != 0 {
@@ -369,6 +394,15 @@ impl<'d, D> DesktopMirror<'d, D> {
 
 #[cfg(not(feature = "pc-block-boot"))]
 impl<D: BootDisplay> BootDisplay for DesktopMirror<'_, D> {
+    fn set_wallpaper(&mut self, pixels: alloc::vec::Vec<u16>) {
+        self.inner.set_wallpaper(pixels);
+    }
+    fn snapshot_rgb565(&self) -> Option<&[u16]> {
+        self.inner.snapshot_rgb565()
+    }
+    fn boot_menu(&mut self, kind: u8, cursor: u8) -> Result<(), DisplayError> {
+        self.inner.boot_menu(kind, cursor)
+    }
     fn boot_logo(&mut self) -> Result<(), DisplayError> {
         let result = self.inner.boot_logo();
         self.send_parts(&["@ZWUI", "BOOT"]);
