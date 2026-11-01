@@ -15,7 +15,13 @@ import struct
 import tempfile
 import uuid
 import zlib
+from contextlib import contextmanager
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 
 ROOT = Path(__file__).resolve().parents[1]
 SECTOR = 512
@@ -351,6 +357,53 @@ def gpt_headers(total_lba: int, parts: list[tuple[str, int, int]], disk_guid: uu
     return hdr(1, total_lba - 1, 2), bytes(entries), hdr(total_lba - 1, 1, backup_entries_lba), backup_entries_lba
 
 
+def validate_existing_layout(output: Path, expected: dict[str, tuple[int, int]], total_bytes: int) -> None:
+    """Refuse to replace an existing image unless its persistent ranges match."""
+    if output.stat().st_size != total_bytes:
+        raise RuntimeError("existing image size changed; choose a new output path to avoid losing data")
+    with output.open("rb") as old:
+        old.seek(SECTOR)
+        header = bytearray(old.read(SECTOR))
+        if header[:8] != b"EFI PART":
+            raise RuntimeError("existing image has no GPT; refusing to erase it")
+        header_size = struct.unpack_from("<I", header, 12)[0]
+        if not 92 <= header_size <= SECTOR:
+            raise RuntimeError("invalid existing GPT header size")
+        checksum = struct.unpack_from("<I", header, 16)[0]
+        header[16:20] = bytes(4)
+        if zlib.crc32(header[:header_size]) & 0xFFFFFFFF != checksum:
+            raise RuntimeError("existing GPT header checksum failed")
+        entries_lba, count, entry_size, checksum = struct.unpack_from("<QIII", header, 72)
+        if count != GPT_ENTRIES or entry_size != GPT_ENTRY_SIZE or entries_lba != 2:
+            raise RuntimeError("unsupported existing GPT layout")
+        old.seek(entries_lba * SECTOR)
+        entries = old.read(count * entry_size)
+        if zlib.crc32(entries) & 0xFFFFFFFF != checksum:
+            raise RuntimeError("existing GPT partition checksum failed")
+        found = {}
+        for offset in range(0, len(entries), entry_size):
+            entry = entries[offset:offset + entry_size]
+            if entry[:16] == bytes(16):
+                continue
+            name = entry[56:128].decode("utf-16-le").rstrip("\0")
+            if name in found:
+                raise RuntimeError("duplicate partition in existing GPT")
+            found[name] = struct.unpack_from("<QQ", entry, 32)
+        if found != expected:
+            raise RuntimeError("existing partition layout changed; choose a new output path to preserve the old data")
+
+
+@contextmanager
+def image_build_lock(output: Path):
+    with output.with_suffix(output.suffix + ".lock").open("a+b") as lock:
+        if fcntl is not None:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as error:
+                raise RuntimeError("image is in use: stop usb_block_server.py before rebuilding") from error
+        yield
+
+
 def write_sd_image(output: Path, size_mib: int, blobs: dict[str, bytes], version: str) -> None:
     layout = [
         ("misc", 4), ("metadata", 16),
@@ -380,6 +433,28 @@ def write_sd_image(output: Path, size_mib: int, blobs: dict[str, bytes], version
     primary, entries, backup, backup_entries = gpt_headers(total_lba, parts, disk_guid)
     by_name = {name: (first, last) for name, first, last in parts}
     output.parent.mkdir(parents=True, exist_ok=True)
+    with image_build_lock(output):
+        preserve = output.exists()
+        if preserve:
+            validate_existing_layout(output, by_name, total_bytes)
+        # Build alongside the original. A failed build must not truncate the only
+        # copy of PIN preferences, bonds, Wi-Fi credentials or userdata.
+        fd, temporary_name = tempfile.mkstemp(prefix=f".{output.name}.", dir=output.parent)
+        os.close(fd)
+        temporary = Path(temporary_name)
+        try:
+            _write_sd_image_file(temporary, output if preserve else None, total_bytes, total_lba,
+                                 primary, entries, backup, backup_entries, by_name, blobs)
+            temporary.replace(output)
+        finally:
+            temporary.unlink(missing_ok=True)
+    if preserve:
+        print("  preserved        : metadata, swap (PIN/settings/bonds), userdata")
+
+
+def _write_sd_image_file(output: Path, previous: Path | None, total_bytes: int, total_lba: int,
+                         primary: bytes, entries: bytes, backup: bytes, backup_entries: int,
+                         by_name: dict[str, tuple[int, int]], blobs: dict[str, bytes]) -> None:
     with output.open("wb") as f:
         f.truncate(total_bytes)
         f.seek(0); f.write(protective_mbr(total_lba))
@@ -403,6 +478,24 @@ def write_sd_image(output: Path, size_mib: int, blobs: dict[str, bytes], version
             put(f"vendor_boot_{suffix}", blobs["vendor_boot.img"])
             put(f"vbmeta_{suffix}", blobs["vbmeta.img"])
         put("super", blobs["super.img"])
+        if previous is not None:
+            with previous.open("rb") as old:
+                for name in ("metadata", "swap", "userdata"):
+                    first, last = by_name[name]
+                    old.seek(first * SECTOR)
+                    f.seek(first * SECTOR)
+                    left = (last - first + 1) * SECTOR
+                    while left:
+                        data = old.read(min(left, MIB))
+                        if not data:
+                            raise RuntimeError(f"short read while preserving {name}")
+                        if any(data):
+                            f.write(data)
+                        else:
+                            f.seek(len(data), 1)  # Preserve sparse zero-filled regions.
+                        left -= len(data)
+        f.flush()
+        os.fsync(f.fileno())
 
 
 def verify_super(super_path: Path) -> None:
