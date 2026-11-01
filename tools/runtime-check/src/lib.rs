@@ -23,8 +23,13 @@ pub mod time {
 }
 #[path = "../../../src/input/button.rs"]
 mod button;
+#[path = "../../../src/config.rs"]
+mod config;
+#[path = "../../../src/display.rs"]
+mod display;
 #[path = "../../../src/font.rs"]
 mod font;
+pub use display::St7789Display;
 #[path = "../../../src/material.rs"]
 mod material;
 #[path = "../../../src/rtc.rs"]

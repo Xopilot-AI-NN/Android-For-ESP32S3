@@ -268,9 +268,13 @@ mod tft {
             self.cs.set_low().map_err(|_| DisplayError::Bus)?;
             self.dc.set_low().map_err(|_| DisplayError::Bus)?;
             self.spi.write(&[cmd]).map_err(|_| DisplayError::Bus)?;
+            // SpiBus::write may return with the final byte still on the wire.
+            // DC must remain command-low until that byte has completed.
+            self.spi.flush().map_err(|_| DisplayError::Bus)?;
             if !data.is_empty() {
                 self.dc.set_high().map_err(|_| DisplayError::Bus)?;
                 self.spi.write(data).map_err(|_| DisplayError::Bus)?;
+                self.spi.flush().map_err(|_| DisplayError::Bus)?;
             }
             self.cs.set_high().map_err(|_| DisplayError::Bus)
         }
@@ -291,6 +295,7 @@ mod tft {
             self.cs.set_low().map_err(|_| DisplayError::Bus)?;
             self.dc.set_low().map_err(|_| DisplayError::Bus)?;
             self.spi.write(&[0x2C]).map_err(|_| DisplayError::Bus)?;
+            self.spi.flush().map_err(|_| DisplayError::Bus)?;
             self.dc.set_high().map_err(|_| DisplayError::Bus)
         }
 
@@ -324,6 +329,7 @@ mod tft {
                     .map_err(|_| DisplayError::Bus)?;
                 left -= pixels;
             }
+            self.spi.flush().map_err(|_| DisplayError::Bus)?;
             self.cs.set_high().map_err(|_| DisplayError::Bus)
         }
 
@@ -358,6 +364,7 @@ mod tft {
                     pos += count;
                 }
             }
+            self.spi.flush().map_err(|_| DisplayError::Bus)?;
             self.cs.set_high().map_err(|_| DisplayError::Bus)
         }
 
@@ -497,6 +504,112 @@ mod tft {
             self.text_center(55, "BOOT FAILED", 3, RED)?;
             self.text_center(125, code, 2, WHITE)?;
             self.text_center(165, detail, 2, DIM)
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use core::convert::Infallible;
+        use embedded_hal::{digital::ErrorType as PinErrorType, spi::ErrorType as SpiErrorType};
+        use std::{cell::RefCell, rc::Rc};
+
+        #[derive(Default)]
+        struct Wire {
+            busy: bool,
+            cs_high: bool,
+            dc_high: bool,
+            bytes: usize,
+        }
+        struct Bus(Rc<RefCell<Wire>>);
+        impl SpiErrorType for Bus {
+            type Error = Infallible;
+        }
+        impl SpiBus for Bus {
+            fn read(&mut self, _: &mut [u8]) -> Result<(), Infallible> {
+                unreachable!()
+            }
+            fn write(&mut self, bytes: &[u8]) -> Result<(), Infallible> {
+                let mut wire = self.0.borrow_mut();
+                assert!(!wire.cs_high, "writing with CS deasserted");
+                wire.bytes += bytes.len();
+                // Model esp-hal: the final transfer remains active on return.
+                wire.busy = true;
+                Ok(())
+            }
+            fn transfer(&mut self, _: &mut [u8], _: &[u8]) -> Result<(), Infallible> {
+                unreachable!()
+            }
+            fn transfer_in_place(&mut self, _: &mut [u8]) -> Result<(), Infallible> {
+                unreachable!()
+            }
+            fn flush(&mut self) -> Result<(), Infallible> {
+                self.0.borrow_mut().busy = false;
+                Ok(())
+            }
+        }
+        struct Pin {
+            wire: Rc<RefCell<Wire>>,
+            kind: u8,
+        }
+        impl PinErrorType for Pin {
+            type Error = Infallible;
+        }
+        impl Pin {
+            fn set(&mut self, high: bool) {
+                let mut wire = self.wire.borrow_mut();
+                if self.kind < 2 {
+                    assert!(!wire.busy, "DC/CS changed before SPI finished");
+                    if self.kind == 0 {
+                        wire.cs_high = high;
+                    } else {
+                        wire.dc_high = high;
+                    }
+                }
+            }
+        }
+        impl OutputPin for Pin {
+            fn set_low(&mut self) -> Result<(), Infallible> {
+                self.set(false);
+                Ok(())
+            }
+            fn set_high(&mut self) -> Result<(), Infallible> {
+                self.set(true);
+                Ok(())
+            }
+        }
+        struct NoDelay;
+        impl DelayNs for NoDelay {
+            fn delay_ns(&mut self, _: u32) {}
+        }
+
+        #[test]
+        fn st7789_waits_for_wire_before_changing_control_pins() {
+            let wire = Rc::new(RefCell::new(Wire::default()));
+            let pin = |kind| Pin {
+                wire: wire.clone(),
+                kind,
+            };
+            let mut display = St7789Display::new(
+                Bus(wire.clone()),
+                pin(0),
+                pin(1),
+                pin(2),
+                pin(3),
+                &mut NoDelay,
+            )
+            .unwrap();
+            display.cmd(0x29, &[]).unwrap();
+            display.cmd(0x3a, &[0x55]).unwrap();
+            display.fill_rect(0, 0, 3, 1, WHITE).unwrap(); // Short trailing pixel write.
+            let frame =
+                crate::material::MaterialFrame::parse("M3|1|0|70|0|0|0|0|0|0|0|0|131|0|0|0|1|1|3")
+                    .unwrap();
+            display.runtime(&RuntimeFrame::Material(frame)).unwrap();
+            let wire = wire.borrow();
+            assert!(!wire.busy);
+            assert!(wire.cs_high);
+            assert!(wire.bytes > 240 * 280 * 4); // Initial clear and actual UI frame.
         }
     }
 

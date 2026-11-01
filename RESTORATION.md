@@ -93,6 +93,23 @@ ESP32 ROM or the required second-stage bootloader.
 
 ## Verification
 
+### Black ST7789 screen after a successful boot
+
+`SYSTEM SERVER` / `system_server handoff succeeded` and changing `@ZWUI|M3`
+screens show that the runtime and PC block storage are working. In `Storage: pc`
+mode no SD-card write is required; keep the PC block server running.
+
+The ST7789 driver now flushes SPI before changing DC or releasing CS. esp-hal
+1.0.0 permits `SpiBus::write` to return before the last transfer finishes;
+changing control pins early can make the panel discard its initialization
+commands and leave it black. The regression test models a pending transfer
+and checks initialization, commands, short pixel writes and a full UI frame.
+
+Rebuild/reflash with `./flash`. If the panel remains black, run
+`AOSP_WEAR_DISPLAY_DIAGNOSTIC=1 ./flash` to test the backlight and solid
+red/green/blue fills at a slower SPI clock, independently of the UI. Physical
+success still needs to be confirmed on the watch.
+
 ST7789 SD/HID and default PC/HID release builds were checked for compiler and
 linker warnings. Host checks execute the real Rhai runtime and rendering code,
 substituting only the monotonic clock. They cover navigation/media/pairing
