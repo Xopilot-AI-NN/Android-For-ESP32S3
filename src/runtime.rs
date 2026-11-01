@@ -185,6 +185,7 @@ pub struct Runtime {
     last_input_ms: u64,
     timeout_parent: u8,
     transition_started_ms: u64,
+    watch_face: u8,
 }
 
 #[cfg(feature = "rhai-runtime")]
@@ -297,6 +298,7 @@ impl Runtime {
             last_input_ms: Instant::now().duration_since_epoch().as_millis() as u64,
             timeout_parent: 20,
             transition_started_ms: 0,
+            watch_face: 0,
         };
         let frame = runtime.render()?;
         Ok((runtime, frame))
@@ -376,6 +378,13 @@ impl Runtime {
             m.display_sleep = m.display_brightness == Some(0);
             m.transition_alpha =
                 (now_ms.saturating_sub(self.transition_started_ms) * 255 / 180).min(255) as u8;
+            m.watch_face = self.watch_face;
+            m.stopwatch_running = clock::stopwatch_running();
+            m.time_seconds = crate::rtc::local_seconds();
+            if let Some((day, month)) = crate::rtc::calendar() {
+                m.date_day = day;
+                m.date_month = month;
+            }
             m.animation_phase = (now_ms % 1000 * 255 / 1000) as u8;
         }
         Ok(frame)
@@ -398,19 +407,30 @@ impl Runtime {
     pub fn crown_sensitivity(&self) -> u8 {
         self.crown_sensitivity
     }
-    pub fn preference_config(&self) -> [u8; 4] {
+    pub fn preference_config(&self) -> [u8; 8] {
         [
-            1,
+            2,
             self.crown_sensitivity,
             u8::from(self.crown_reverse),
             u8::from(self.high_contrast),
+            self.watch_face,
+            0,
+            0,
+            0,
         ]
     }
     pub fn restore_preferences(&mut self, raw: &[u8]) {
-        if raw.len() == 4 && raw[0] == 1 && raw[1] <= 2 && raw[2] <= 1 && raw[3] <= 1 {
+        if ((raw.len() == 4 && raw[0] == 1) || (raw.len() == 8 && raw[0] == 2))
+            && raw[1] <= 2
+            && raw[2] <= 1
+            && raw[3] <= 1
+        {
             self.crown_sensitivity = raw[1];
             self.crown_reverse = raw[2] != 0;
             self.high_contrast = raw[3] != 0;
+            if raw.len() == 8 {
+                self.watch_face = raw[4].min(2);
+            }
         }
     }
     pub fn security_saved(&mut self) {
@@ -595,6 +615,7 @@ impl Runtime {
                         self.security.begin(5);
                         self.state = (self.state & !0x1ff) | 20;
                     }
+                    3 => self.watch_face = (self.watch_face + 1) % 3,
                     _ => self.state = (self.state & !0x1ff) | 5 | (2 << 5),
                 },
                 RuntimeEvent::Back => self.state = (self.state & !0x1ff) | 5 | (2 << 5),
@@ -685,6 +706,43 @@ impl Runtime {
             clock_action(6);
             return self.render();
         }
+        if screen == 6 && event == RuntimeEvent::Press {
+            if cursor == 0 {
+                self.state = (self.state & !0x1ff) | 11;
+                self.timer_editor = 1;
+            } else if cursor == 1 {
+                self.state = (self.state & !0x1ff) | 11;
+                self.timer_editor = 3;
+            } else if cursor == 2 {
+                self.state = (self.state & !0x1ff) | 31;
+            } else {
+                self.state = (self.state & !0x1ff) | 2;
+            }
+            return self.render();
+        }
+        if screen == 11 && self.timer_editor == 3 {
+            match event {
+                RuntimeEvent::Rotate(d) => {
+                    self.state =
+                        (self.state & !0x1e0) | ((i32::from(cursor) + d).rem_euclid(3) << 5)
+                }
+                RuntimeEvent::Press => match cursor {
+                    0 => {
+                        clock_action(0);
+                    }
+                    1 => {
+                        clock_action(1);
+                    }
+                    _ => {
+                        self.state = (self.state & !0x1ff) | 6 | (1 << 5);
+                    }
+                },
+                RuntimeEvent::Back => self.state = (self.state & !0x1ff) | 6 | (1 << 5),
+                RuntimeEvent::Home => self.state = (self.state & !0x1ff) | 1,
+                _ => {}
+            }
+            return self.render();
+        }
         if screen == 11 && self.timer_editor != 0 {
             match event {
                 RuntimeEvent::Rotate(delta) if self.timer_editor == 2 => {
@@ -710,6 +768,9 @@ impl Runtime {
                 RuntimeEvent::Back => {
                     self.timer_editor = if self.timer_editor == 2 { 1 } else { 0 };
                     self.state &= !0x1e0;
+                    if self.timer_editor == 0 {
+                        self.state = (self.state & !0x1ff) | 6;
+                    }
                 }
                 RuntimeEvent::Home => {
                     self.state = (self.state & !0x1ff) | 1;
@@ -736,11 +797,11 @@ impl Runtime {
                     if cursor < 3 {
                         clock_action([3, 4, 5][cursor as usize]);
                     } else {
-                        self.state = (self.state & !0x1ff) | 11 | (2 << 5);
+                        self.state = (self.state & !0x1ff) | 6 | (2 << 5);
                     }
                 }
                 RuntimeEvent::Back => {
-                    self.state = (self.state & !0x1ff) | 11 | (2 << 5);
+                    self.state = (self.state & !0x1ff) | 6 | (2 << 5);
                 }
                 RuntimeEvent::Home => {
                     self.state = (self.state & !0x1ff) | 1;
@@ -825,6 +886,9 @@ impl Runtime {
                 && ((screen == 13 && cursor == 0) || (screen == 4 && cursor == 1)))
         {
             self.bluetooth_action = Some(BluetoothUiAction::Pair);
+        }
+        if old_screen == 9 && (new_state & 31) == 11 {
+            self.timer_editor = if ((new_state >> 5) & 15) == 1 { 3 } else { 1 };
         }
         if (new_state & 0x1f) as u8 == 23 && old_screen != 23 {
             self.wifi_ui.pending_scan = true;
@@ -1036,7 +1100,7 @@ impl Runtime {
         1
     }
     pub fn preference_config(&self) -> [u8; 4] {
-        [1, 1, 0, 0]
+        [2, 1, 0, 0, 0, 0, 0, 0]
     }
     pub fn restore_preferences(&mut self, _raw: &[u8]) {}
     pub fn security_saved(&mut self) {}

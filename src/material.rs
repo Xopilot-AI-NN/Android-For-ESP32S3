@@ -67,6 +67,11 @@ pub struct MaterialFrame {
     pub display_brightness: Option<u8>,
     pub transition_alpha: u8,
     pub animation_phase: u8,
+    pub watch_face: u8,
+    pub time_seconds: u8,
+    pub date_day: u8,
+    pub date_month: u8,
+    pub stopwatch_running: bool,
 }
 
 impl MaterialFrame {
@@ -149,6 +154,11 @@ impl MaterialFrame {
             display_brightness: None,
             transition_alpha: 255,
             animation_phase: 0,
+            watch_face: 0,
+            time_seconds: 0,
+            date_day: 0,
+            date_month: 0,
+            stopwatch_running: false,
         })
     }
 
@@ -439,3 +449,7 @@ mod theme_tests {
 }
 #[path = "material/compositor.rs"]
 mod compositor;
+#[path = "material/dial.rs"]
+mod dial;
+#[path = "material/pages_faces.rs"]
+mod pages_faces;

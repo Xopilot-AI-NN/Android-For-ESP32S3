@@ -275,6 +275,31 @@ mod tests {
     }
 
     #[test]
+    fn clock_hub_routes_directly_and_watch_face_persists() {
+        time::set(4000);
+        let mut os = start();
+        os.replace_state(6 | (2 << 5)).unwrap();
+        os.dispatch(RuntimeEvent::Press).unwrap();
+        assert_eq!(os.state() & 31, 31);
+        os.dispatch(RuntimeEvent::Back).unwrap();
+        assert_eq!(os.state() & 31, 6);
+        os.replace_state(6).unwrap();
+        os.dispatch(RuntimeEvent::Press).unwrap();
+        assert_eq!(frame(&mut os).timer_editor, 1);
+        os.dispatch(RuntimeEvent::Back).unwrap();
+        assert_eq!(os.state() & 31, 6);
+        os.replace_state(6 | (1 << 5)).unwrap();
+        os.dispatch(RuntimeEvent::Press).unwrap();
+        assert_eq!(frame(&mut os).timer_editor, 3);
+        os.replace_state(14 | (3 << 5)).unwrap();
+        os.dispatch(RuntimeEvent::Press).unwrap();
+        assert_eq!(frame(&mut os).watch_face, 1);
+        let prefs = os.preference_config();
+        let mut restored = start();
+        restored.restore_preferences(&prefs);
+        assert_eq!(frame(&mut restored).watch_face, 1);
+    }
+    #[test]
     fn timer_presets_and_custom_duration() {
         time::set(1000);
         let mut os = start();

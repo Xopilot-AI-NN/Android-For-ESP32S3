@@ -9,7 +9,7 @@ impl Surface {
         self.text_center(238, "PRESS CROWN TO UNLOCK", 1, t.on_surface_variant);
     }
 
-    pub(super) fn watchface(&mut self, f: MaterialFrame, t: Theme) {
+    pub(super) fn complication_face(&mut self, f: MaterialFrame, t: Theme) {
         self.status_strip(f, t);
         let accent = t.primary;
         let muted = t.surface_high;
@@ -44,7 +44,7 @@ impl Surface {
             if f.alarm_enabled {
                 core::str::from_utf8(&alarm).unwrap_or("07:00")
             } else {
-                "Off"
+                ""
             },
             1,
             t.on_surface,
@@ -54,9 +54,9 @@ impl Surface {
             184,
             77,
             if f.wifi_link_state == 4 {
-                "Online"
+                ""
             } else if f.wifi {
-                "Wi-Fi"
+                ""
             } else {
                 "Off"
             },
@@ -88,8 +88,7 @@ impl Surface {
             1,
             t.on_surface,
         );
-        self.text_center_x(56, 259, "Timer", 1, t.on_surface_variant);
-        self.text_center_x(184, 259, "Stopwatch", 1, t.on_surface_variant);
+
         for i in 0..3 {
             self.circle(
                 110 + i * 10,
@@ -541,6 +540,36 @@ impl Surface {
         }
     }
 
+    pub(super) fn stopwatch_page(&mut self, f: MaterialFrame, t: Theme) {
+        self.photo_header(f, "Stopwatch", t);
+        let time = Self::mmss_text(f.stopwatch_secs);
+        self.clock_text(99, &time, t.primary);
+        let labels = [
+            if f.stopwatch_running {
+                "Пауза"
+            } else {
+                "Пуск"
+            },
+            "Сброс",
+            "BACK",
+        ];
+        for (i, label) in labels.iter().enumerate() {
+            self.round_rect(
+                32,
+                178 + i as i32 * 31,
+                176,
+                28,
+                14,
+                if f.cursor as usize == i {
+                    t.primary_container
+                } else {
+                    t.surface_high
+                },
+            );
+            self.text_center(187 + i as i32 * 31, label, 1, t.on_surface);
+        }
+    }
+
     pub(super) fn timer_presets(&mut self, f: MaterialFrame, t: Theme) {
         let lavender = t.primary_container;
         let lime = t.primary;
@@ -618,6 +647,10 @@ impl Surface {
     }
 
     pub(super) fn clock_tools(&mut self, f: MaterialFrame, t: Theme) {
+        if f.timer_editor == 3 {
+            self.stopwatch_page(f, t);
+            return;
+        }
         if f.timer_editor != 0 {
             self.timer_presets(f, t);
             return;

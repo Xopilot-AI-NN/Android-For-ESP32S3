@@ -14,6 +14,9 @@ static ALARM_LATCHED: AtomicBool = AtomicBool::new(false);
 static ALARM_RINGING: AtomicBool = AtomicBool::new(false);
 static TIMER_EXPIRED: AtomicBool = AtomicBool::new(false);
 static TIMER_DURATION: AtomicI32 = AtomicI32::new(300);
+pub(super) fn stopwatch_running() -> bool {
+    STOPWATCH_RUNNING.load(Ordering::Relaxed)
+}
 
 pub(super) fn timer_duration() -> u16 {
     TIMER_DURATION.load(Ordering::Relaxed) as u16
