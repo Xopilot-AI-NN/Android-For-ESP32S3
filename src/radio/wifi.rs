@@ -4,7 +4,9 @@ use super::*;
 impl RadioServices {
     pub fn set_wifi(&mut self, enabled: bool) {
         if enabled {
-            if !self.ensure_wifi_started() { return; }
+            if !self.ensure_wifi_started() {
+                return;
+            }
             self.wifi_requested = true;
             // Do not perform a synchronous active scan merely because Wi-Fi
             // was toggled on. esp-radio scanning can hold the main loop for a
@@ -20,7 +22,9 @@ impl RadioServices {
     }
 
     pub(super) fn ensure_wifi_started(&mut self) -> bool {
-        if matches!(self.wifi.is_started(), Ok(true)) { return true; }
+        if matches!(self.wifi.is_started(), Ok(true)) {
+            return true;
+        }
         let free = internal_free_bytes();
         if free < MIN_WIFI_INTERNAL_FREE {
             println!(
@@ -30,7 +34,10 @@ impl RadioServices {
             );
             return false;
         }
-        if let Err(e) = self.wifi.set_config(&ModeConfig::Client(ClientConfig::default())) {
+        if let Err(e) = self
+            .wifi
+            .set_config(&ModeConfig::Client(ClientConfig::default()))
+        {
             println!("radio: wifi config failed: {:?}", e);
             return false;
         }
@@ -44,7 +51,10 @@ impl RadioServices {
         let delay = Delay::new();
         let mut started = false;
         for _ in 0..100 {
-            if matches!(self.wifi.is_started(), Ok(true)) { started = true; break; }
+            if matches!(self.wifi.is_started(), Ok(true)) {
+                started = true;
+                break;
+            }
             delay.delay_millis(10);
         }
         if !started {
@@ -60,7 +70,9 @@ impl RadioServices {
     }
 
     pub fn scan_wifi(&mut self) -> bool {
-        if !self.ensure_wifi_started() { return false; }
+        if !self.ensure_wifi_started() {
+            return false;
+        }
         self.wifi_requested = true;
         self.wifi_aps.clear();
         println!("radio: scanning Wi-Fi networks...");
@@ -93,7 +105,10 @@ impl RadioServices {
                 }
                 println!("radio: scan found {} AP(s)", self.wifi_aps.len());
                 for ap in self.wifi_aps.iter() {
-                    println!("radio: ap ssid={} rssi={} ch={}", ap.ssid, ap.rssi, ap.channel);
+                    println!(
+                        "radio: ap ssid={} rssi={} ch={}",
+                        ap.ssid, ap.rssi, ap.channel
+                    );
                 }
                 true
             }
@@ -105,7 +120,9 @@ impl RadioServices {
     }
 
     pub fn connect_wifi(&mut self, credentials: WifiCredentials) -> bool {
-        if !self.ensure_wifi_started() { return false; }
+        if !self.ensure_wifi_started() {
+            return false;
+        }
         let Some(ssid) = credentials.ssid() else {
             println!("radio: invalid SSID encoding");
             return false;
@@ -121,7 +138,10 @@ impl RadioServices {
 
         if self.saved_wifi == Some(credentials) && self.wifi.is_connected().unwrap_or(false) {
             self.wifi_requested = true;
-            println!("radio: already associated with {}; keeping current link", ssid);
+            println!(
+                "radio: already associated with {}; keeping current link",
+                ssid
+            );
             return true;
         }
 
@@ -205,10 +225,20 @@ impl RadioServices {
     }
 
     pub fn format_wifi_status<const N: usize>(&self, out: &mut HString<N>) {
-        let _ = write!(out, "enabled={} state={:?} aps={}", self.wifi_requested as u8, self.net.link_state(), self.wifi_aps.len());
-        if let Some(ip) = self.net.ip() { let _ = write!(out, " ip={} web=http://{}/", ip, ip); }
+        let _ = write!(
+            out,
+            "enabled={} state={:?} aps={}",
+            self.wifi_requested as u8,
+            self.net.link_state(),
+            self.wifi_aps.len()
+        );
+        if let Some(ip) = self.net.ip() {
+            let _ = write!(out, " ip={} web=http://{}/", ip, ip);
+        }
         if matches!(self.net.link_state(), LinkState::Online) {
-            if let Ok(rssi) = self.wifi.rssi() { let _ = write!(out, " rssi={}", rssi); }
+            if let Ok(rssi) = self.wifi.rssi() {
+                let _ = write!(out, " rssi={}", rssi);
+            }
         }
         if let Some(c) = self.saved_wifi {
             if let Some(ssid) = c.ssid() {
@@ -216,7 +246,13 @@ impl RadioServices {
                 push_safe_text(out, ssid);
             }
         }
-        let _ = write!(out, " wadb={} listener={} client={}", self.net.wadb_active() as u8, self.net.wadb_active() as u8, self.net.wadb_seen_client() as u8);
+        let _ = write!(
+            out,
+            " wadb={} listener={} client={}",
+            self.net.wadb_active() as u8,
+            self.net.wadb_active() as u8,
+            self.net.wadb_seen_client() as u8
+        );
     }
 
     pub fn format_wifi_scan<const N: usize>(&self, out: &mut HString<N>) {
@@ -225,7 +261,9 @@ impl RadioServices {
             return;
         }
         for (i, ap) in self.wifi_aps.iter().enumerate() {
-            if i != 0 { let _ = out.push_str("; "); }
+            if i != 0 {
+                let _ = out.push_str("; ");
+            }
             let _ = write!(out, "{} rssi={} ch={}", ap.ssid, ap.rssi, ap.channel);
         }
     }

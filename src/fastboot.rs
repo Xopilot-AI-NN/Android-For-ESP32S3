@@ -13,8 +13,7 @@ pub fn run<D: BootDisplay>(
     display: &mut D,
     keys: &mut BootKeys<'_>,
     delay: &Delay,
-) -> !
-{
+) -> ! {
     let _ = display.fastboot();
     write_hello(&mut tx);
     write_ui_fastboot(&mut tx);
@@ -114,7 +113,10 @@ fn handle_command(tx: &mut UsbSerialJtagTx<'_, Blocking>, cmd: &str, delay: &Del
         }
         "pins" => {
             write_line(tx, display_pins());
-            write_line(tx, "INFOusb:type-c native usb-serial-jtag gpio19/20 internal");
+            write_line(
+                tx,
+                "INFOusb:type-c native usb-serial-jtag gpio19/20 internal",
+            );
             write_line(tx, "INFOsd:miso=7,clk=8,mosi=9,cs=10");
             write_line(tx, "INFOinput:a=11,b=12,power=13");
             write_line(tx, "INFOstatus-led=21");
@@ -122,7 +124,10 @@ fn handle_command(tx: &mut UsbSerialJtagTx<'_, Blocking>, cmd: &str, delay: &Del
         }
         "memory" => {
             write_line(tx, "INFOheap:esp-alloc 96KiB internal + N4R2 PSRAM");
-            write_line(tx, "INFOdesktop:command-mirror, no full framebuffer required");
+            write_line(
+                tx,
+                "INFOdesktop:command-mirror, no full framebuffer required",
+            );
             write_line(tx, "INFOpsram:available to later system runtime");
             write_line(tx, "OKAY");
         }
@@ -141,7 +146,10 @@ fn write_hello(tx: &mut UsbSerialJtagTx<'_, Blocking>) {
 }
 
 fn write_ui_fastboot(tx: &mut UsbSerialJtagTx<'_, Blocking>) {
-    write_line(tx, "@ZWUI|STATUS|FASTBOOT MODE|USB: READY|PWR: REBOOT|CMD: HELP");
+    write_line(
+        tx,
+        "@ZWUI|STATUS|FASTBOOT MODE|USB: READY|PWR: REBOOT|CMD: HELP",
+    );
 }
 
 fn reboot(tx: &mut UsbSerialJtagTx<'_, Blocking>, reason: &str, delay: &Delay) -> ! {
@@ -166,11 +174,19 @@ fn write_line(tx: &mut UsbSerialJtagTx<'_, Blocking>, text: &str) {
 }
 
 #[cfg(feature = "display-ssd1306")]
-fn display_info() -> &'static str { "INFOdisplay:ssd1306-128x64" }
+fn display_info() -> &'static str {
+    "INFOdisplay:ssd1306-128x64"
+}
 #[cfg(feature = "display-st7789")]
-fn display_info() -> &'static str { "INFOdisplay:st7789v3-240x280-rgb565" }
+fn display_info() -> &'static str {
+    "INFOdisplay:st7789v3-240x280-rgb565"
+}
 
 #[cfg(feature = "display-ssd1306")]
-fn display_pins() -> &'static str { "INFOdisplay:ssd1306,sda=5,scl=6" }
+fn display_pins() -> &'static str {
+    "INFOdisplay:ssd1306,sda=5,scl=6"
+}
 #[cfg(feature = "display-st7789")]
-fn display_pins() -> &'static str { "INFOdisplay:st7789v3,bl=1,cs=2,dc=3,rst=4,mosi=5,sck=6" }
+fn display_pins() -> &'static str {
+    "INFOdisplay:st7789v3,bl=1,cs=2,dc=3,rst=4,mosi=5,sck=6"
+}

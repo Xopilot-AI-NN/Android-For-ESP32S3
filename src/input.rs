@@ -1,7 +1,11 @@
 use esp_hal::gpio::{Input, InputConfig, InputPin, Pull};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BootMode { Normal, Fastboot, Recovery }
+pub enum BootMode {
+    Normal,
+    Fastboot,
+    Recovery,
+}
 
 pub struct BootKeys<'d> {
     encoder_a: Input<'d>,
@@ -11,19 +15,22 @@ pub struct BootKeys<'d> {
 }
 
 impl<'d> BootKeys<'d> {
-    pub fn new(
-        a: impl InputPin + 'd,
-        b: impl InputPin + 'd,
-        power: impl InputPin + 'd,
-    ) -> Self {
+    pub fn new(a: impl InputPin + 'd, b: impl InputPin + 'd, power: impl InputPin + 'd) -> Self {
         let encoder_a = Input::new(a, InputConfig::default().with_pull(Pull::Up));
         let encoder_b = Input::new(b, InputConfig::default().with_pull(Pull::Up));
         let power = Input::new(power, InputConfig::default().with_pull(Pull::Up));
         let encoder_state = ((encoder_a.is_low() as u8) << 1) | encoder_b.is_low() as u8;
-        Self { encoder_a, encoder_b, power, encoder_state }
+        Self {
+            encoder_a,
+            encoder_b,
+            power,
+            encoder_state,
+        }
     }
 
-    pub fn power_pressed(&mut self) -> bool { self.power.is_low() }
+    pub fn power_pressed(&mut self) -> bool {
+        self.power.is_low()
+    }
 
     pub fn poll_rotation(&mut self) -> i8 {
         let state = ((self.encoder_a.is_low() as u8) << 1) | self.encoder_b.is_low() as u8;

@@ -15,26 +15,46 @@ impl Surface {
 
     pub(super) fn date_time(&mut self, f: MaterialFrame, t: Theme) {
         self.title("DATE & TIME", t);
-        let labels = ["AUTOMATIC TIME", "SET HOUR", "SET MINUTE", "TIME ZONE", "BACK"];
+        let labels = [
+            "AUTOMATIC TIME",
+            "SET HOUR",
+            "SET MINUTE",
+            "TIME ZONE",
+            "BACK",
+        ];
         let cur = f.cursor.min(4) as usize;
         let start = cur.saturating_sub(1).min(2);
         for row in 0..3 {
             let i = (start + row).min(4);
             let y = 56 + row as i32 * 64;
             self.wear_row(y, labels[i], i == cur, t);
-            if i == 0 { self.toggle(174, y + 13, f.auto_time, t); }
+            if i == 0 {
+                self.toggle(174, y + 13, f.auto_time, t);
+            }
             if i == 1 || i == 2 {
                 let tm = Self::time_text(f.time_minutes);
                 let ts = core::str::from_utf8(&tm).unwrap_or("00:00");
-                self.text(167, y + 19, ts, 1, if f.auto_time { t.outline } else { t.primary });
+                self.text(
+                    167,
+                    y + 19,
+                    ts,
+                    1,
+                    if f.auto_time { t.outline } else { t.primary },
+                );
             }
             if i == 3 {
-                if f.timezone_hours == 0 { self.text(178, y + 19, "UTC", 1, t.on_surface_variant); }
-                else if f.timezone_hours > 0 { self.text(166, y + 19, "UTC+", 1, t.on_surface_variant); }
-                else { self.text(166, y + 19, "UTC-", 1, t.on_surface_variant); }
+                if f.timezone_hours == 0 {
+                    self.text(178, y + 19, "UTC", 1, t.on_surface_variant);
+                } else if f.timezone_hours > 0 {
+                    self.text(166, y + 19, "UTC+", 1, t.on_surface_variant);
+                } else {
+                    self.text(166, y + 19, "UTC-", 1, t.on_surface_variant);
+                }
             }
         }
-        if f.auto_time && !f.time_valid { self.text_center(251, "SYNCING OVER WI-FI / PHONE", 1, t.primary); }
+        if f.auto_time && !f.time_valid {
+            self.text_center(251, "SYNCING OVER WI-FI / PHONE", 1, t.primary);
+        }
     }
 
     pub(super) fn unavailable_page(&mut self, title: &str, icon: &str, body: &str, t: Theme) {
@@ -68,11 +88,39 @@ impl Surface {
 
     pub(super) fn security_page(&mut self, f: MaterialFrame, t: Theme) {
         self.title("SECURITY", t);
-        self.round_rect(18, 65, 204, 64, 32, if f.cursor == 0 { t.primary_container } else { t.surface });
+        self.round_rect(
+            18,
+            65,
+            204,
+            64,
+            32,
+            if f.cursor == 0 {
+                t.primary_container
+            } else {
+                t.surface
+            },
+        );
         self.text(42, 78, "SCREEN LOCK", 1, t.on_surface);
-        self.text(42, 99, if f.locked { "ENABLED" } else { "NONE" }, 1, t.on_surface_variant);
+        self.text(
+            42,
+            99,
+            if f.locked { "ENABLED" } else { "NONE" },
+            1,
+            t.on_surface_variant,
+        );
         self.toggle(169, 85, f.locked, t);
-        self.round_rect(45, 194, 150, 42, 21, if f.cursor == 1 { t.primary_container } else { t.surface });
+        self.round_rect(
+            45,
+            194,
+            150,
+            42,
+            21,
+            if f.cursor == 1 {
+                t.primary_container
+            } else {
+                t.surface
+            },
+        );
         self.text_center(207, "BACK", 1, t.on_surface);
     }
 
@@ -83,8 +131,18 @@ impl Surface {
         for i in 0..3 {
             let y = 57 + i as i32 * 64;
             self.wear_row(y, labels[i], i == cur, t);
-            if i == 0 { self.text(176, y + 19, if f.notes > 0 { "NEW" } else { "0" }, 1, t.on_surface_variant); }
-            if i == 1 { self.text(176, y + 19, "6", 1, t.on_surface_variant); }
+            if i == 0 {
+                self.text(
+                    176,
+                    y + 19,
+                    if f.notes > 0 { "NEW" } else { "0" },
+                    1,
+                    t.on_surface_variant,
+                );
+            }
+            if i == 1 {
+                self.text(176, y + 19, "6", 1, t.on_surface_variant);
+            }
         }
     }
 
@@ -97,9 +155,15 @@ impl Surface {
             let i = (start + row).min(3);
             let y = 57 + row as i32 * 64;
             self.wear_row(y, labels[i], i == cur, t);
-            if i == 0 { self.toggle(174, y + 13, f.adb, t); }
-            if i == 1 { self.text(157, y + 19, "17.2.1", 1, t.primary); }
+            if i == 0 {
+                self.toggle(174, y + 13, f.adb, t);
+            }
+            if i == 1 {
+                self.text(157, y + 19, "17.2.1", 1, t.primary);
+            }
         }
-        if f.adb { self.text_center(253, "WIRELESS ADB IS A DEVELOPER FEATURE", 1, t.error); }
+        if f.adb {
+            self.text_center(253, "WIRELESS ADB IS A DEVELOPER FEATURE", 1, t.error);
+        }
     }
 }

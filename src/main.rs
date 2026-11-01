@@ -13,29 +13,35 @@ compile_error!("enable a display backend: display-ssd1306 OR display-st7789");
 #[cfg(not(feature = "pc-block-boot"))]
 use embedded_hal_bus::spi::ExclusiveDevice;
 use embedded_sdmmc::BlockDevice;
+#[cfg(feature = "display-ssd1306")]
+use esp_hal::i2c::master::{Config as I2cConfig, I2c};
 use esp_hal::{
     clock::CpuClock,
     delay::Delay,
     gpio::{Level, Output, OutputConfig},
     main,
-    spi::{Mode, master::{Config as SpiConfig, Spi}},
+    spi::{
+        Mode,
+        master::{Config as SpiConfig, Spi},
+    },
     time::Rate,
     usb_serial_jtag::UsbSerialJtag,
 };
 #[cfg(feature = "radio-services")]
 use esp_hal::{ram, timer::timg::TimerGroup};
-#[cfg(feature = "display-ssd1306")]
-use esp_hal::i2c::master::{Config as I2cConfig, I2c};
 use esp_println::println;
 
 mod adb;
 mod android_boot;
 mod android_storage;
 mod avb;
-mod cpio;
+#[cfg(feature = "ble-hid")]
+mod ble_bonds;
+#[cfg(feature = "ble-hid")]
+mod ble_host;
 mod boot_control;
-mod gpt;
 mod config;
+mod cpio;
 mod desktop;
 mod display;
 #[cfg(not(feature = "pc-block-boot"))]
@@ -43,6 +49,7 @@ mod fastboot;
 mod font;
 #[cfg(feature = "display-ssd1306")]
 mod framebuffer;
+mod gpt;
 #[cfg(not(feature = "pc-block-boot"))]
 mod input;
 mod lp;
@@ -50,14 +57,12 @@ mod material;
 #[cfg(feature = "radio-services")]
 mod net;
 mod page_store;
-mod runtime;
-mod rtc;
 #[cfg(feature = "radio-services")]
 mod radio;
-#[cfg(feature = "ble-hid")]
-mod ble_host;
-#[cfg(feature = "ble-hid")]
-mod ble_bonds;
+mod rtc;
+mod runtime;
+#[cfg(feature = "display-software-spi")]
+mod soft_spi;
 #[cfg(feature = "pc-block-boot")]
 mod usb_pc_block;
 
@@ -75,12 +80,12 @@ use input::{BootKeys, BootMode};
 esp_bootloader_esp_idf::esp_app_desc!();
 
 mod boot;
-mod persistence;
-mod state_flow;
-#[cfg(feature = "radio-services")]
-mod radio_bridge;
 #[cfg(not(feature = "pc-block-boot"))]
 mod boot_modes;
+mod persistence;
+#[cfg(feature = "radio-services")]
+mod radio_bridge;
+mod state_flow;
 
 #[main]
 fn main() -> ! {

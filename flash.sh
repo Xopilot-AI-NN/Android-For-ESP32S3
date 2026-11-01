@@ -34,6 +34,18 @@ esac
 FEATURES="rhai-runtime,display-${DISPLAY_NAME}"
 [[ "$STORAGE_NAME" == "pc" ]] && FEATURES+=",pc-block-boot"
 [[ "$RADIO_NAME" == "radio" ]] && FEATURES+=",radio-services"
+if [[ "${AOSP_WEAR_DISPLAY_SOFTWARE_SPI:-0}" == "1" ]]; then
+  if [[ "$DISPLAY_NAME" != "st7789" ]]; then
+    echo "display-software-spi requires ST7789" >&2; exit 2
+  fi
+  FEATURES+=",display-software-spi"
+fi
+if [[ "${AOSP_WEAR_DISPLAY_DIAGNOSTIC:-0}" == "1" ]]; then
+  if [[ "$DISPLAY_NAME" != "st7789" ]]; then
+    echo "display-diagnostic requires ST7789" >&2; exit 2
+  fi
+  FEATURES+=",display-diagnostic"
+fi
 FLAGS=(--no-default-features --features "$FEATURES")
 
 BOOT_VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
@@ -80,11 +92,25 @@ echo "== Building Bootloader =="
 cargo +esp build --release "${FLAGS[@]}"
 
 echo
+ELF="$BOOTLOADER_DIR/target/xtensa-esp32s3-none-elf/release/bootloader"
+
+if [[ ! -f "$ELF" ]]; then
+  echo "ERROR: ELF not found: $ELF" >&2
+  exit 1
+fi
+
+if ! command -v espflash >/dev/null 2>&1; then
+  echo "ERROR: espflash is not installed" >&2
+  exit 1
+fi
+
+echo
 echo "== Flashing ESP32-S3 =="
+
 if [[ "$STORAGE_NAME" == "pc" ]]; then
-  cargo espflash flash --release --chip esp32s3 "${FLAGS[@]}"
+  espflash flash --chip esp32s3 "$ELF"
 else
-  cargo espflash flash --release --monitor --chip esp32s3 "${FLAGS[@]}"
+  espflash flash --chip esp32s3 --monitor "$ELF"
   exit 0
 fi
 

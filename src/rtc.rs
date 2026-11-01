@@ -28,15 +28,25 @@ fn unix_seconds_raw() -> i32 {
         .saturating_add(now.saturating_sub(BASE_UPTIME_SECONDS.load(Ordering::Relaxed)))
 }
 
-pub fn valid() -> bool { VALID.load(Ordering::Relaxed) }
-pub fn automatic() -> bool { AUTOMATIC.load(Ordering::Relaxed) }
-pub fn timezone_minutes() -> i32 { TIME_ZONE_OFFSET_MINUTES.load(Ordering::Relaxed) }
-pub fn timezone_hours() -> i8 { (timezone_minutes() / 60).clamp(-12, 14) as i8 }
+pub fn valid() -> bool {
+    VALID.load(Ordering::Relaxed)
+}
+pub fn automatic() -> bool {
+    AUTOMATIC.load(Ordering::Relaxed)
+}
+pub fn timezone_minutes() -> i32 {
+    TIME_ZONE_OFFSET_MINUTES.load(Ordering::Relaxed)
+}
+pub fn timezone_hours() -> i8 {
+    (timezone_minutes() / 60).clamp(-12, 14) as i8
+}
 
 /// One-shot request consumed by the connectivity service. This makes enabling
 /// Automatic time trigger an immediate SNTP refresh instead of waiting for the
 /// periodic six-hour network resync.
-pub fn take_network_sync_request() -> bool { NETWORK_SYNC_REQUESTED.swap(false, Ordering::Relaxed) }
+pub fn take_network_sync_request() -> bool {
+    NETWORK_SYNC_REQUESTED.swap(false, Ordering::Relaxed)
+}
 
 /// Return local wall-clock minutes. The value keeps advancing from the ESP
 /// monotonic timer even when Wi-Fi is off.
@@ -45,7 +55,9 @@ pub fn local_minutes() -> i32 {
     // software clock instead of a frozen "--:--" surface.  It starts at
     // 00:00 on boot and is corrected atomically when SNTP/phone/manual time
     // becomes available. Unsynchronised time is never persisted as holdover.
-    if !valid() { return (uptime_seconds().div_euclid(60)).rem_euclid(1440); }
+    if !valid() {
+        return (uptime_seconds().div_euclid(60)).rem_euclid(1440);
+    }
     let utc_minutes = unix_seconds_raw().div_euclid(60);
     (utc_minutes + timezone_minutes()).rem_euclid(1440)
 }
@@ -55,7 +67,11 @@ pub fn set_local_minutes(minutes: u16) {
     let tz = timezone_minutes() * 60;
     let now = uptime_seconds();
     let current = unix_seconds_raw();
-    let day = if valid() { current.div_euclid(86_400) * 86_400 } else { 0 };
+    let day = if valid() {
+        current.div_euclid(86_400) * 86_400
+    } else {
+        0
+    };
     BASE_UNIX_SECONDS.store(day + target_local - tz, Ordering::Relaxed);
     BASE_UPTIME_SECONDS.store(now, Ordering::Relaxed);
     VALID.store(true, Ordering::Relaxed);
@@ -63,7 +79,9 @@ pub fn set_local_minutes(minutes: u16) {
 
 /// Apply authoritative network time. Manual time mode is never overridden.
 pub fn set_network_unix_seconds(unix_seconds: u32) -> bool {
-    if !automatic() || unix_seconds > i32::MAX as u32 { return false; }
+    if !automatic() || unix_seconds > i32::MAX as u32 {
+        return false;
+    }
     BASE_UNIX_SECONDS.store(unix_seconds as i32, Ordering::Relaxed);
     BASE_UPTIME_SECONDS.store(uptime_seconds(), Ordering::Relaxed);
     VALID.store(true, Ordering::Relaxed);
@@ -72,15 +90,23 @@ pub fn set_network_unix_seconds(unix_seconds: u32) -> bool {
 
 /// Paired-phone source used by the companion path/development simulator.
 pub fn set_companion_minutes(minutes: u16) {
-    if automatic() { set_local_minutes(minutes); }
+    if automatic() {
+        set_local_minutes(minutes);
+    }
 }
 
 /// Power-loss holdover. It deliberately does not claim elapsed time while the
 /// board was fully unpowered; the next SNTP/phone sync corrects that drift.
-pub fn restore_holdover_minutes(minutes: u16) { set_local_minutes(minutes); }
+pub fn restore_holdover_minutes(minutes: u16) {
+    set_local_minutes(minutes);
+}
 
 pub fn snapshot_minutes() -> Option<u16> {
-    if valid() { Some(local_minutes() as u16) } else { None }
+    if valid() {
+        Some(local_minutes() as u16)
+    } else {
+        None
+    }
 }
 
 /// Compact persisted configuration: bit 0 automatic-time, bits 8..15 signed
@@ -94,7 +120,9 @@ pub fn config_snapshot() -> i32 {
 pub fn restore_config(raw: i32) {
     let auto = (raw & 1) != 0;
     AUTOMATIC.store(auto, Ordering::Relaxed);
-    if auto { NETWORK_SYNC_REQUESTED.store(true, Ordering::Relaxed); }
+    if auto {
+        NETWORK_SYNC_REQUESTED.store(true, Ordering::Relaxed);
+    }
     let tz = (((raw >> 8) & 0xff) - 16).clamp(-12, 14);
     TIME_ZONE_OFFSET_MINUTES.store(tz * 60, Ordering::Relaxed);
 }
@@ -105,13 +133,17 @@ pub fn action(action: i32) -> i32 {
         0 => {
             let next = !automatic();
             AUTOMATIC.store(next, Ordering::Relaxed);
-            if next { NETWORK_SYNC_REQUESTED.store(true, Ordering::Relaxed); }
-        },
+            if next {
+                NETWORK_SYNC_REQUESTED.store(true, Ordering::Relaxed);
+            }
+        }
         1 if !automatic() => set_local_minutes(((local_minutes() + 60).rem_euclid(1440)) as u16),
         2 if !automatic() => set_local_minutes(((local_minutes() + 1).rem_euclid(1440)) as u16),
         3 if !automatic() => {
             let mut hours = timezone_hours() as i32 + 1;
-            if hours > 14 { hours = -12; }
+            if hours > 14 {
+                hours = -12;
+            }
             TIME_ZONE_OFFSET_MINUTES.store(hours * 60, Ordering::Relaxed);
         }
         _ => {}

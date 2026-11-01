@@ -36,11 +36,18 @@ impl PageStore {
         if pages < 2 || pages - 1 > u32::MAX as u64 {
             return Err(PageStoreError::BadSlot);
         }
-        Ok(Self { part, slots: (pages - 1) as u32 })
+        Ok(Self {
+            part,
+            slots: (pages - 1) as u32,
+        })
     }
 
-    pub fn slots(&self) -> u32 { self.slots }
-    pub fn capacity_bytes(&self) -> u64 { self.slots as u64 * PAYLOAD_SIZE as u64 }
+    pub fn slots(&self) -> u32 {
+        self.slots
+    }
+    pub fn capacity_bytes(&self) -> u64 {
+        self.slots as u64 * PAYLOAD_SIZE as u64
+    }
 
     pub fn write<D: BlockDevice>(
         &self,
@@ -49,8 +56,12 @@ impl PageStore {
         tag: u32,
         payload: &[u8],
     ) -> Result<(), PageStoreError> {
-        if slot >= self.slots { return Err(PageStoreError::BadSlot); }
-        if payload.len() > PAYLOAD_SIZE { return Err(PageStoreError::TooLarge); }
+        if slot >= self.slots {
+            return Err(PageStoreError::BadSlot);
+        }
+        if payload.len() > PAYLOAD_SIZE {
+            return Err(PageStoreError::TooLarge);
+        }
 
         let mut page = [0u8; PAGE_SIZE];
         page[0..4].copy_from_slice(&MAGIC);
@@ -70,13 +81,19 @@ impl PageStore {
         expected_tag: u32,
         out: &mut [u8],
     ) -> Result<usize, PageStoreError> {
-        if slot >= self.slots { return Err(PageStoreError::BadSlot); }
+        if slot >= self.slots {
+            return Err(PageStoreError::BadSlot);
+        }
         let mut page = [0u8; PAGE_SIZE];
         gpt::read_partition(dev, self.part, self.slot_offset(slot), &mut page)
             .map_err(PageStoreError::Gpt)?;
-        if page[0..4] != MAGIC { return Err(PageStoreError::Empty); }
+        if page[0..4] != MAGIC {
+            return Err(PageStoreError::Empty);
+        }
         let tag = u32::from_le_bytes(page[4..8].try_into().unwrap_or([0; 4]));
-        if tag != expected_tag { return Err(PageStoreError::Empty); }
+        if tag != expected_tag {
+            return Err(PageStoreError::Empty);
+        }
         let len = u16::from_le_bytes([page[8], page[9]]) as usize;
         let version = u16::from_le_bytes([page[10], page[11]]);
         if version != 1 || len > PAYLOAD_SIZE || len > out.len() {
@@ -84,20 +101,34 @@ impl PageStore {
         }
         let crc = u32::from_le_bytes([page[12], page[13], page[14], page[15]]);
         let payload = &page[HEADER_SIZE..HEADER_SIZE + len];
-        if gpt::crc32(payload) != crc { return Err(PageStoreError::Corrupt); }
+        if gpt::crc32(payload) != crc {
+            return Err(PageStoreError::Corrupt);
+        }
         out[..len].copy_from_slice(payload);
         Ok(len)
     }
 
-
-    pub fn write_i32<D: BlockDevice>(&self, dev: &D, slot: u32, tag: u32, value: i32) -> Result<(), PageStoreError> {
+    pub fn write_i32<D: BlockDevice>(
+        &self,
+        dev: &D,
+        slot: u32,
+        tag: u32,
+        value: i32,
+    ) -> Result<(), PageStoreError> {
         self.write(dev, slot, tag, &value.to_le_bytes())
     }
 
-    pub fn read_i32<D: BlockDevice>(&self, dev: &D, slot: u32, tag: u32) -> Result<i32, PageStoreError> {
+    pub fn read_i32<D: BlockDevice>(
+        &self,
+        dev: &D,
+        slot: u32,
+        tag: u32,
+    ) -> Result<i32, PageStoreError> {
         let mut out = [0u8; 4];
         let n = self.read(dev, slot, tag, &mut out)?;
-        if n != 4 { return Err(PageStoreError::Corrupt); }
+        if n != 4 {
+            return Err(PageStoreError::Corrupt);
+        }
         Ok(i32::from_le_bytes(out))
     }
 

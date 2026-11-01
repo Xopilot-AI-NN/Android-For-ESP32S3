@@ -14,6 +14,10 @@ default = ["rhai-runtime", "display-st7789", "pc-block-boot", "radio-services"]
 rhai-runtime = ["dep:rhai"]
 display-ssd1306 = []
 display-st7789 = []
+# Explicit opt-in ST7789 physical color diagnostic (no effect by default).
+display-diagnostic = ["display-st7789"]
+# Independent GPIO SPI bypass for ST7789V3, OFF by default.
+display-software-spi = ["display-st7789"]
 pc-block-boot = []
 radio-services = ["dep:esp-radio", "dep:esp-rtos", "dep:static_cell", "dep:smoltcp"]
 

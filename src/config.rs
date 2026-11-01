@@ -16,8 +16,10 @@ pub const OLED_ADDR: u8 = 0x3C;
 
 // ST7789V3 / SPI3: SCK=GPIO1, MOSI=GPIO2, RST=GPIO3, DC=GPIO4,
 // CS=GPIO5, BL=GPIO6. Matches the user's physical wiring.
-#[cfg(feature = "display-st7789")]
+#[cfg(all(feature = "display-st7789", not(feature = "display-diagnostic")))]
 pub const TFT_MHZ: u32 = 20; // Conservative SPI clock for wired ST7789V3.
+#[cfg(feature = "display-diagnostic")]
+pub const TFT_MHZ: u32 = 2; // Diagnostic: slow SPI to isolate bus/timing issues.
 #[cfg(feature = "display-st7789")]
 pub const TFT_Y_OFFSET: u16 = 20;
 #[cfg(feature = "display-st7789")]

@@ -21,7 +21,9 @@ pub(super) fn clock_action(action: i32) -> i32 {
             if STOPWATCH_RUNNING.load(Ordering::Relaxed) {
                 let start = STOPWATCH_START_SECONDS.load(Ordering::Relaxed);
                 let elapsed = now.saturating_sub(start);
-                let accum = STOPWATCH_ACCUM_SECONDS.load(Ordering::Relaxed).saturating_add(elapsed);
+                let accum = STOPWATCH_ACCUM_SECONDS
+                    .load(Ordering::Relaxed)
+                    .saturating_add(elapsed);
                 STOPWATCH_ACCUM_SECONDS.store(accum.min(3599), Ordering::Relaxed);
                 STOPWATCH_RUNNING.store(false, Ordering::Relaxed);
             } else {
@@ -54,7 +56,8 @@ pub(super) fn clock_snapshot() -> (i32, i32, i32) {
     let now = uptime_seconds();
     let mut stopwatch = STOPWATCH_ACCUM_SECONDS.load(Ordering::Relaxed);
     if STOPWATCH_RUNNING.load(Ordering::Relaxed) {
-        stopwatch = stopwatch.saturating_add(now.saturating_sub(STOPWATCH_START_SECONDS.load(Ordering::Relaxed)));
+        stopwatch = stopwatch
+            .saturating_add(now.saturating_sub(STOPWATCH_START_SECONDS.load(Ordering::Relaxed)));
     }
     stopwatch = stopwatch.clamp(0, 3599);
 
@@ -67,5 +70,13 @@ pub(super) fn clock_snapshot() -> (i32, i32, i32) {
             timer = 0;
         }
     }
-    (timer.clamp(0, 300), stopwatch, if ALARM_ENABLED.load(Ordering::Relaxed) { 1 } else { 0 })
+    (
+        timer.clamp(0, 300),
+        stopwatch,
+        if ALARM_ENABLED.load(Ordering::Relaxed) {
+            1
+        } else {
+            0
+        },
+    )
 }

@@ -8,8 +8,7 @@ use embedded_sdmmc::BlockDevice;
 use embedded_sdmmc::SdCard;
 
 use crate::{
-    android_boot,
-    avb,
+    android_boot, avb,
     boot_control::{BootControl, Slot},
     config::MAX_RUNTIME_BUNDLE_BYTES,
     cpio,
@@ -29,7 +28,6 @@ pub enum AndroidBootError {
     Cpio(cpio::CpioError),
     RuntimeBundleTooLarge,
 }
-
 
 impl core::fmt::Display for AndroidBootError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -75,12 +73,18 @@ impl<D: BlockDevice> BootSession<D> {
     /// framework/vendor/product code lives in slot-suffixed logical partitions.
     pub fn load_userspace_bundle(&mut self) -> Result<String, AndroidBootError> {
         let super_part = gpt::find_partition(&self.card, "super").map_err(AndroidBootError::Gpt)?;
-        let metadata_slot = match self.image.slot { Slot::A => 0, Slot::B => 1 };
+        let metadata_slot = match self.image.slot {
+            Slot::A => 0,
+            Slot::B => 1,
+        };
         let suffix = self.image.slot.suffix();
 
         let init_script = core::mem::take(&mut self.image.script);
         let mut bundle = String::with_capacity(
-            init_script.len().saturating_add(8 * 1024).min(MAX_RUNTIME_BUNDLE_BYTES),
+            init_script
+                .len()
+                .saturating_add(8 * 1024)
+                .min(MAX_RUNTIME_BUNDLE_BYTES),
         );
         append_component(&mut bundle, "/* init_boot:/init.rhai */\n", &init_script)?;
         drop(init_script);
@@ -116,7 +120,9 @@ impl<D: BlockDevice> BootSession<D> {
     }
 
     /// Access the underlying block device without taking ownership.
-    pub fn block_device(&self) -> &D { &self.card }
+    pub fn block_device(&self) -> &D {
+        &self.card
+    }
 }
 
 fn append_component(bundle: &mut String, marker: &str, text: &str) -> Result<(), AndroidBootError> {
@@ -155,8 +161,11 @@ pub fn load_block_device<D: BlockDevice>(card: D) -> Result<BootSession<D>, Andr
     card.num_blocks().map_err(|_| AndroidBootError::Card)?;
     gpt::probe(&card).map_err(AndroidBootError::Gpt)?;
     let misc = gpt::find_partition(&card, "misc").map_err(AndroidBootError::Gpt)?;
-    let mut control = BootControl::load_or_init(&card, misc).map_err(|_| AndroidBootError::BootControl)?;
-    let preferred = control.preferred_slot().ok_or(AndroidBootError::MissingSlot)?;
+    let mut control =
+        BootControl::load_or_init(&card, misc).map_err(|_| AndroidBootError::BootControl)?;
+    let preferred = control
+        .preferred_slot()
+        .ok_or(AndroidBootError::MissingSlot)?;
 
     let first = try_slot(&card, misc, &mut control, preferred);
     let image = match first {
@@ -166,7 +175,9 @@ pub fn load_block_device<D: BlockDevice>(card: D) -> Result<BootSession<D>, Andr
                 let _ = control.mark_unbootable(&card, misc, preferred);
             }
             let fallback = preferred.other();
-            if !control.is_bootable(fallback) { return Err(first_error); }
+            if !control.is_bootable(fallback) {
+                return Err(first_error);
+            }
             match try_slot(&card, misc, &mut control, fallback) {
                 Ok(image) => image,
                 Err(_) => return Err(first_error),
@@ -174,7 +185,12 @@ pub fn load_block_device<D: BlockDevice>(card: D) -> Result<BootSession<D>, Andr
         }
     };
 
-    Ok(BootSession { card, misc, control, image })
+    Ok(BootSession {
+        card,
+        misc,
+        control,
+        image,
+    })
 }
 
 fn try_slot<D: BlockDevice>(
@@ -183,25 +199,36 @@ fn try_slot<D: BlockDevice>(
     control: &mut BootControl,
     slot: Slot,
 ) -> Result<SystemImage, AndroidBootError> {
-    control.begin_attempt(card, misc, slot).map_err(|_| AndroidBootError::BootControl)?;
+    control
+        .begin_attempt(card, misc, slot)
+        .map_err(|_| AndroidBootError::BootControl)?;
 
     let boot_name = partition_name("boot", slot);
     let init_boot_name = partition_name("init_boot", slot);
     let vendor_boot_name = partition_name("vendor_boot", slot);
     let vbmeta_name = partition_name("vbmeta", slot);
     let boot = gpt::find_partition(card, boot_name.as_str()).map_err(AndroidBootError::Gpt)?;
-    let init_boot = gpt::find_partition(card, init_boot_name.as_str()).map_err(AndroidBootError::Gpt)?;
-    let vendor_boot = gpt::find_partition(card, vendor_boot_name.as_str()).map_err(AndroidBootError::Gpt)?;
+    let init_boot =
+        gpt::find_partition(card, init_boot_name.as_str()).map_err(AndroidBootError::Gpt)?;
+    let vendor_boot =
+        gpt::find_partition(card, vendor_boot_name.as_str()).map_err(AndroidBootError::Gpt)?;
     let vbmeta = gpt::find_partition(card, vbmeta_name.as_str()).map_err(AndroidBootError::Gpt)?;
 
-    let boot_avb = avb::verify_partition(card, vbmeta, boot, "boot").map_err(AndroidBootError::Avb)?;
-    let init_avb = avb::verify_partition(card, vbmeta, init_boot, "init_boot").map_err(AndroidBootError::Avb)?;
-    let vendor_avb = avb::verify_partition(card, vbmeta, vendor_boot, "vendor_boot").map_err(AndroidBootError::Avb)?;
-    let rollback_index = boot_avb.rollback_index.max(init_avb.rollback_index).max(vendor_avb.rollback_index);
+    let boot_avb =
+        avb::verify_partition(card, vbmeta, boot, "boot").map_err(AndroidBootError::Avb)?;
+    let init_avb = avb::verify_partition(card, vbmeta, init_boot, "init_boot")
+        .map_err(AndroidBootError::Avb)?;
+    let vendor_avb = avb::verify_partition(card, vbmeta, vendor_boot, "vendor_boot")
+        .map_err(AndroidBootError::Avb)?;
+    let rollback_index = boot_avb
+        .rollback_index
+        .max(init_avb.rollback_index)
+        .max(vendor_avb.rollback_index);
 
     android_boot::validate_boot(card, boot).map_err(AndroidBootError::BootImage)?;
     android_boot::validate_vendor_boot(card, vendor_boot).map_err(AndroidBootError::BootImage)?;
-    let (version, script) = android_boot::extract_init_script(card, init_boot).map_err(AndroidBootError::BootImage)?;
+    let (version, script) =
+        android_boot::extract_init_script(card, init_boot).map_err(AndroidBootError::BootImage)?;
 
     Ok(SystemImage {
         slot,

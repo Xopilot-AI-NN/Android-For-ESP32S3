@@ -25,8 +25,12 @@ pub(crate) fn sample_boot_mode<D: BootDisplay>(
 ) -> BootMode {
     let ticks = (window_ms / 10).max(1);
     for _ in 0..ticks {
-        if keys.power_pressed() { return BootMode::Fastboot; }
-        if keys.poll_rotation() != 0 { return BootMode::Recovery; }
+        if keys.power_pressed() {
+            return BootMode::Fastboot;
+        }
+        if keys.poll_rotation() != 0 {
+            return BootMode::Recovery;
+        }
 
         if let Some(event) = desktop.poll() {
             match event {
@@ -37,11 +41,21 @@ pub(crate) fn sample_boot_mode<D: BootDisplay>(
                 DesktopEvent::Ping => display.pong(),
                 DesktopEvent::Fastboot | DesktopEvent::Power => return BootMode::Fastboot,
                 DesktopEvent::Recovery | DesktopEvent::Rotate(_) => return BootMode::Recovery,
-                DesktopEvent::Swipe(_) => {},
+                DesktopEvent::Swipe(_) => {}
                 DesktopEvent::Normal => return BootMode::Normal,
-                DesktopEvent::CompanionTime(_) | DesktopEvent::AdbGetProp | DesktopEvent::AdbServices | DesktopEvent::AdbPackages | DesktopEvent::AdbDumpsys
-                | DesktopEvent::WifiScan | DesktopEvent::WifiStatus | DesktopEvent::WifiConnect(_) | DesktopEvent::WifiDisconnect
-                | DesktopEvent::BtScan | DesktopEvent::BtStatus | DesktopEvent::BtConnect(_) | DesktopEvent::BtDisconnect => {},
+                DesktopEvent::CompanionTime(_)
+                | DesktopEvent::AdbGetProp
+                | DesktopEvent::AdbServices
+                | DesktopEvent::AdbPackages
+                | DesktopEvent::AdbDumpsys
+                | DesktopEvent::WifiScan
+                | DesktopEvent::WifiStatus
+                | DesktopEvent::WifiConnect(_)
+                | DesktopEvent::WifiDisconnect
+                | DesktopEvent::BtScan
+                | DesktopEvent::BtStatus
+                | DesktopEvent::BtConnect(_)
+                | DesktopEvent::BtDisconnect => {}
             }
         }
         delay.delay_millis(10);
@@ -83,21 +97,39 @@ pub(crate) fn recovery_menu<D: BootDisplay>(
                         break;
                     }
                     DesktopEvent::Power => {
-                        return if selected_fastboot { BootMode::Fastboot } else { BootMode::Normal };
+                        return if selected_fastboot {
+                            BootMode::Fastboot
+                        } else {
+                            BootMode::Normal
+                        };
                     }
                     DesktopEvent::Fastboot => return BootMode::Fastboot,
                     DesktopEvent::Normal => return BootMode::Normal,
-                    DesktopEvent::Recovery => {},
-                    DesktopEvent::Swipe(_) => {},
-                    DesktopEvent::CompanionTime(_) | DesktopEvent::AdbGetProp | DesktopEvent::AdbServices | DesktopEvent::AdbPackages | DesktopEvent::AdbDumpsys
-                | DesktopEvent::WifiScan | DesktopEvent::WifiStatus | DesktopEvent::WifiConnect(_) | DesktopEvent::WifiDisconnect
-                | DesktopEvent::BtScan | DesktopEvent::BtStatus | DesktopEvent::BtConnect(_) | DesktopEvent::BtDisconnect => {},
+                    DesktopEvent::Recovery => {}
+                    DesktopEvent::Swipe(_) => {}
+                    DesktopEvent::CompanionTime(_)
+                    | DesktopEvent::AdbGetProp
+                    | DesktopEvent::AdbServices
+                    | DesktopEvent::AdbPackages
+                    | DesktopEvent::AdbDumpsys
+                    | DesktopEvent::WifiScan
+                    | DesktopEvent::WifiStatus
+                    | DesktopEvent::WifiConnect(_)
+                    | DesktopEvent::WifiDisconnect
+                    | DesktopEvent::BtScan
+                    | DesktopEvent::BtStatus
+                    | DesktopEvent::BtConnect(_)
+                    | DesktopEvent::BtDisconnect => {}
                 }
             }
 
             let power = keys.power_pressed();
             if power && !last_power {
-                return if selected_fastboot { BootMode::Fastboot } else { BootMode::Normal };
+                return if selected_fastboot {
+                    BootMode::Fastboot
+                } else {
+                    BootMode::Normal
+                };
             }
             last_power = power;
             delay.delay_millis(20);

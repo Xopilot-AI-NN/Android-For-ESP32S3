@@ -1,12 +1,12 @@
 //! Board initialization and system handoff.
 //! See persistence.rs, radio_bridge.rs and boot_modes.rs for services.
-use crate::*;
-use crate::persistence::*;
-use crate::state_flow::*;
-#[cfg(feature = "radio-services")]
-use crate::radio_bridge::*;
 #[cfg(not(feature = "pc-block-boot"))]
 use crate::boot_modes::*;
+use crate::persistence::*;
+#[cfg(feature = "radio-services")]
+use crate::radio_bridge::*;
+use crate::state_flow::*;
+use crate::*;
 
 pub(crate) fn run() -> ! {
     // Keep a small internal heap for latency-sensitive allocations, then add
@@ -54,8 +54,17 @@ pub(crate) fn run() -> ! {
 
     println!("heap initialized:\n{}", esp_alloc::HEAP.stats());
 
-    println!("{} bootloader {}", config::PRODUCT, config::BOOTLOADER_VERSION);
-    println!("device={} manufacturer={} board={} target=esp32s3", config::DEVICE, config::MANUFACTURER, config::MODEL);
+    println!(
+        "{} bootloader {}",
+        config::PRODUCT,
+        config::BOOTLOADER_VERSION
+    );
+    println!(
+        "device={} manufacturer={} board={} target=esp32s3",
+        config::DEVICE,
+        config::MANUFACTURER,
+        config::MODEL
+    );
 
     #[cfg(feature = "display-ssd1306")]
     let physical_display = {
@@ -69,7 +78,7 @@ pub(crate) fn run() -> ! {
         Ssd1306Display::new(i2c).expect("SSD1306 not responding on GPIO5/6 address 0x3C")
     };
 
-    #[cfg(feature = "display-st7789")]
+    #[cfg(all(feature = "display-st7789", not(feature = "display-software-spi")))]
     let physical_display = {
         let spi = Spi::new(
             p.SPI3,
@@ -86,6 +95,25 @@ pub(crate) fn run() -> ! {
         let bl = Output::new(p.GPIO6, Level::Low, OutputConfig::default());
         let mut init_delay = delay;
         St7789Display::new(spi, cs, dc, rst, bl, &mut init_delay).expect("ST7789V3 init failed")
+    };
+
+    #[cfg(all(feature = "display-st7789", feature = "display-software-spi"))]
+    let physical_display = {
+        // GPIO1 = SCL/SCK, GPIO2 = SDA/MOSI, GPIO3 = RES/RST,
+        // GPIO4 = DC, GPIO5 = CS, GPIO6 = BLK (active high).
+        // This deliberately does NOT use SPI3 or the GPIO matrix.
+        esp_println::println!("ST7789: GPIO software SPI enabled; CLK=GPIO1 DATA=GPIO2 BLK=GPIO6");
+        let spi = crate::soft_spi::SoftSpi::new(
+            Output::new(p.GPIO1, Level::Low, OutputConfig::default()),
+            Output::new(p.GPIO2, Level::Low, OutputConfig::default()),
+        );
+        let cs = Output::new(p.GPIO5, Level::High, OutputConfig::default());
+        let dc = Output::new(p.GPIO4, Level::Low, OutputConfig::default());
+        let rst = Output::new(p.GPIO3, Level::High, OutputConfig::default());
+        let bl = Output::new(p.GPIO6, Level::Low, OutputConfig::default());
+        let mut init_delay = delay;
+        St7789Display::new(spi, cs, dc, rst, bl, &mut init_delay)
+            .expect("ST7789V3 software SPI init failed")
     };
 
     #[cfg(feature = "pc-block-boot")]
@@ -113,7 +141,9 @@ pub(crate) fn run() -> ! {
             Err(err) => {
                 println!("pc block android boot error: {:?}", err);
                 let _ = display.error("PC DISK ERROR", "CHECK SERVER");
-                loop { delay.delay_millis(1000); }
+                loop {
+                    delay.delay_millis(1000);
+                }
             }
         };
 
@@ -123,7 +153,11 @@ pub(crate) fn run() -> ! {
             session.image.version,
             session.image.entry,
             session.image.rollback_index,
-            if session.image.avb_unsigned { "orange/unsigned" } else { "green" },
+            if session.image.avb_unsigned {
+                "orange/unsigned"
+            } else {
+                "green"
+            },
         );
         let _ = display.boot_progress("MOUNTING SUPER", 4);
         session.block_device().viewer_progress("MOUNTING SUPER", 4);
@@ -133,8 +167,12 @@ pub(crate) fn run() -> ! {
             Err(err) => {
                 println!("userspace load error: {:?}", err);
                 let _ = display.error("SUPER ERROR", "USERSPACE");
-                session.block_device().viewer_error("SUPER ERROR", "USERSPACE");
-                loop { delay.delay_millis(1000); }
+                session
+                    .block_device()
+                    .viewer_error("SUPER ERROR", "USERSPACE");
+                loop {
+                    delay.delay_millis(1000);
+                }
             }
         };
         println!("userspace bundle={} bytes", bundle.len());
@@ -147,8 +185,12 @@ pub(crate) fn run() -> ! {
             Err(err) => {
                 println!("runtime start error: {:?}", err);
                 let _ = display.error("RUNTIME", "SCRIPT ERROR");
-                session.block_device().viewer_error("RUNTIME", "SCRIPT ERROR");
-                loop { delay.delay_millis(1000); }
+                session
+                    .block_device()
+                    .viewer_error("RUNTIME", "SCRIPT ERROR");
+                loop {
+                    delay.delay_millis(1000);
+                }
             }
         };
 
@@ -156,7 +198,11 @@ pub(crate) fn run() -> ! {
         let pager = page_store::PageStore::open(session.block_device()).ok();
         let mut pager_used: u32 = 0;
         if let Some(p) = pager {
-            println!("zpager: {} slots / {} KiB managed backing store", p.slots(), p.capacity_bytes() / 1024);
+            println!(
+                "zpager: {} slots / {} KiB managed backing store",
+                p.slots(),
+                p.capacity_bytes() / 1024
+            );
         } else {
             println!("zpager: swap partition unavailable");
         }
@@ -172,14 +218,23 @@ pub(crate) fn run() -> ! {
             }
             if let Some(minutes) = load_time_holdover(pager, session.block_device()) {
                 rtc::restore_holdover_minutes(minutes);
-                println!("time: restored last-known wall clock {:02}:{:02}", minutes / 60, minutes % 60);
+                println!(
+                    "time: restored last-known wall clock {:02}:{:02}",
+                    minutes / 60,
+                    minutes % 60
+                );
             }
             if let Some(saved) = load_system_settings(pager, session.block_device()) {
-                let restored = (os.state() & !SYSTEM_SETTINGS_MASK) | (saved & SYSTEM_SETTINGS_MASK);
-                if let Ok(frame) = os.replace_state(restored) { first_frame = frame; }
+                let restored =
+                    (os.state() & !SYSTEM_SETTINGS_MASK) | (saved & SYSTEM_SETTINGS_MASK);
+                if let Ok(frame) = os.replace_state(restored) {
+                    first_frame = frame;
+                }
                 println!("settings: restored persistent Wear settings");
             }
-            if let Ok(frame) = os.render() { first_frame = frame; }
+            if let Ok(frame) = os.render() {
+                first_frame = frame;
+            }
         }
 
         #[cfg(feature = "radio-services")]
@@ -198,7 +253,9 @@ pub(crate) fn run() -> ! {
         let mut persisted_rtc_config = rtc::config_snapshot();
         first_frame.set_swap_pages(0);
         #[cfg(feature = "radio-services")]
-        if let Some(radios) = radios.as_mut() { radios.sync_frame(&first_frame); }
+        if let Some(radios) = radios.as_mut() {
+            radios.sync_frame(&first_frame);
+        }
         println!("system_server handoff succeeded");
         if let Err(err) = session.mark_successful() {
             println!("warning: failed to mark slot successful: {:?}", err);
@@ -226,55 +283,68 @@ pub(crate) fn run() -> ! {
                     // are informational instead of destructive reboots.
                     DesktopEvent::Fastboot => {
                         session.block_device().viewer_status(
-                            "FASTBOOT", "PC BLOCK ACTIVE", "REBOOT MODE TODO", "NO RESET",
+                            "FASTBOOT",
+                            "PC BLOCK ACTIVE",
+                            "REBOOT MODE TODO",
+                            "NO RESET",
                         );
                         None
                     }
                     DesktopEvent::Recovery => {
                         session.block_device().viewer_status(
-                            "RECOVERY", "PC BLOCK ACTIVE", "REBOOT MODE TODO", "NO RESET",
+                            "RECOVERY",
+                            "PC BLOCK ACTIVE",
+                            "REBOOT MODE TODO",
+                            "NO RESET",
                         );
                         None
                     }
                     DesktopEvent::Power => Some(runtime::RuntimeEvent::Press),
                     DesktopEvent::Normal => Some(runtime::RuntimeEvent::Home),
                     DesktopEvent::AdbGetProp => {
-                        session.block_device().viewer_adb_output(
-                            "getprop",
-                            adb::getprop(),
-                        );
+                        session
+                            .block_device()
+                            .viewer_adb_output("getprop", adb::getprop());
                         None
                     }
                     DesktopEvent::AdbServices => {
-                        session.block_device().viewer_adb_output(
-                            "services",
-                            adb::services(),
-                        );
+                        session
+                            .block_device()
+                            .viewer_adb_output("services", adb::services());
                         None
                     }
                     DesktopEvent::AdbPackages => {
-                        session.block_device().viewer_adb_output(
-                            "packages",
-                            adb::packages(),
-                        );
+                        session
+                            .block_device()
+                            .viewer_adb_output("packages", adb::packages());
                         None
                     }
                     DesktopEvent::AdbDumpsys => {
                         let mut line = heapless::String::<256>::new();
-                        let _ = core::fmt::write(&mut line, format_args!(
-                            "boot=completed slot={} pager_pages={} wifi={} bt={} wadb={}",
-                            session.image.slot.as_str(),
-                            pager_used.count_ones(),
-                            ((os.state() >> 21) & 1),
-                            ((os.state() >> 22) & 1),
-                            ((os.state() >> 23) & 1),
-                        ));
+                        let _ = core::fmt::write(
+                            &mut line,
+                            format_args!(
+                                "boot=completed slot={} pager_pages={} wifi={} bt={} wadb={}",
+                                session.image.slot.as_str(),
+                                pager_used.count_ones(),
+                                ((os.state() >> 21) & 1),
+                                ((os.state() >> 22) & 1),
+                                ((os.state() >> 23) & 1),
+                            ),
+                        );
                         #[cfg(feature = "radio-services")]
                         if let Some(radios) = radios.as_ref() {
-                            let _ = core::fmt::write(&mut line, format_args!(" net={:?}", radios.network_state()));
-                            if let Some(ip) = radios.ip_address() { let _ = core::fmt::write(&mut line, format_args!(" ip={}", ip)); }
+                            let _ = core::fmt::write(
+                                &mut line,
+                                format_args!(" net={:?}", radios.network_state()),
+                            );
+                            if let Some(ip) = radios.ip_address() {
+                                let _ = core::fmt::write(&mut line, format_args!(" ip={}", ip));
+                            }
                         }
-                        session.block_device().viewer_adb_output("dumpsys", line.as_str());
+                        session
+                            .block_device()
+                            .viewer_adb_output("dumpsys", line.as_str());
                         None
                     }
                     DesktopEvent::WifiScan => {
@@ -289,10 +359,14 @@ pub(crate) fn run() -> ! {
                             }
                             let mut line = heapless::String::<600>::new();
                             radios.format_wifi_scan(&mut line);
-                            session.block_device().viewer_adb_output("wifi", line.as_str());
+                            session
+                                .block_device()
+                                .viewer_adb_output("wifi", line.as_str());
                         }
                         #[cfg(not(feature = "radio-services"))]
-                        session.block_device().viewer_adb_output("wifi", "radio-services disabled");
+                        session
+                            .block_device()
+                            .viewer_adb_output("wifi", "radio-services disabled");
                         None
                     }
                     DesktopEvent::WifiStatus => {
@@ -300,10 +374,14 @@ pub(crate) fn run() -> ! {
                         if let Some(radios) = radios.as_ref() {
                             let mut line = heapless::String::<256>::new();
                             radios.format_wifi_status(&mut line);
-                            session.block_device().viewer_adb_output("wifi", line.as_str());
+                            session
+                                .block_device()
+                                .viewer_adb_output("wifi", line.as_str());
                         }
                         #[cfg(not(feature = "radio-services"))]
-                        session.block_device().viewer_adb_output("wifi", "radio-services disabled");
+                        session
+                            .block_device()
+                            .viewer_adb_output("wifi", "radio-services disabled");
                         None
                     }
                     DesktopEvent::WifiConnect(credentials) => {
@@ -315,9 +393,13 @@ pub(crate) fn run() -> ! {
                                     let _ = display.runtime(&frame);
                                     session.block_device().viewer_runtime(&frame);
                                 }
-                                session.block_device().viewer_adb_output("wifi", "association requested");
+                                session
+                                    .block_device()
+                                    .viewer_adb_output("wifi", "association requested");
                             } else {
-                                session.block_device().viewer_adb_output("wifi", "connect request failed");
+                                session
+                                    .block_device()
+                                    .viewer_adb_output("wifi", "connect request failed");
                             }
                         }
                         None
@@ -330,7 +412,9 @@ pub(crate) fn run() -> ! {
                                 let _ = display.runtime(&frame);
                                 session.block_device().viewer_runtime(&frame);
                             }
-                            session.block_device().viewer_adb_output("wifi", "disconnected");
+                            session
+                                .block_device()
+                                .viewer_adb_output("wifi", "disconnected");
                         }
                         None
                     }
@@ -343,9 +427,14 @@ pub(crate) fn run() -> ! {
                                     let _ = display.runtime(&frame);
                                     session.block_device().viewer_runtime(&frame);
                                 }
-                                session.block_device().viewer_adb_output("bt", "active scan started; wait 6 seconds then run bt-status");
+                                session.block_device().viewer_adb_output(
+                                    "bt",
+                                    "active scan started; wait 6 seconds then run bt-status",
+                                );
                             } else {
-                                session.block_device().viewer_adb_output("bt", "scan start failed");
+                                session
+                                    .block_device()
+                                    .viewer_adb_output("bt", "scan start failed");
                             }
                         }
                         None
@@ -357,10 +446,14 @@ pub(crate) fn run() -> ! {
                             radios.format_bt_status(&mut line);
                             let _ = line.push_str("; ");
                             radios.format_bt_scan(&mut line);
-                            session.block_device().viewer_adb_output("bt", line.as_str());
+                            session
+                                .block_device()
+                                .viewer_adb_output("bt", line.as_str());
                         }
                         #[cfg(not(feature = "radio-services"))]
-                        session.block_device().viewer_adb_output("bt", "radio-services disabled");
+                        session
+                            .block_device()
+                            .viewer_adb_output("bt", "radio-services disabled");
                         None
                     }
                     DesktopEvent::BtConnect(address) => {
@@ -371,9 +464,13 @@ pub(crate) fn run() -> ! {
                                     let _ = display.runtime(&frame);
                                     session.block_device().viewer_runtime(&frame);
                                 }
-                                session.block_device().viewer_adb_output("bt", "connection requested");
+                                session
+                                    .block_device()
+                                    .viewer_adb_output("bt", "connection requested");
                             } else {
-                                session.block_device().viewer_adb_output("bt", "connection request failed");
+                                session
+                                    .block_device()
+                                    .viewer_adb_output("bt", "connection request failed");
                             }
                         }
                         None
@@ -386,30 +483,53 @@ pub(crate) fn run() -> ! {
                                 let _ = display.runtime(&frame);
                                 session.block_device().viewer_runtime(&frame);
                             }
-                            session.block_device().viewer_adb_output("bt", if ok { "disconnect requested" } else { "not connected" });
+                            session.block_device().viewer_adb_output(
+                                "bt",
+                                if ok {
+                                    "disconnect requested"
+                                } else {
+                                    "not connected"
+                                },
+                            );
                         }
                         None
                     }
                     DesktopEvent::CompanionTime(minutes) => {
                         rtc::set_companion_minutes(minutes);
-                        session.block_device().viewer_adb_output("time", "companion time accepted");
+                        session
+                            .block_device()
+                            .viewer_adb_output("time", "companion time accepted");
                         Some(runtime::RuntimeEvent::Sync)
                     }
-                    DesktopEvent::Swipe(direction) => Some(runtime::RuntimeEvent::Swipe(direction as i32)),
-                    DesktopEvent::Rotate(delta) => Some(runtime::RuntimeEvent::Rotate(delta as i32)),
+                    DesktopEvent::Swipe(direction) => {
+                        Some(runtime::RuntimeEvent::Swipe(direction as i32))
+                    }
+                    DesktopEvent::Rotate(delta) => {
+                        Some(runtime::RuntimeEvent::Rotate(delta as i32))
+                    }
                 };
 
                 if let Some(runtime_event) = runtime_event {
-                    match dispatch_with_pager(&mut os, runtime_event, pager.as_ref(), session.block_device(), &mut pager_used) {
+                    match dispatch_with_pager(
+                        &mut os,
+                        runtime_event,
+                        pager.as_ref(),
+                        session.block_device(),
+                        &mut pager_used,
+                    ) {
                         Ok(frame) => {
                             #[cfg(feature = "radio-services")]
-                            if let Some(radios) = radios.as_mut() { radios.sync_frame(&frame); }
+                            if let Some(radios) = radios.as_mut() {
+                                radios.sync_frame(&frame);
+                            }
                             let _ = display.runtime(&frame);
                             session.block_device().viewer_runtime(&frame);
                         }
                         Err(err) => {
                             println!("runtime event error: {:?}", err);
-                            session.block_device().viewer_error("RUNTIME", "EVENT FAILED");
+                            session
+                                .block_device()
+                                .viewer_error("RUNTIME", "EVENT FAILED");
                         }
                     }
                 }
@@ -422,7 +542,9 @@ pub(crate) fn run() -> ! {
                     if let Ok(mut frame) = os.render() {
                         frame.set_swap_pages(pager_used.count_ones().min(255) as u8);
                         #[cfg(feature = "radio-services")]
-                        if let Some(radios) = radios.as_mut() { radios.sync_frame(&frame); }
+                        if let Some(radios) = radios.as_mut() {
+                            radios.sync_frame(&frame);
+                        }
                         let _ = display.runtime(&frame);
                         session.block_device().viewer_runtime(&frame);
                     }
@@ -430,7 +552,13 @@ pub(crate) fn run() -> ! {
             }
             #[cfg(feature = "radio-services")]
             if let Some(radios) = radios.as_mut() {
-                if let Some(mut frame) = service_radio_runtime(radios, &mut os, pager.as_ref(), session.block_device(), &mut pager_used) {
+                if let Some(mut frame) = service_radio_runtime(
+                    radios,
+                    &mut os,
+                    pager.as_ref(),
+                    session.block_device(),
+                    &mut pager_used,
+                ) {
                     frame.set_swap_pages(pager_used.count_ones().min(255) as u8);
                     radios.sync_frame(&frame);
                     let _ = display.runtime(&frame);
@@ -440,19 +568,28 @@ pub(crate) fn run() -> ! {
 
             if let Some(pager) = pager.as_ref() {
                 let settings = os.state() & SYSTEM_SETTINGS_MASK;
-                if settings != persisted_settings && save_system_settings(pager, session.block_device(), os.state()) {
+                if settings != persisted_settings
+                    && save_system_settings(pager, session.block_device(), os.state())
+                {
                     persisted_settings = settings;
                     println!("settings: persistent state updated");
                 }
                 if let Some(now) = rtc::snapshot_minutes() {
                     let changed = persisted_time != Some(now);
-                    let jumped = persisted_time.map(|old| ((now as i32 - old as i32).rem_euclid(1440)) > 1).unwrap_or(true);
-                    if changed && (jumped || now % 5 == 0) && save_time_holdover(pager, session.block_device(), now) {
+                    let jumped = persisted_time
+                        .map(|old| ((now as i32 - old as i32).rem_euclid(1440)) > 1)
+                        .unwrap_or(true);
+                    if changed
+                        && (jumped || now % 5 == 0)
+                        && save_time_holdover(pager, session.block_device(), now)
+                    {
                         persisted_time = Some(now);
                     }
                 }
                 let rtc_config = rtc::config_snapshot();
-                if rtc_config != persisted_rtc_config && save_rtc_config(pager, session.block_device(), rtc_config) {
+                if rtc_config != persisted_rtc_config
+                    && save_rtc_config(pager, session.block_device(), rtc_config)
+                {
                     persisted_rtc_config = rtc_config;
                     println!("time: software RTC settings updated");
                 }
@@ -509,7 +646,8 @@ pub(crate) fn run() -> ! {
         .with_miso(p.GPIO7);
 
         let _ = cs.set_high();
-        if let Err(err) = spi.write(&[0xFF; 10]) { // 80 idle clocks, CS high.
+        if let Err(err) = spi.write(&[0xFF; 10]) {
+            // 80 idle clocks, CS high.
             println!("microSD: idle clock transfer failed: {:?}", err);
             let _ = display.error("SD SPI ERROR", "CHECK GPIO7-10");
             enter_fastboot(display, desktop_input, &mut keys, &delay);
@@ -527,7 +665,9 @@ pub(crate) fn run() -> ! {
                     .with_mode(Mode::_0);
                 match sd_device.bus_mut().apply_config(&fast) {
                     Ok(()) => println!("microSD: switched to {} MHz", config::SD_DATA_MHZ),
-                    Err(err) => println!("microSD: staying at init speed; switch failed: {:?}", err),
+                    Err(err) => {
+                        println!("microSD: staying at init speed; switch failed: {:?}", err)
+                    }
                 }
             });
         }) {
@@ -539,7 +679,18 @@ pub(crate) fn run() -> ! {
             }
         };
 
-        println!("slot={} version={} entry={} rollback={} avb={}", session.image.slot.as_str(), session.image.version, session.image.entry, session.image.rollback_index, if session.image.avb_unsigned { "orange/unsigned" } else { "green" });
+        println!(
+            "slot={} version={} entry={} rollback={} avb={}",
+            session.image.slot.as_str(),
+            session.image.version,
+            session.image.entry,
+            session.image.rollback_index,
+            if session.image.avb_unsigned {
+                "orange/unsigned"
+            } else {
+                "green"
+            }
+        );
         let _ = display.boot_progress("MOUNTING SUPER", 4);
 
         let bundle = match session.load_userspace_bundle() {
@@ -567,7 +718,11 @@ pub(crate) fn run() -> ! {
         let pager = page_store::PageStore::open(session.block_device()).ok();
         let mut pager_used: u32 = 0;
         if let Some(p) = pager {
-            println!("zpager: {} slots / {} KiB managed backing store", p.slots(), p.capacity_bytes() / 1024);
+            println!(
+                "zpager: {} slots / {} KiB managed backing store",
+                p.slots(),
+                p.capacity_bytes() / 1024
+            );
         } else {
             println!("zpager: swap partition unavailable");
         }
@@ -583,14 +738,23 @@ pub(crate) fn run() -> ! {
             }
             if let Some(minutes) = load_time_holdover(pager, session.block_device()) {
                 rtc::restore_holdover_minutes(minutes);
-                println!("time: restored last-known wall clock {:02}:{:02}", minutes / 60, minutes % 60);
+                println!(
+                    "time: restored last-known wall clock {:02}:{:02}",
+                    minutes / 60,
+                    minutes % 60
+                );
             }
             if let Some(saved) = load_system_settings(pager, session.block_device()) {
-                let restored = (os.state() & !SYSTEM_SETTINGS_MASK) | (saved & SYSTEM_SETTINGS_MASK);
-                if let Ok(frame) = os.replace_state(restored) { first_frame = frame; }
+                let restored =
+                    (os.state() & !SYSTEM_SETTINGS_MASK) | (saved & SYSTEM_SETTINGS_MASK);
+                if let Ok(frame) = os.replace_state(restored) {
+                    first_frame = frame;
+                }
                 println!("settings: restored persistent Wear settings");
             }
-            if let Ok(frame) = os.render() { first_frame = frame; }
+            if let Ok(frame) = os.render() {
+                first_frame = frame;
+            }
         }
 
         #[cfg(feature = "radio-services")]
@@ -609,7 +773,9 @@ pub(crate) fn run() -> ! {
         let mut persisted_rtc_config = rtc::config_snapshot();
         first_frame.set_swap_pages(0);
         #[cfg(feature = "radio-services")]
-        if let Some(radios) = radios.as_mut() { radios.sync_frame(&first_frame); }
+        if let Some(radios) = radios.as_mut() {
+            radios.sync_frame(&first_frame);
+        }
         println!("system_server handoff succeeded");
         if let Err(err) = session.mark_successful() {
             println!("warning: failed to mark slot successful: {:?}", err);
@@ -622,9 +788,17 @@ pub(crate) fn run() -> ! {
         loop {
             let rotation = keys.poll_rotation();
             if rotation != 0 {
-                if let Ok(frame) = dispatch_with_pager(&mut os, runtime::RuntimeEvent::Rotate(rotation as i32), pager.as_ref(), session.block_device(), &mut pager_used) {
+                if let Ok(frame) = dispatch_with_pager(
+                    &mut os,
+                    runtime::RuntimeEvent::Rotate(rotation as i32),
+                    pager.as_ref(),
+                    session.block_device(),
+                    &mut pager_used,
+                ) {
                     #[cfg(feature = "radio-services")]
-                    if let Some(radios) = radios.as_mut() { radios.sync_frame(&frame); }
+                    if let Some(radios) = radios.as_mut() {
+                        radios.sync_frame(&frame);
+                    }
                     let _ = display.runtime(&frame);
                 }
             }
@@ -637,15 +811,23 @@ pub(crate) fn run() -> ! {
                 power_hold_ticks = power_hold_ticks.saturating_add(1);
             } else if last_power {
                 let action = if power_hold_ticks >= 90 {
-                    runtime::RuntimeEvent::Home       // ~1.8 s
+                    runtime::RuntimeEvent::Home // ~1.8 s
                 } else if power_hold_ticks >= 35 {
-                    runtime::RuntimeEvent::Back       // ~0.7 s
+                    runtime::RuntimeEvent::Back // ~0.7 s
                 } else {
                     runtime::RuntimeEvent::Press
                 };
-                if let Ok(frame) = dispatch_with_pager(&mut os, action, pager.as_ref(), session.block_device(), &mut pager_used) {
+                if let Ok(frame) = dispatch_with_pager(
+                    &mut os,
+                    action,
+                    pager.as_ref(),
+                    session.block_device(),
+                    &mut pager_used,
+                ) {
                     #[cfg(feature = "radio-services")]
-                    if let Some(radios) = radios.as_mut() { radios.sync_frame(&frame); }
+                    if let Some(radios) = radios.as_mut() {
+                        radios.sync_frame(&frame);
+                    }
                     let _ = display.runtime(&frame);
                 }
                 power_hold_ticks = 0;
@@ -658,12 +840,16 @@ pub(crate) fn run() -> ! {
                         display.hello();
                         Some(runtime::RuntimeEvent::Sync)
                     }
-                    DesktopEvent::Ping => { display.pong(); None }
+                    DesktopEvent::Ping => {
+                        display.pong();
+                        None
+                    }
                     DesktopEvent::Fastboot => {
                         enter_fastboot(display, desktop_input, &mut keys, &delay);
                     }
                     DesktopEvent::Recovery => {
-                        let mode = recovery_menu(&mut display, &mut keys, &mut desktop_input, &delay);
+                        let mode =
+                            recovery_menu(&mut display, &mut keys, &mut desktop_input, &delay);
                         if mode == BootMode::Fastboot {
                             enter_fastboot(display, desktop_input, &mut keys, &delay);
                         }
@@ -671,13 +857,20 @@ pub(crate) fn run() -> ! {
                     }
                     DesktopEvent::Power => Some(runtime::RuntimeEvent::Press),
                     DesktopEvent::Normal => Some(runtime::RuntimeEvent::Home),
-                    DesktopEvent::AdbGetProp | DesktopEvent::AdbServices | DesktopEvent::AdbPackages | DesktopEvent::AdbDumpsys => {
-                        println!("ZADB command received on direct viewer transport; use wireless adb or pc-block ZADB for output");
+                    DesktopEvent::AdbGetProp
+                    | DesktopEvent::AdbServices
+                    | DesktopEvent::AdbPackages
+                    | DesktopEvent::AdbDumpsys => {
+                        println!(
+                            "ZADB command received on direct viewer transport; use wireless adb or pc-block ZADB for output"
+                        );
                         None
                     }
                     DesktopEvent::WifiScan => {
                         #[cfg(feature = "radio-services")]
-                        if let Some(radios) = radios.as_mut() { let _ = radios.scan_wifi(); }
+                        if let Some(radios) = radios.as_mut() {
+                            let _ = radios.scan_wifi();
+                        }
                         None
                     }
                     DesktopEvent::WifiStatus => {
@@ -700,13 +893,17 @@ pub(crate) fn run() -> ! {
                     }
                     DesktopEvent::WifiDisconnect => {
                         #[cfg(feature = "radio-services")]
-                        if let Some(radios) = radios.as_mut() { radios.disconnect_wifi(); }
+                        if let Some(radios) = radios.as_mut() {
+                            radios.disconnect_wifi();
+                        }
                         let _ = set_runtime_flag(&mut os, 21, false);
                         None
                     }
                     DesktopEvent::BtScan => {
                         #[cfg(feature = "radio-services")]
-                        if let Some(radios) = radios.as_mut() { let _ = radios.start_ble_scan(); }
+                        if let Some(radios) = radios.as_mut() {
+                            let _ = radios.start_ble_scan();
+                        }
                         None
                     }
                     DesktopEvent::BtStatus => {
@@ -722,12 +919,16 @@ pub(crate) fn run() -> ! {
                     }
                     DesktopEvent::BtConnect(address) => {
                         #[cfg(feature = "radio-services")]
-                        if let Some(radios) = radios.as_mut() { let _ = radios.connect_ble(address); }
+                        if let Some(radios) = radios.as_mut() {
+                            let _ = radios.connect_ble(address);
+                        }
                         None
                     }
                     DesktopEvent::BtDisconnect => {
                         #[cfg(feature = "radio-services")]
-                        if let Some(radios) = radios.as_mut() { let _ = radios.disconnect_ble(); }
+                        if let Some(radios) = radios.as_mut() {
+                            let _ = radios.disconnect_ble();
+                        }
                         let _ = set_runtime_flag(&mut os, 22, false);
                         None
                     }
@@ -735,14 +936,26 @@ pub(crate) fn run() -> ! {
                         rtc::set_companion_minutes(minutes);
                         Some(runtime::RuntimeEvent::Sync)
                     }
-                    DesktopEvent::Swipe(direction) => Some(runtime::RuntimeEvent::Swipe(direction as i32)),
-                    DesktopEvent::Rotate(delta) => Some(runtime::RuntimeEvent::Rotate(delta as i32)),
+                    DesktopEvent::Swipe(direction) => {
+                        Some(runtime::RuntimeEvent::Swipe(direction as i32))
+                    }
+                    DesktopEvent::Rotate(delta) => {
+                        Some(runtime::RuntimeEvent::Rotate(delta as i32))
+                    }
                 };
                 if let Some(runtime_event) = runtime_event {
-                    match dispatch_with_pager(&mut os, runtime_event, pager.as_ref(), session.block_device(), &mut pager_used) {
+                    match dispatch_with_pager(
+                        &mut os,
+                        runtime_event,
+                        pager.as_ref(),
+                        session.block_device(),
+                        &mut pager_used,
+                    ) {
                         Ok(frame) => {
                             #[cfg(feature = "radio-services")]
-                            if let Some(radios) = radios.as_mut() { radios.sync_frame(&frame); }
+                            if let Some(radios) = radios.as_mut() {
+                                radios.sync_frame(&frame);
+                            }
                             let _ = display.runtime(&frame);
                         }
                         Err(err) => {
@@ -760,14 +973,22 @@ pub(crate) fn run() -> ! {
                     if let Ok(mut frame) = os.render() {
                         frame.set_swap_pages(pager_used.count_ones().min(255) as u8);
                         #[cfg(feature = "radio-services")]
-                        if let Some(radios) = radios.as_mut() { radios.sync_frame(&frame); }
+                        if let Some(radios) = radios.as_mut() {
+                            radios.sync_frame(&frame);
+                        }
                         let _ = display.runtime(&frame);
                     }
                 }
             }
             #[cfg(feature = "radio-services")]
             if let Some(radios) = radios.as_mut() {
-                if let Some(mut frame) = service_radio_runtime(radios, &mut os, pager.as_ref(), session.block_device(), &mut pager_used) {
+                if let Some(mut frame) = service_radio_runtime(
+                    radios,
+                    &mut os,
+                    pager.as_ref(),
+                    session.block_device(),
+                    &mut pager_used,
+                ) {
                     frame.set_swap_pages(pager_used.count_ones().min(255) as u8);
                     radios.sync_frame(&frame);
                     let _ = display.runtime(&frame);
@@ -776,19 +997,28 @@ pub(crate) fn run() -> ! {
 
             if let Some(pager) = pager.as_ref() {
                 let settings = os.state() & SYSTEM_SETTINGS_MASK;
-                if settings != persisted_settings && save_system_settings(pager, session.block_device(), os.state()) {
+                if settings != persisted_settings
+                    && save_system_settings(pager, session.block_device(), os.state())
+                {
                     persisted_settings = settings;
                     println!("settings: persistent state updated");
                 }
                 if let Some(now) = rtc::snapshot_minutes() {
                     let changed = persisted_time != Some(now);
-                    let jumped = persisted_time.map(|old| ((now as i32 - old as i32).rem_euclid(1440)) > 1).unwrap_or(true);
-                    if changed && (jumped || now % 5 == 0) && save_time_holdover(pager, session.block_device(), now) {
+                    let jumped = persisted_time
+                        .map(|old| ((now as i32 - old as i32).rem_euclid(1440)) > 1)
+                        .unwrap_or(true);
+                    if changed
+                        && (jumped || now % 5 == 0)
+                        && save_time_holdover(pager, session.block_device(), now)
+                    {
                         persisted_time = Some(now);
                     }
                 }
                 let rtc_config = rtc::config_snapshot();
-                if rtc_config != persisted_rtc_config && save_rtc_config(pager, session.block_device(), rtc_config) {
+                if rtc_config != persisted_rtc_config
+                    && save_rtc_config(pager, session.block_device(), rtc_config)
+                {
                     persisted_rtc_config = rtc_config;
                     println!("time: software RTC settings updated");
                 }

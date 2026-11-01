@@ -7,7 +7,11 @@
 
 use core::{fmt::Write, time::Duration};
 
-use esp_hal::{delay::Delay, peripherals::{BT, WIFI}, time::Instant};
+use esp_hal::{
+    delay::Delay,
+    peripherals::{BT, WIFI},
+    time::Instant,
+};
 use esp_println::println;
 use esp_radio::{
     Controller,
@@ -17,7 +21,11 @@ use esp_radio::{
 use heapless::{String as HString, Vec as HVec};
 use static_cell::StaticCell;
 
-use crate::{desktop::WifiCredentials, net::{LinkState, NetworkService, WebRemoteEvent}, runtime::RuntimeFrame};
+use crate::{
+    desktop::WifiCredentials,
+    net::{LinkState, NetworkService, WebRemoteEvent},
+    runtime::RuntimeFrame,
+};
 
 static RADIO: StaticCell<Controller<'static>> = StaticCell::new();
 
@@ -34,7 +42,11 @@ fn internal_free_bytes() -> usize {
         .region_stats
         .iter()
         .filter_map(|region| region.as_ref())
-        .filter(|region| region.capabilities.contains(esp_alloc::MemoryCapability::Internal))
+        .filter(|region| {
+            region
+                .capabilities
+                .contains(esp_alloc::MemoryCapability::Internal)
+        })
         .map(|region| region.free)
         .sum()
 }
@@ -101,13 +113,14 @@ impl RadioServices {
             }
         };
 
-        let (wifi_controller, interfaces) = match esp_radio::wifi::new(controller, wifi, Default::default()) {
-            Ok(v) => v,
-            Err(e) => {
-                println!("radio: wifi init failed: {:?}", e);
-                return None;
-            }
-        };
+        let (wifi_controller, interfaces) =
+            match esp_radio::wifi::new(controller, wifi, Default::default()) {
+                Ok(v) => v,
+                Err(e) => {
+                    println!("radio: wifi init failed: {:?}", e);
+                    return None;
+                }
+            };
         let mut wifi_device = interfaces.sta;
         let net = NetworkService::new(&mut wifi_device);
 
@@ -145,22 +158,44 @@ impl RadioServices {
         self.saved_wifi = Some(credentials);
     }
 
-    pub fn network_state(&self) -> LinkState { self.net.link_state() }
-    pub fn ip_address(&self) -> Option<smoltcp::wire::Ipv4Address> { self.net.ip() }
-    pub fn take_network_time(&mut self) -> Option<u32> { self.net.take_network_time() }
-    pub fn request_network_time_sync(&mut self) { self.net.request_time_sync(); }
-    pub fn take_web_event(&mut self) -> Option<WebRemoteEvent> { self.net.take_web_event() }
-    pub fn take_connected_wifi_for_persist(&mut self) -> Option<WifiCredentials> { self.persist_wifi.take() }
-    pub fn wifi_ap_count(&self) -> usize { self.wifi_aps.len() }
+    pub fn network_state(&self) -> LinkState {
+        self.net.link_state()
+    }
+    pub fn ip_address(&self) -> Option<smoltcp::wire::Ipv4Address> {
+        self.net.ip()
+    }
+    pub fn take_network_time(&mut self) -> Option<u32> {
+        self.net.take_network_time()
+    }
+    pub fn request_network_time_sync(&mut self) {
+        self.net.request_time_sync();
+    }
+    pub fn take_web_event(&mut self) -> Option<WebRemoteEvent> {
+        self.net.take_web_event()
+    }
+    pub fn take_connected_wifi_for_persist(&mut self) -> Option<WifiCredentials> {
+        self.persist_wifi.take()
+    }
+    pub fn wifi_ap_count(&self) -> usize {
+        self.wifi_aps.len()
+    }
     pub fn wifi_ap_info(&self, index: usize) -> Option<(&str, i8)> {
-        self.wifi_aps.get(index).map(|ap| (ap.ssid.as_str(), ap.rssi))
+        self.wifi_aps
+            .get(index)
+            .map(|ap| (ap.ssid.as_str(), ap.rssi))
     }
 
     pub fn sync_frame(&mut self, frame: &RuntimeFrame) {
         self.net.set_web_frame(frame);
-        let RuntimeFrame::Material(m) = frame else { return; };
-        if m.wifi != self.wifi_requested { self.set_wifi(m.wifi); }
-        if m.bt != self.bt_requested { self.set_bluetooth(m.bt); }
+        let RuntimeFrame::Material(m) = frame else {
+            return;
+        };
+        if m.wifi != self.wifi_requested {
+            self.set_wifi(m.wifi);
+        }
+        if m.bt != self.bt_requested {
+            self.set_bluetooth(m.bt);
+        }
     }
 
     pub fn tick(&mut self, wadb_enabled: bool) {
@@ -195,8 +230,11 @@ impl RadioServices {
                     // with the phone hotspot in Zephyr 0.4/0.5.
                     let _ = self.wifi.disconnect();
                     if self.wifi_failures >= 3 {
-                        println!("radio: three failed associations; rejecting unverified candidate and resetting STA");
-                        if self.connecting_wifi.is_some() && self.connecting_wifi != self.saved_wifi {
+                        println!(
+                            "radio: three failed associations; rejecting unverified candidate and resetting STA"
+                        );
+                        if self.connecting_wifi.is_some() && self.connecting_wifi != self.saved_wifi
+                        {
                             self.connecting_wifi = None;
                         }
                         self.reset_wifi_station();
@@ -215,7 +253,14 @@ impl RadioServices {
                 if now >= self.wifi_reconnect_at {
                     self.wifi_reconnect_at = now + WIFI_RECONNECT_BACKOFF_MS;
                     if let Some(credentials) = self.connecting_wifi.or(self.saved_wifi) {
-                        println!("radio: reconnecting {} Wi-Fi profile", if self.connecting_wifi.is_some() { "candidate" } else { "saved" });
+                        println!(
+                            "radio: reconnecting {} Wi-Fi profile",
+                            if self.connecting_wifi.is_some() {
+                                "candidate"
+                            } else {
+                                "saved"
+                            }
+                        );
                         let _ = self.connect_wifi(credentials);
                     }
                 }
@@ -229,7 +274,7 @@ impl RadioServices {
     }
 }
 
-mod wifi;
 mod ble;
 mod hci;
+mod wifi;
 use hci::{hci_command, parse_ble_event, push_safe_text};

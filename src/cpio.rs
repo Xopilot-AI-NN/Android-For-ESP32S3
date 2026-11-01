@@ -9,7 +9,13 @@ use crate::{
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CpioError { Io, Invalid, NotFound, TooLarge, Utf8 }
+pub enum CpioError {
+    Io,
+    Invalid,
+    NotFound,
+    TooLarge,
+    Utf8,
+}
 
 pub fn extract_text<D: BlockDevice>(
     dev: &D,
@@ -38,24 +44,40 @@ pub fn extract_file<D: BlockDevice>(
         }
         let file_size = parse_hex_u32(&header[54..62]).ok_or(CpioError::Invalid)? as u64;
         let name_size = parse_hex_u32(&header[94..102]).ok_or(CpioError::Invalid)? as u64;
-        if name_size == 0 || name_size > 384 { return Err(CpioError::Invalid); }
+        if name_size == 0 || name_size > 384 {
+            return Err(CpioError::Invalid);
+        }
 
         let name_offset = cursor + 110;
         let data_offset = align_up(name_offset + name_size, 4);
-        if data_offset.checked_add(file_size).ok_or(CpioError::Invalid)? > logical.size_bytes() {
+        if data_offset
+            .checked_add(file_size)
+            .ok_or(CpioError::Invalid)?
+            > logical.size_bytes()
+        {
             return Err(CpioError::Invalid);
         }
         let mut name_buf = [0u8; 384];
-        read(dev, super_part, logical, name_offset, &mut name_buf[..name_size as usize])?;
+        read(
+            dev,
+            super_part,
+            logical,
+            name_offset,
+            &mut name_buf[..name_size as usize],
+        )?;
         let name_len = name_buf[..name_size as usize]
             .iter()
             .position(|b| *b == 0)
             .unwrap_or(name_size as usize);
         let name = core::str::from_utf8(&name_buf[..name_len]).map_err(|_| CpioError::Invalid)?;
-        if name == "TRAILER!!!" { break; }
+        if name == "TRAILER!!!" {
+            break;
+        }
 
         if normalize(name) == normalize(wanted) {
-            if file_size as usize > max_bytes { return Err(CpioError::TooLarge); }
+            if file_size as usize > max_bytes {
+                return Err(CpioError::TooLarge);
+            }
             let mut out = Vec::new();
             out.resize(file_size as usize, 0);
             read(dev, super_part, logical, data_offset, &mut out)?;
@@ -77,11 +99,16 @@ fn read<D: BlockDevice>(
 }
 
 fn map_lp(err: LpError) -> CpioError {
-    match err { LpError::Io => CpioError::Io, _ => CpioError::Invalid }
+    match err {
+        LpError::Io => CpioError::Io,
+        _ => CpioError::Invalid,
+    }
 }
 
 fn normalize(name: &str) -> &str {
-    name.strip_prefix("./").or_else(|| name.strip_prefix('/')).unwrap_or(name)
+    name.strip_prefix("./")
+        .or_else(|| name.strip_prefix('/'))
+        .unwrap_or(name)
 }
 
 fn parse_hex_u32(input: &[u8]) -> Option<u32> {
@@ -98,4 +125,6 @@ fn parse_hex_u32(input: &[u8]) -> Option<u32> {
     Some(value)
 }
 
-fn align_up(value: u64, align: u64) -> u64 { (value + align - 1) & !(align - 1) }
+fn align_up(value: u64, align: u64) -> u64 {
+    (value + align - 1) & !(align - 1)
+}

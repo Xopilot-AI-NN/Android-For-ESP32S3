@@ -46,7 +46,9 @@ pub struct MaterialFrame {
 impl MaterialFrame {
     pub fn parse(raw: &str) -> Option<Self> {
         let mut p = raw.split('|');
-        if p.next()? != "M3" { return None; }
+        if p.next()? != "M3" {
+            return None;
+        }
         let screen = p.next()?.parse::<u8>().ok()?.min(31);
         let cursor = p.next()?.parse::<u8>().ok()?.min(15);
         let brightness = p.next()?.parse::<u8>().ok()?.min(100);
@@ -65,17 +67,45 @@ impl MaterialFrame {
         let auto_time = p.next()? == "1";
         let time_valid = p.next()? == "1";
         let timezone_hours = p.next()?.parse::<i8>().ok()?.clamp(-12, 14);
-        if p.next().is_some() { return None; }
+        if p.next().is_some() {
+            return None;
+        }
         Some(Self {
-            screen, cursor, brightness, dnd, airplane, theme, locked,
-            wifi, bt, adb, notes, time_minutes, timer_secs, stopwatch_secs,
-            alarm_enabled, auto_time, time_valid, timezone_hours, swap_pages: 0,
-            wifi_ap_count: 0, wifi_ap_index: 0, wifi_ap_ssid: [0; 32], wifi_ap_ssid_len: 0,
-            wifi_ap_rssi: -127, wifi_password_len: 0, wifi_password_preview: [0; 16], wifi_password_preview_len: 0, wifi_editor_char: 0, wifi_link_state: 0,
+            screen,
+            cursor,
+            brightness,
+            dnd,
+            airplane,
+            theme,
+            locked,
+            wifi,
+            bt,
+            adb,
+            notes,
+            time_minutes,
+            timer_secs,
+            stopwatch_secs,
+            alarm_enabled,
+            auto_time,
+            time_valid,
+            timezone_hours,
+            swap_pages: 0,
+            wifi_ap_count: 0,
+            wifi_ap_index: 0,
+            wifi_ap_ssid: [0; 32],
+            wifi_ap_ssid_len: 0,
+            wifi_ap_rssi: -127,
+            wifi_password_len: 0,
+            wifi_password_preview: [0; 16],
+            wifi_password_preview_len: 0,
+            wifi_editor_char: 0,
+            wifi_link_state: 0,
         })
     }
 
-    pub fn set_swap_pages(&mut self, pages: u8) { self.swap_pages = pages; }
+    pub fn set_swap_pages(&mut self, pages: u8) {
+        self.swap_pages = pages;
+    }
 
     pub fn fallback(&self) -> (&'static str, &'static str, &'static str, &'static str) {
         match self.screen {
@@ -83,7 +113,12 @@ impl MaterialFrame {
             1 => ("WATCH FACE", "", "CROWN: APPS", ""),
             2 => ("APPS", "CLOCK", "MEDIA CONTROLS", "SETTINGS"),
             3 => ("NOTIFICATIONS", "", "", ""),
-            4 => ("QUICK SETTINGS", "WIFI / BT", "DND / AIRPLANE", "BRIGHTNESS"),
+            4 => (
+                "QUICK SETTINGS",
+                "WIFI / BT",
+                "DND / AIRPLANE",
+                "BRIGHTNESS",
+            ),
             5 => ("SETTINGS", "CONNECTIVITY", "DISPLAY", "SYSTEM"),
             6 => ("CLOCK", "ALARM", "TIMER", "STOPWATCH"),
             7 => ("CONNECTIVITY", "WIFI", "BLUETOOTH", "WIRELESS DEBUG"),
@@ -116,11 +151,25 @@ impl MaterialFrame {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Rect { pub x: i32, pub y: i32, pub w: i32, pub h: i32 }
+pub struct Rect {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+}
 impl Rect {
-    pub const FULL: Self = Self { x: 0, y: 0, w: WIDTH as i32, h: HEIGHT as i32 };
-    pub fn x1(self) -> i32 { self.x + self.w - 1 }
-    pub fn y1(self) -> i32 { self.y + self.h - 1 }
+    pub const FULL: Self = Self {
+        x: 0,
+        y: 0,
+        w: WIDTH as i32,
+        h: HEIGHT as i32,
+    };
+    pub fn x1(self) -> i32 {
+        self.x + self.w - 1
+    }
+    pub fn y1(self) -> i32 {
+        self.y + self.h - 1
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -145,41 +194,73 @@ const fn rgb565(r: u8, g: u8, b: u8) -> u16 {
 fn theme(index: u8) -> Theme {
     match index % 4 {
         1 => Theme {
-            bg: rgb565(0, 0, 0), surface: rgb565(16, 21, 31), surface_high: rgb565(27, 34, 47),
-            primary: rgb565(174, 203, 255), on_primary: rgb565(8, 48, 88),
-            primary_container: rgb565(32, 69, 111), on_primary_container: rgb565(219, 230, 255),
-            on_surface: rgb565(241, 242, 248), on_surface_variant: rgb565(191, 198, 211),
-            outline: rgb565(118, 127, 143), error: rgb565(255, 180, 171),
+            bg: rgb565(0, 0, 0),
+            surface: rgb565(16, 21, 31),
+            surface_high: rgb565(27, 34, 47),
+            primary: rgb565(174, 203, 255),
+            on_primary: rgb565(8, 48, 88),
+            primary_container: rgb565(32, 69, 111),
+            on_primary_container: rgb565(219, 230, 255),
+            on_surface: rgb565(241, 242, 248),
+            on_surface_variant: rgb565(191, 198, 211),
+            outline: rgb565(118, 127, 143),
+            error: rgb565(255, 180, 171),
         },
         2 => Theme {
-            bg: rgb565(0, 0, 0), surface: rgb565(24, 18, 28), surface_high: rgb565(39, 29, 45),
-            primary: rgb565(224, 187, 255), on_primary: rgb565(72, 31, 97),
-            primary_container: rgb565(100, 55, 128), on_primary_container: rgb565(244, 220, 255),
-            on_surface: rgb565(246, 239, 247), on_surface_variant: rgb565(207, 194, 211),
-            outline: rgb565(142, 128, 147), error: rgb565(255, 180, 171),
+            bg: rgb565(0, 0, 0),
+            surface: rgb565(24, 18, 28),
+            surface_high: rgb565(39, 29, 45),
+            primary: rgb565(224, 187, 255),
+            on_primary: rgb565(72, 31, 97),
+            primary_container: rgb565(100, 55, 128),
+            on_primary_container: rgb565(244, 220, 255),
+            on_surface: rgb565(246, 239, 247),
+            on_surface_variant: rgb565(207, 194, 211),
+            outline: rgb565(142, 128, 147),
+            error: rgb565(255, 180, 171),
         },
         3 => Theme {
-            bg: rgb565(0, 0, 0), surface: rgb565(29, 19, 17), surface_high: rgb565(47, 31, 27),
-            primary: rgb565(255, 184, 161), on_primary: rgb565(86, 33, 16),
-            primary_container: rgb565(119, 55, 34), on_primary_container: rgb565(255, 221, 211),
-            on_surface: rgb565(249, 238, 233), on_surface_variant: rgb565(216, 195, 188),
-            outline: rgb565(150, 129, 123), error: rgb565(255, 180, 171),
+            bg: rgb565(0, 0, 0),
+            surface: rgb565(29, 19, 17),
+            surface_high: rgb565(47, 31, 27),
+            primary: rgb565(255, 184, 161),
+            on_primary: rgb565(86, 33, 16),
+            primary_container: rgb565(119, 55, 34),
+            on_primary_container: rgb565(255, 221, 211),
+            on_surface: rgb565(249, 238, 233),
+            on_surface_variant: rgb565(216, 195, 188),
+            outline: rgb565(150, 129, 123),
+            error: rgb565(255, 180, 171),
         },
         _ => Theme {
-            bg: rgb565(0, 0, 0), surface: rgb565(14, 24, 18), surface_high: rgb565(24, 39, 29),
-            primary: rgb565(126, 225, 165), on_primary: rgb565(0, 57, 29),
-            primary_container: rgb565(23, 80, 49), on_primary_container: rgb565(163, 249, 194),
-            on_surface: rgb565(238, 244, 239), on_surface_variant: rgb565(190, 203, 194),
-            outline: rgb565(126, 143, 132), error: rgb565(255, 180, 171),
+            bg: rgb565(3, 9, 18),
+            surface: rgb565(27, 46, 62),
+            surface_high: rgb565(54, 83, 109),
+            primary: rgb565(34, 223, 223),
+            on_primary: rgb565(4, 40, 50),
+            primary_container: rgb565(2, 129, 145),
+            on_primary_container: rgb565(245, 254, 254),
+            on_surface: rgb565(243, 250, 255),
+            on_surface_variant: rgb565(183, 204, 221),
+            outline: rgb565(134, 161, 180),
+            error: rgb565(255, 180, 171),
         },
     }
 }
 
-pub struct Surface { pixels: Vec<u16> }
+pub struct Surface {
+    pixels: Vec<u16>,
+}
 
 impl Surface {
-    pub fn new() -> Self { Self { pixels: vec![0; WIDTH * HEIGHT] } }
-    pub fn pixels(&self) -> &[u16] { &self.pixels }
+    pub fn new() -> Self {
+        Self {
+            pixels: vec![0; WIDTH * HEIGHT],
+        }
+    }
+    pub fn pixels(&self) -> &[u16] {
+        &self.pixels
+    }
 
     pub fn render(&mut self, frame: MaterialFrame) -> Rect {
         let t = theme(frame.theme);
@@ -222,11 +303,11 @@ impl Surface {
     }
 }
 
-mod primitives;
-mod icons;
-mod typography;
 mod components;
-mod pages_main;
-mod pages_wifi;
+mod icons;
 mod pages_bluetooth;
+mod pages_main;
 mod pages_settings;
+mod pages_wifi;
+mod primitives;
+mod typography;

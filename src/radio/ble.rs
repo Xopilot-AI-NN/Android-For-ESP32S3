@@ -5,7 +5,9 @@ use super::*;
 impl RadioServices {
     pub fn set_bluetooth(&mut self, enabled: bool) {
         if enabled {
-            if !self.ensure_ble() { return; }
+            if !self.ensure_ble() {
+                return;
+            }
             self.bt_requested = true;
             if !self.ble_advertising && self.ble_scanning_until.is_none() {
                 self.enable_advertising();
@@ -13,10 +15,18 @@ impl RadioServices {
             println!("radio: bluetooth service enabled");
         } else {
             if let Some(ble) = self.ble.as_mut() {
-                if self.ble_scanning_until.is_some() { let _ = hci_command(ble, 0x200c, &[0, 0]); }
-                if self.ble_advertising { let _ = hci_command(ble, 0x200a, &[0]); }
+                if self.ble_scanning_until.is_some() {
+                    let _ = hci_command(ble, 0x200c, &[0, 0]);
+                }
+                if self.ble_advertising {
+                    let _ = hci_command(ble, 0x200a, &[0]);
+                }
                 if let Some(connection) = self.ble_connection {
-                    let params = [connection.handle as u8, (connection.handle >> 8) as u8, 0x13];
+                    let params = [
+                        connection.handle as u8,
+                        (connection.handle >> 8) as u8,
+                        0x13,
+                    ];
                     let _ = hci_command(ble, 0x0406, &params);
                 }
             }
@@ -31,7 +41,9 @@ impl RadioServices {
     }
 
     pub(super) fn ensure_ble(&mut self) -> bool {
-        if self.ble.is_some() { return true; }
+        if self.ble.is_some() {
+            return true;
+        }
         let free = internal_free_bytes();
         if free < MIN_BLE_INTERNAL_FREE {
             println!(
@@ -48,7 +60,10 @@ impl RadioServices {
         match BleConnector::new(self.controller, bt, Default::default()) {
             Ok(connector) => {
                 self.ble = Some(connector);
-                println!("radio: BLE HCI initialized (internal_free={} KiB)", internal_free_bytes() / 1024);
+                println!(
+                    "radio: BLE HCI initialized (internal_free={} KiB)",
+                    internal_free_bytes() / 1024
+                );
                 true
             }
             Err(e) => {
@@ -59,10 +74,16 @@ impl RadioServices {
     }
 
     pub(super) fn enable_advertising(&mut self) {
-        let Some(ble) = self.ble.as_mut() else { return; };
+        let Some(ble) = self.ble.as_mut() else {
+            return;
+        };
         // ADV_IND, public address, all channels, 100 ms interval.
-        let params = [0xa0,0x00, 0xa0,0x00, 0x00, 0x00, 0x00, 0,0,0,0,0,0, 0x07, 0x00];
-        if !hci_command(ble, 0x2006, &params) { return; }
+        let params = [
+            0xa0, 0x00, 0xa0, 0x00, 0x00, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0x07, 0x00,
+        ];
+        if !hci_command(ble, 0x2006, &params) {
+            return;
+        }
 
         let mut data = [0u8; 32];
         let name = b"AOSP Wear OS";
@@ -72,7 +93,9 @@ impl RadioServices {
         data[4] = (name.len() + 1) as u8;
         data[5] = 0x09;
         data[6..6 + name.len()].copy_from_slice(name);
-        if !hci_command(ble, 0x2008, &data) { return; }
+        if !hci_command(ble, 0x2008, &data) {
+            return;
+        }
         if hci_command(ble, 0x200a, &[1]) {
             self.ble_advertising = true;
             println!("radio: BLE advertising as 'AOSP Wear OS'");
@@ -80,17 +103,25 @@ impl RadioServices {
     }
 
     pub fn start_ble_scan(&mut self) -> bool {
-        if !self.ensure_ble() { return false; }
+        if !self.ensure_ble() {
+            return false;
+        }
         self.bt_requested = true;
-        let Some(ble) = self.ble.as_mut() else { return false; };
+        let Some(ble) = self.ble.as_mut() else {
+            return false;
+        };
         if self.ble_advertising {
             let _ = hci_command(ble, 0x200a, &[0]);
             self.ble_advertising = false;
         }
         // Active scan, 100 ms interval / 50 ms window, public address.
-        let params = [0x01, 0xa0,0x00, 0x50,0x00, 0x00, 0x00];
-        if !hci_command(ble, 0x200b, &params) { return false; }
-        if !hci_command(ble, 0x200c, &[1, 1]) { return false; }
+        let params = [0x01, 0xa0, 0x00, 0x50, 0x00, 0x00, 0x00];
+        if !hci_command(ble, 0x200b, &params) {
+            return false;
+        }
+        if !hci_command(ble, 0x200c, &[1, 1]) {
+            return false;
+        }
         self.ble_devices.clear();
         self.ble_scanning_until = Some(now_ms() + BLE_SCAN_MS);
         println!("radio: BLE active scan started");
@@ -98,17 +129,23 @@ impl RadioServices {
     }
 
     pub fn connect_ble(&mut self, address: [u8; 6]) -> bool {
-        if !self.ensure_ble() { return false; }
+        if !self.ensure_ble() {
+            return false;
+        }
         self.bt_requested = true;
         if self.ble_connection.is_some() {
             println!("radio: BLE already connected");
             return false;
         }
-        let address_type = self.ble_devices.iter()
+        let address_type = self
+            .ble_devices
+            .iter()
             .find(|d| d.address == address)
             .map(|d| d.address_type)
             .unwrap_or(0x00);
-        let Some(ble) = self.ble.as_mut() else { return false; };
+        let Some(ble) = self.ble.as_mut() else {
+            return false;
+        };
         if self.ble_scanning_until.is_some() {
             let _ = hci_command(ble, 0x200c, &[0, 0]);
             self.ble_scanning_until = None;
@@ -153,22 +190,39 @@ impl RadioServices {
             }
             return false;
         };
-        let Some(ble) = self.ble.as_mut() else { return false; };
-        let params = [connection.handle as u8, (connection.handle >> 8) as u8, 0x13];
+        let Some(ble) = self.ble.as_mut() else {
+            return false;
+        };
+        let params = [
+            connection.handle as u8,
+            (connection.handle >> 8) as u8,
+            0x13,
+        ];
         if hci_command(ble, 0x0406, &params) {
-            println!("radio: BLE disconnect requested handle={}", connection.handle);
+            println!(
+                "radio: BLE disconnect requested handle={}",
+                connection.handle
+            );
             true
-        } else { false }
+        } else {
+            false
+        }
     }
 
     pub(super) fn poll_ble(&mut self) {
-        if self.ble.is_none() { return; }
+        if self.ble.is_none() {
+            return;
+        }
         {
             let ble = self.ble.as_mut().expect("BLE checked above");
             let mut packet = [0u8; 260];
             for _ in 0..8 {
-                let Ok(n) = ble.next(&mut packet) else { break; };
-                if n == 0 { break; }
+                let Ok(n) = ble.next(&mut packet) else {
+                    break;
+                };
+                if n == 0 {
+                    break;
+                }
                 parse_ble_event(
                     &packet[..n],
                     &mut self.ble_devices,
@@ -180,7 +234,8 @@ impl RadioServices {
             // permanently pending (and unable to advertise or reconnect).
             if self.ble_pending_address.is_none() {
                 self.ble_pending_since = None;
-            } else if self.ble_pending_since
+            } else if self
+                .ble_pending_since
                 .map(|since| now_ms().saturating_sub(since) >= 15_000)
                 .unwrap_or(false)
             {
@@ -193,7 +248,10 @@ impl RadioServices {
                 if now_ms() >= until {
                     let _ = hci_command(ble, 0x200c, &[0, 0]);
                     self.ble_scanning_until = None;
-                    println!("radio: BLE scan complete: {} device(s)", self.ble_devices.len());
+                    println!(
+                        "radio: BLE scan complete: {} device(s)",
+                        self.ble_devices.len()
+                    );
                 }
             }
         }
@@ -221,20 +279,38 @@ impl RadioServices {
         );
         if let Some(connection) = self.ble_connection {
             let a = connection.address;
-            let _ = write!(out, " peer={:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}", a[5],a[4],a[3],a[2],a[1],a[0]);
+            let _ = write!(
+                out,
+                " peer={:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+                a[5], a[4], a[3], a[2], a[1], a[0]
+            );
         }
     }
 
     pub fn format_bt_scan<const N: usize>(&self, out: &mut HString<N>) {
         if self.ble_devices.is_empty() {
-            let _ = out.push_str(if self.ble_scanning_until.is_some() { "scan in progress" } else { "no BLE devices discovered" });
+            let _ = out.push_str(if self.ble_scanning_until.is_some() {
+                "scan in progress"
+            } else {
+                "no BLE devices discovered"
+            });
             return;
         }
         for (i, dev) in self.ble_devices.iter().enumerate() {
-            if i != 0 { let _ = out.push_str("; "); }
-            if dev.name.is_empty() { let _ = out.push_str("BLE"); } else { let _ = out.push_str(dev.name.as_str()); }
+            if i != 0 {
+                let _ = out.push_str("; ");
+            }
+            if dev.name.is_empty() {
+                let _ = out.push_str("BLE");
+            } else {
+                let _ = out.push_str(dev.name.as_str());
+            }
             let a = dev.address;
-            let _ = write!(out, " {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} rssi={}", a[5],a[4],a[3],a[2],a[1],a[0], dev.rssi);
+            let _ = write!(
+                out,
+                " {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} rssi={}",
+                a[5], a[4], a[3], a[2], a[1], a[0], dev.rssi
+            );
         }
     }
 }

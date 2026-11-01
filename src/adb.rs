@@ -40,9 +40,16 @@ impl Header {
 
     pub fn encode(self) -> [u8; 24] {
         let mut out = [0u8; 24];
-        for (i, word) in [self.command, self.arg0, self.arg1, self.data_length, self.data_check, self.magic]
-            .into_iter()
-            .enumerate()
+        for (i, word) in [
+            self.command,
+            self.arg0,
+            self.arg1,
+            self.data_length,
+            self.data_check,
+            self.magic,
+        ]
+        .into_iter()
+        .enumerate()
         {
             out[i * 4..i * 4 + 4].copy_from_slice(&word.to_le_bytes());
         }
@@ -51,7 +58,9 @@ impl Header {
 }
 
 pub fn checksum(payload: &[u8]) -> u32 {
-    payload.iter().fold(0u32, |sum, &b| sum.wrapping_add(b as u32))
+    payload
+        .iter()
+        .fold(0u32, |sum, &b| sum.wrapping_add(b as u32))
 }
 
 fn prop(key: &str) -> Option<&'static str> {
@@ -70,7 +79,9 @@ fn prop(key: &str) -> Option<&'static str> {
         "ro.build.tags" => Some("test-keys"),
         "ro.build.flavor" => Some("aosp_wear-userdebug"),
         "ro.build.display.id" => Some("AOSP Wear OS Android 17 QPR1"),
-        "ro.build.fingerprint" => Some("aosp/aosp_wear/aosp_wear:17/QPR1/17.2.1:userdebug/test-keys"),
+        "ro.build.fingerprint" => {
+            Some("aosp/aosp_wear/aosp_wear:17/QPR1/17.2.1:userdebug/test-keys")
+        }
         "ro.boot.dynamic_partitions" => Some("true"),
         "ro.treble.enabled" => Some("true"),
         "ro.aosp_esp32.runtime" => Some("rhai"),
@@ -92,15 +103,37 @@ fn prop(key: &str) -> Option<&'static str> {
 }
 
 const PROPS: &[&str] = &[
-    "ro.product.name", "ro.product.model", "ro.product.device", "ro.product.manufacturer",
-    "ro.product.brand", "ro.product.marketname", "ro.build.version.release", "ro.build.version.sdk",
-    "ro.build.version.codename", "ro.build.version.incremental", "ro.build.type", "ro.build.tags",
-    "ro.build.flavor", "ro.build.display.id", "ro.build.fingerprint", "ro.boot.dynamic_partitions",
-    "ro.treble.enabled", "ro.aosp_esp32.runtime", "ro.aosp_esp32.arch", "ro.aosp_esp32.avb",
-    "ro.aosp_esp32.ui", "ro.aosp_esp32.shell", "ro.build.characteristics",
-    "ro.product.first_api_level", "ro.build.version.security_patch",
-    "ro.system.build.version.release", "ro.system.build.version.sdk", "ro.wear.platform",
-    "ro.aosp_esp32.version", "net.hostname", "persist.sys.device_name",
+    "ro.product.name",
+    "ro.product.model",
+    "ro.product.device",
+    "ro.product.manufacturer",
+    "ro.product.brand",
+    "ro.product.marketname",
+    "ro.build.version.release",
+    "ro.build.version.sdk",
+    "ro.build.version.codename",
+    "ro.build.version.incremental",
+    "ro.build.type",
+    "ro.build.tags",
+    "ro.build.flavor",
+    "ro.build.display.id",
+    "ro.build.fingerprint",
+    "ro.boot.dynamic_partitions",
+    "ro.treble.enabled",
+    "ro.aosp_esp32.runtime",
+    "ro.aosp_esp32.arch",
+    "ro.aosp_esp32.avb",
+    "ro.aosp_esp32.ui",
+    "ro.aosp_esp32.shell",
+    "ro.build.characteristics",
+    "ro.product.first_api_level",
+    "ro.build.version.security_patch",
+    "ro.system.build.version.release",
+    "ro.system.build.version.sdk",
+    "ro.wear.platform",
+    "ro.aosp_esp32.version",
+    "net.hostname",
+    "persist.sys.device_name",
 ];
 
 /// Compact property summary used by the local ZADB bridge.
@@ -126,7 +159,8 @@ pub fn shell_command<const N: usize>(service: &str, out: &mut heapless::String<N
         service.rsplit_once(':').map(|(_, cmd)| cmd).unwrap_or("")
     } else {
         service
-    }.trim();
+    }
+    .trim();
 
     if cmd == "getprop" {
         for key in PROPS {
@@ -137,7 +171,9 @@ pub fn shell_command<const N: usize>(service: &str, out: &mut heapless::String<N
         return;
     }
     if let Some(key) = cmd.strip_prefix("getprop ") {
-        if let Some(value) = prop(key.trim()) { let _ = writeln!(out, "{}", value); }
+        if let Some(value) = prop(key.trim()) {
+            let _ = writeln!(out, "{}", value);
+        }
         return;
     }
 
@@ -148,12 +184,20 @@ pub fn shell_command<const N: usize>(service: &str, out: &mut heapless::String<N
             }
         }
         "pm list packages" | "cmd package list packages" => {
-            for item in packages().split(' ') { let _ = writeln!(out, "package:{}", item); }
+            for item in packages().split(' ') {
+                let _ = writeln!(out, "package:{}", item);
+            }
         }
         "dumpsys" => {
             let _ = writeln!(out, "Android 17 QPR1 system_server: running");
-            let _ = writeln!(out, "SurfaceFlinger: RGB565/ST7789 Wear Material 3 Expressive");
-            let _ = writeln!(out, "WearLauncher: expressive curved list / crown navigation");
+            let _ = writeln!(
+                out,
+                "SurfaceFlinger: RGB565/ST7789 Wear Material 3 Expressive"
+            );
+            let _ = writeln!(
+                out,
+                "WearLauncher: expressive curved list / crown navigation"
+            );
             let _ = writeln!(out, "NotificationManager: wearable notification stream");
             let _ = writeln!(out, "MediaSessionService: companion transport ready");
             let _ = writeln!(out, "ConnectivityService: esp-radio/smoltcp");
@@ -168,7 +212,10 @@ pub fn shell_command<const N: usize>(service: &str, out: &mut heapless::String<N
         }
         "dumpsys display" => {
             let _ = writeln!(out, "DISPLAY MANAGER (dumpsys display)");
-            let _ = writeln!(out, "mDefaultDisplay=DisplayDeviceInfo{{AOSP Wear OS, 240 x 280, density 280}}");
+            let _ = writeln!(
+                out,
+                "mDefaultDisplay=DisplayDeviceInfo{{AOSP Wear OS, 240 x 280, density 280}}"
+            );
             let _ = writeln!(out, "state=ON, colorMode=RGB565, panel=ST7789V3");
         }
         "dumpsys notification" => {
@@ -181,7 +228,10 @@ pub fn shell_command<const N: usize>(service: &str, out: &mut heapless::String<N
             let _ = writeln!(out, "activeSessions=0 companionTransport=ready");
         }
         "dumpsys alarm" => {
-            let _ = writeln!(out, "AlarmManagerService: clock tools available; wall clock source=companion/manual");
+            let _ = writeln!(
+                out,
+                "AlarmManagerService: clock tools available; wall clock source=companion/manual"
+            );
         }
         "settings get global wear_launcher_ui_mode" => {
             let _ = writeln!(out, "1");
@@ -202,16 +252,38 @@ pub fn shell_command<const N: usize>(service: &str, out: &mut heapless::String<N
         }
         "dumpsys activity" | "dumpsys activity activities" => {
             let _ = writeln!(out, "ACTIVITY MANAGER ACTIVITIES (Android 17 QPR1)");
-            let _ = writeln!(out, "mResumedActivity: com.android.systemui/.watch.WatchFaceActivity");
+            let _ = writeln!(
+                out,
+                "mResumedActivity: com.android.systemui/.watch.WatchFaceActivity"
+            );
         }
-        "id" => { let _ = writeln!(out, "uid=2000(shell) gid=2000(shell) groups=2000(shell)"); }
-        "uname -a" => { let _ = writeln!(out, "Android aosp-wear 17-QPR1 ESP32-S3 Xtensa Rhai"); }
-        "hostname" => { let _ = writeln!(out, "{}", HOSTNAME); }
-        "pwd" => { let _ = writeln!(out, "/"); }
-        "whoami" => { let _ = writeln!(out, "shell"); }
-        "wm size" => { let _ = writeln!(out, "Physical size: 240x280"); }
-        "wm density" => { let _ = writeln!(out, "Physical density: 280"); }
-        "cat /proc/version" => { let _ = writeln!(out, "Android 17 QPR1 AOSP Wear OS (ESP32-S3 Xtensa Rust + Rhai runtime)"); }
+        "id" => {
+            let _ = writeln!(out, "uid=2000(shell) gid=2000(shell) groups=2000(shell)");
+        }
+        "uname -a" => {
+            let _ = writeln!(out, "Android aosp-wear 17-QPR1 ESP32-S3 Xtensa Rhai");
+        }
+        "hostname" => {
+            let _ = writeln!(out, "{}", HOSTNAME);
+        }
+        "pwd" => {
+            let _ = writeln!(out, "/");
+        }
+        "whoami" => {
+            let _ = writeln!(out, "shell");
+        }
+        "wm size" => {
+            let _ = writeln!(out, "Physical size: 240x280");
+        }
+        "wm density" => {
+            let _ = writeln!(out, "Physical density: 280");
+        }
+        "cat /proc/version" => {
+            let _ = writeln!(
+                out,
+                "Android 17 QPR1 AOSP Wear OS (ESP32-S3 Xtensa Rust + Rhai runtime)"
+            );
+        }
         "cat /proc/meminfo" => {
             let _ = writeln!(out, "MemTotal:        2144 kB");
             let _ = writeln!(out, "SwapTotal:      32636 kB");
@@ -223,10 +295,17 @@ pub fn shell_command<const N: usize>(service: &str, out: &mut heapless::String<N
         "help" => {
             let _ = writeln!(out, "getprop, id, uname -a, hostname, pwd, whoami");
             let _ = writeln!(out, "service list, pm list packages, pm list features");
-            let _ = writeln!(out, "dumpsys [wifi|bluetooth|display|notification|media_session|alarm], wm size, wm density");
+            let _ = writeln!(
+                out,
+                "dumpsys [wifi|bluetooth|display|notification|media_session|alarm], wm size, wm density"
+            );
         }
         "" => {}
-        _ if cmd.starts_with("echo ") => { let _ = writeln!(out, "{}", &cmd[5..]); }
-        _ => { let _ = writeln!(out, "sh: {}: not found", cmd); }
+        _ if cmd.starts_with("echo ") => {
+            let _ = writeln!(out, "{}", &cmd[5..]);
+        }
+        _ => {
+            let _ = writeln!(out, "sh: {}: not found", cmd);
+        }
     }
 }

@@ -26,7 +26,12 @@ pub struct WifiCredentials {
 
 impl WifiCredentials {
     pub const fn empty() -> Self {
-        Self { ssid: [0; 32], ssid_len: 0, password: [0; 64], password_len: 0 }
+        Self {
+            ssid: [0; 32],
+            ssid_len: 0,
+            password: [0; 64],
+            password_len: 0,
+        }
     }
 
     pub fn ssid(&self) -> Option<&str> {
@@ -38,11 +43,16 @@ impl WifiCredentials {
     }
 
     pub fn from_parts(ssid: &str, password: &str) -> Option<Self> {
-        let sb = ssid.as_bytes(); let pb = password.as_bytes();
-        if sb.is_empty() || sb.len() > 32 || pb.len() > 64 { return None; }
+        let sb = ssid.as_bytes();
+        let pb = password.as_bytes();
+        if sb.is_empty() || sb.len() > 32 || pb.len() > 64 {
+            return None;
+        }
         let mut out = Self::empty();
-        out.ssid[..sb.len()].copy_from_slice(sb); out.ssid_len = sb.len() as u8;
-        out.password[..pb.len()].copy_from_slice(pb); out.password_len = pb.len() as u8;
+        out.ssid[..sb.len()].copy_from_slice(sb);
+        out.ssid_len = sb.len() as u8;
+        out.password[..pb.len()].copy_from_slice(pb);
+        out.password_len = pb.len() as u8;
         Some(out)
     }
 
@@ -57,10 +67,14 @@ impl WifiCredentials {
     }
 
     pub fn decode_page(raw: &[u8]) -> Option<Self> {
-        if raw.len() < 2 { return None; }
+        if raw.len() < 2 {
+            return None;
+        }
         let sl = raw[0] as usize;
         let pl = raw[1] as usize;
-        if sl > 32 || pl > 64 || raw.len() != 2 + sl + pl { return None; }
+        if sl > 32 || pl > 64 || raw.len() != 2 + sl + pl {
+            return None;
+        }
         let mut out = Self::empty();
         out.ssid[..sl].copy_from_slice(&raw[2..2 + sl]);
         out.password[..pl].copy_from_slice(&raw[2 + sl..]);
@@ -82,7 +96,9 @@ impl WifiCredentials {
 }
 
 fn decode_hex(src: &str, out: &mut [u8]) -> Option<usize> {
-    if src.len() % 2 != 0 || src.len() / 2 > out.len() { return None; }
+    if src.len() % 2 != 0 || src.len() / 2 > out.len() {
+        return None;
+    }
     let bytes = src.as_bytes();
     for i in 0..bytes.len() / 2 {
         out[i] = (hex_nibble(bytes[i * 2])? << 4) | hex_nibble(bytes[i * 2 + 1])?;
@@ -150,15 +166,21 @@ impl<'d> DesktopInput<'d> {
     }
 
     pub fn poll(&mut self) -> Option<DesktopEvent> {
-        if let Some(event) = self.pop_event() { return Some(event); }
+        if let Some(event) = self.pop_event() {
+            return Some(event);
+        }
         let mut buf = [0u8; 64];
         let n = self.rx.drain_rx_fifo(&mut buf);
         for &b in &buf[..n] {
             if b == b'\r' || b == b'\n' {
                 if self.len != 0 {
-                    let parsed = core::str::from_utf8(&self.line[..self.len]).ok().and_then(parse_event);
+                    let parsed = core::str::from_utf8(&self.line[..self.len])
+                        .ok()
+                        .and_then(parse_event);
                     self.len = 0;
-                    if let Some(event) = parsed { self.push_event(event); }
+                    if let Some(event) = parsed {
+                        self.push_event(event);
+                    }
                 }
             } else if self.len < self.line.len() {
                 self.line[self.len] = b;
@@ -170,7 +192,9 @@ impl<'d> DesktopInput<'d> {
         self.pop_event()
     }
 
-    pub fn into_inner(self) -> UsbSerialJtagRx<'d, Blocking> { self.rx }
+    pub fn into_inner(self) -> UsbSerialJtagRx<'d, Blocking> {
+        self.rx
+    }
 
     fn push_event(&mut self, event: DesktopEvent) {
         let next = (self.tail + 1) % EVENT_QUEUE_CAP;
@@ -183,7 +207,9 @@ impl<'d> DesktopInput<'d> {
     }
 
     fn pop_event(&mut self) -> Option<DesktopEvent> {
-        if self.head == self.tail { return None; }
+        if self.head == self.tail {
+            return None;
+        }
         let event = self.pending[self.head].take();
         self.head = (self.head + 1) % EVENT_QUEUE_CAP;
         event
@@ -221,7 +247,9 @@ pub(crate) fn parse_event(line: &str) -> Option<DesktopEvent> {
     // this automatically; production time comes from a paired companion.
     if let Some(rest) = line.strip_prefix("@ZADB|COMPANION_TIME|") {
         let minutes = rest.parse::<u16>().ok()?;
-        if minutes < 1440 { return Some(DesktopEvent::CompanionTime(minutes)); }
+        if minutes < 1440 {
+            return Some(DesktopEvent::CompanionTime(minutes));
+        }
         return None;
     }
     if let Some(rest) = line.strip_prefix("@ZADB|WIFI_CONNECT|") {
@@ -238,12 +266,18 @@ fn decode_bt_address(src: &str) -> Option<[u8; 6]> {
     let mut canonical = [0u8; 12];
     let mut n = 0usize;
     for b in src.bytes() {
-        if b == b':' || b == b'-' { continue; }
-        if n >= canonical.len() { return None; }
+        if b == b':' || b == b'-' {
+            continue;
+        }
+        if n >= canonical.len() {
+            return None;
+        }
         canonical[n] = b;
         n += 1;
     }
-    if n != 12 { return None; }
+    if n != 12 {
+        return None;
+    }
     let text = core::str::from_utf8(&canonical).ok()?;
     let mut forward = [0u8; 6];
     decode_hex(text, &mut forward)?;
@@ -284,11 +318,23 @@ impl<'d, D> DesktopMirror<'d, D> {
         match self.surface {
             #[cfg(feature = "display-st7789")]
             DesktopSurface::St7789 => self.send_parts(&[
-                "@ZWUI", "HELLO", "5", "240", "280", config::PRODUCT, config::MODEL,
+                "@ZWUI",
+                "HELLO",
+                "5",
+                "240",
+                "280",
+                config::PRODUCT,
+                config::MODEL,
             ]),
             #[cfg(feature = "display-ssd1306")]
             DesktopSurface::Ssd1306 => self.send_parts(&[
-                "@ZWUI", "HELLO", "5", "128", "64", config::PRODUCT, config::MODEL,
+                "@ZWUI",
+                "HELLO",
+                "5",
+                "128",
+                "64",
+                config::PRODUCT,
+                config::MODEL,
             ]),
         }
     }
@@ -320,7 +366,6 @@ impl<'d, D> DesktopMirror<'d, D> {
         }
     }
 }
-
 
 #[cfg(not(feature = "pc-block-boot"))]
 impl<D: BootDisplay> BootDisplay for DesktopMirror<'_, D> {
@@ -355,22 +400,45 @@ impl<D: BootDisplay> BootDisplay for DesktopMirror<'_, D> {
     fn runtime(&mut self, frame: &RuntimeFrame) -> Result<(), DisplayError> {
         let result = self.inner.runtime(frame);
         match frame {
-            RuntimeFrame::Legacy(f) => self.send_parts(&["@ZWUI", "STATUS", &f.title, &f.line1, &f.line2, &f.line3]),
+            RuntimeFrame::Legacy(f) => {
+                self.send_parts(&["@ZWUI", "STATUS", &f.title, &f.line1, &f.line2, &f.line3])
+            }
             RuntimeFrame::Material(f) => {
                 let mut line = heapless::String::<256>::new();
-                let _ = core::fmt::write(&mut line, format_args!(
-                    "@ZWUI|M3|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|",
-                    f.screen, f.cursor, f.brightness,
-                    if f.dnd { 1 } else { 0 }, if f.airplane { 1 } else { 0 }, f.theme,
-                    if f.locked { 1 } else { 0 }, if f.wifi { 1 } else { 0 },
-                    if f.bt { 1 } else { 0 }, if f.adb { 1 } else { 0 },
-                    f.notes, f.time_minutes, f.swap_pages, f.timer_secs, f.stopwatch_secs,
-                    if f.alarm_enabled { 1 } else { 0 }, if f.auto_time { 1 } else { 0 },
-                    if f.time_valid { 1 } else { 0 }, f.timezone_hours,
-                    f.wifi_ap_count, f.wifi_ap_index, f.wifi_ap_rssi, f.wifi_password_len,
-                    f.wifi_editor_char, f.wifi_link_state,
-                ));
-                for &byte in &f.wifi_ap_ssid[..f.wifi_ap_ssid_len as usize] { let _ = core::fmt::write(&mut line, format_args!("{:02x}", byte)); }
+                let _ = core::fmt::write(
+                    &mut line,
+                    format_args!(
+                        "@ZWUI|M3|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|",
+                        f.screen,
+                        f.cursor,
+                        f.brightness,
+                        if f.dnd { 1 } else { 0 },
+                        if f.airplane { 1 } else { 0 },
+                        f.theme,
+                        if f.locked { 1 } else { 0 },
+                        if f.wifi { 1 } else { 0 },
+                        if f.bt { 1 } else { 0 },
+                        if f.adb { 1 } else { 0 },
+                        f.notes,
+                        f.time_minutes,
+                        f.swap_pages,
+                        f.timer_secs,
+                        f.stopwatch_secs,
+                        if f.alarm_enabled { 1 } else { 0 },
+                        if f.auto_time { 1 } else { 0 },
+                        if f.time_valid { 1 } else { 0 },
+                        f.timezone_hours,
+                        f.wifi_ap_count,
+                        f.wifi_ap_index,
+                        f.wifi_ap_rssi,
+                        f.wifi_password_len,
+                        f.wifi_editor_char,
+                        f.wifi_link_state,
+                    ),
+                );
+                for &byte in &f.wifi_ap_ssid[..f.wifi_ap_ssid_len as usize] {
+                    let _ = core::fmt::write(&mut line, format_args!("{:02x}", byte));
+                }
                 self.send_parts(&[line.as_str()]);
             }
         }

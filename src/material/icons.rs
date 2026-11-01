@@ -36,19 +36,27 @@ impl Surface {
 
     pub(super) fn icon_sun(&mut self, cx: i32, cy: i32, c: u16) {
         self.ring(cx, cy, 7, 2, c);
-        for &(x0,y0,x1,y1) in &[
-            (0,-14,0,-10),(0,10,0,14),(-14,0,-10,0),(10,0,14,0),
-            (-10,-10,-7,-7),(7,7,10,10),(-10,10,-7,7),(7,-7,10,-10),
-        ] { self.line(cx+x0,cy+y0,cx+x1,cy+y1,2,c); }
+        for &(x0, y0, x1, y1) in &[
+            (0, -14, 0, -10),
+            (0, 10, 0, 14),
+            (-14, 0, -10, 0),
+            (10, 0, 14, 0),
+            (-10, -10, -7, -7),
+            (7, 7, 10, 10),
+            (-10, 10, -7, 7),
+            (7, -7, 10, -10),
+        ] {
+            self.line(cx + x0, cy + y0, cx + x1, cy + y1, 2, c);
+        }
     }
 
     pub(super) fn icon_settings(&mut self, cx: i32, cy: i32, c: u16) {
         self.ring(cx, cy, 9, 3, c);
         self.circle(cx, cy, 3, c);
-        self.line(cx, cy-15, cx, cy-10, 3, c);
-        self.line(cx, cy+10, cx, cy+15, 3, c);
-        self.line(cx-15, cy, cx-10, cy, 3, c);
-        self.line(cx+10, cy, cx+15, cy, 3, c);
+        self.line(cx, cy - 15, cx, cy - 10, 3, c);
+        self.line(cx, cy + 10, cx, cy + 15, 3, c);
+        self.line(cx - 15, cy, cx - 10, cy, 3, c);
+        self.line(cx + 10, cy, cx + 15, cy, 3, c);
     }
 
     pub(super) fn icon_bell(&mut self, cx: i32, cy: i32, c: u16) {
@@ -79,7 +87,11 @@ impl Surface {
     }
 
     pub(super) fn icon_grid(&mut self, cx: i32, cy: i32, c: u16) {
-        for yy in [-7, 0, 7] { for xx in [-7, 0, 7] { self.circle(cx + xx, cy + yy, 2, c); } }
+        for yy in [-7, 0, 7] {
+            for xx in [-7, 0, 7] {
+                self.circle(cx + xx, cy + yy, 2, c);
+            }
+        }
     }
 
     pub(super) fn icon_assistant(&mut self, cx: i32, cy: i32, c: u16) {
@@ -150,25 +162,31 @@ impl Surface {
         self.line(cx, cy + 10, cx + 7, cy + 15, 3, c);
     }
 
-    pub(super) fn row_icon(&mut self, label: &str, cx: i32, cy: i32, c: u16) {
+    pub(super) fn row_icon(&mut self, label: &str, cx: i32, cy: i32, color: u16) {
         match label {
-            "CONNECTIVITY" | "WI-FI" => self.icon_wifi(cx, cy, c),
-            "BLUETOOTH" => self.icon_bt(cx, cy, c),
-            "APPS & NOTIFS" | "NOTIFICATIONS" => self.icon_bell(cx, cy, c),
-            "DISPLAY" | "BRIGHTNESS" => self.icon_sun(cx, cy, c),
-            "SOUND & VIBRATION" => self.icon_sound(cx, cy, c),
-            "ACCESSIBILITY" => self.icon_person(cx, cy, c),
-            "SECURITY" | "SCREEN LOCK" => self.icon_lock(cx, cy, c),
-            "DATE & TIME" | "AUTOMATIC TIME" | "SET HOUR" | "SET MINUTE" | "TIME ZONE" => self.icon_clock(cx, cy, c),
-            "ABOUT" | "SYSTEM INFO" | "BUILD NUMBER" => self.icon_info(cx, cy, c),
-            "DEVELOPER OPTIONS" | "SYSTEM" | "SETTINGS" => self.icon_settings(cx, cy, c),
-            "MEDIA CONTROLS" => self.icon_media(cx, cy, c),
-            "AIRPLANE MODE" => self.icon_airplane(cx, cy, c),
-            "BACK" => self.icon_back(cx, cy, c),
-            _ => self.circle(cx, cy, 3, c),
+            "Connectivity" | "Wi-Fi" | "CONNECTIVITY" | "WI-FI" => self.icon_wifi(cx, cy, color),
+            "Bluetooth" | "BLUETOOTH" => self.icon_bt(cx, cy, color),
+            "Apps & notifications" | "Notifications" | "APPS & NOTIFS" | "NOTIFICATIONS" => {
+                self.icon_bell(cx, cy, color)
+            }
+            "Display" | "Brightness" | "DISPLAY" | "BRIGHTNESS" => self.icon_sun(cx, cy, color),
+            "Sound & vibration" | "SOUND & VIBRATION" => self.icon_sound(cx, cy, color),
+            "Accessibility" | "ACCESSIBILITY" => self.icon_person(cx, cy, color),
+            "Security" | "Screen lock" | "SECURITY" | "SCREEN LOCK" => {
+                self.icon_lock(cx, cy, color)
+            }
+            "Date & time" | "Clock" | "DATE & TIME" | "CLOCK" => self.icon_clock(cx, cy, color),
+            "About" | "System info" | "ABOUT" | "SYSTEM INFO" | "BUILD NUMBER" => {
+                self.icon_info(cx, cy, color)
+            }
+            "Developer options" | "System" | "Settings" | "DEVELOPER OPTIONS" | "SYSTEM"
+            | "SETTINGS" => self.icon_settings(cx, cy, color),
+            "Media controls" | "MEDIA CONTROLS" => self.icon_media(cx, cy, color),
+            "Airplane mode" | "AIRPLANE MODE" => self.icon_airplane(cx, cy, color),
+            "Back" | "BACK" => self.icon_back(cx, cy, color),
+            _ => self.circle(cx, cy, 3, color),
         }
     }
-
 
     pub(super) fn numeral_segment(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, c: u16) {
         self.line(x0, y0, x1, y1, 5, c);
@@ -192,23 +210,159 @@ impl Surface {
         };
         // bit order: top, upper-right, lower-right, bottom, lower-left,
         // upper-left, middle.
-        if seg & 0b0000001 != 0 { self.numeral_segment(x + 6, y, x + 28, y, c); }
-        if seg & 0b0000010 != 0 { self.numeral_segment(x + 31, y + 5, x + 31, y + 25, c); }
-        if seg & 0b0000100 != 0 { self.numeral_segment(x + 31, y + 33, x + 31, y + 53, c); }
-        if seg & 0b0001000 != 0 { self.numeral_segment(x + 6, y + 58, x + 28, y + 58, c); }
-        if seg & 0b0010000 != 0 { self.numeral_segment(x + 3, y + 33, x + 3, y + 53, c); }
-        if seg & 0b0100000 != 0 { self.numeral_segment(x + 3, y + 5, x + 3, y + 25, c); }
-        if seg & 0b1000000 != 0 { self.numeral_segment(x + 6, y + 29, x + 28, y + 29, c); }
+        if seg & 0b0000001 != 0 {
+            self.numeral_segment(x + 6, y, x + 28, y, c);
+        }
+        if seg & 0b0000010 != 0 {
+            self.numeral_segment(x + 31, y + 5, x + 31, y + 25, c);
+        }
+        if seg & 0b0000100 != 0 {
+            self.numeral_segment(x + 31, y + 33, x + 31, y + 53, c);
+        }
+        if seg & 0b0001000 != 0 {
+            self.numeral_segment(x + 6, y + 58, x + 28, y + 58, c);
+        }
+        if seg & 0b0010000 != 0 {
+            self.numeral_segment(x + 3, y + 33, x + 3, y + 53, c);
+        }
+        if seg & 0b0100000 != 0 {
+            self.numeral_segment(x + 3, y + 5, x + 3, y + 25, c);
+        }
+        if seg & 0b1000000 != 0 {
+            self.numeral_segment(x + 6, y + 29, x + 28, y + 29, c);
+        }
     }
 
-    pub(super) fn big_time(&mut self, y: i32, minutes: u16, _valid: bool, c: u16) {
-        let h = (minutes / 60) % 24;
-        let m = minutes % 60;
-        let chars = [b'0' + (h / 10) as u8, b'0' + (h % 10) as u8, b'0' + (m / 10) as u8, b'0' + (m % 10) as u8];
-        self.numeral(32, y, chars[0], c);
-        self.numeral(72, y, chars[1], c);
-        self.circle(120, y + 20, 3, c); self.circle(120, y + 40, 3, c);
-        self.numeral(136, y, chars[2], c);
-        self.numeral(176, y, chars[3], c);
+    pub(super) fn thin_clock_digit(&mut self, x: i32, y: i32, digit: u8, color: u16) {
+        // Original watch face used thin, rounded monoline digits, not 7-segment LCD numerals.
+        // All glyphs fit a common 33x66 box, with a 2-3 px stroke.
+        let mut stroke = |points: &[(i32, i32)]| {
+            for line in points.windows(2) {
+                self.line(
+                    x + line[0].0,
+                    y + line[0].1,
+                    x + line[1].0,
+                    y + line[1].1,
+                    2,
+                    color,
+                );
+            }
+        };
+        match digit {
+            0 => stroke(&[
+                (12, 0),
+                (24, 0),
+                (31, 7),
+                (31, 56),
+                (24, 65),
+                (10, 65),
+                (2, 56),
+                (2, 9),
+                (10, 0),
+                (12, 0),
+            ]),
+            1 => stroke(&[(3, 13), (19, 0), (19, 65)]),
+            2 => stroke(&[
+                (3, 12),
+                (8, 3),
+                (25, 0),
+                (31, 9),
+                (31, 21),
+                (24, 31),
+                (5, 56),
+                (3, 65),
+                (32, 65),
+            ]),
+            3 => {
+                stroke(&[(2, 7), (11, 0), (26, 0), (32, 9), (28, 23), (17, 32)]);
+                stroke(&[(17, 32), (29, 39), (32, 52), (26, 64), (10, 65), (2, 57)]);
+            }
+            4 => {
+                stroke(&[(26, 0), (2, 42), (33, 42)]);
+                stroke(&[(26, 0), (26, 65)]);
+            }
+            5 => stroke(&[
+                (32, 0),
+                (5, 0),
+                (4, 29),
+                (21, 28),
+                (31, 39),
+                (31, 55),
+                (24, 64),
+                (10, 65),
+                (2, 57),
+            ]),
+            6 => stroke(&[
+                (29, 0),
+                (16, 0),
+                (5, 13),
+                (2, 32),
+                (3, 55),
+                (11, 65),
+                (25, 65),
+                (31, 57),
+                (31, 43),
+                (23, 34),
+                (4, 34),
+            ]),
+            7 => stroke(&[(2, 0), (32, 0), (13, 65)]),
+            8 => {
+                stroke(&[
+                    (11, 0),
+                    (24, 0),
+                    (31, 8),
+                    (31, 23),
+                    (23, 32),
+                    (10, 32),
+                    (2, 23),
+                    (2, 9),
+                    (11, 0),
+                ]);
+                stroke(&[
+                    (10, 32),
+                    (2, 42),
+                    (2, 56),
+                    (10, 65),
+                    (24, 65),
+                    (31, 56),
+                    (31, 42),
+                    (23, 32),
+                ]);
+            }
+            9 => stroke(&[
+                (30, 32),
+                (12, 33),
+                (2, 24),
+                (2, 9),
+                (10, 0),
+                (24, 0),
+                (31, 10),
+                (31, 45),
+                (25, 58),
+                (17, 65),
+                (3, 65),
+            ]),
+            _ => {}
+        }
+    }
+
+    pub(super) fn big_time(&mut self, y: i32, minutes: u16, _valid: bool, color: u16) {
+        let hour = (minutes / 60) % 24;
+        let minute = minutes % 60;
+        let two_hour_digits = hour >= 10;
+        let total_width = if two_hour_digits { 189 } else { 152 };
+        let mut x = (240 - total_width) / 2;
+        if two_hour_digits {
+            self.thin_clock_digit(x, y, (hour / 10) as u8, color);
+            x += 42;
+        }
+        self.thin_clock_digit(x, y, (hour % 10) as u8, color);
+        x += 43;
+        self.circle(x + 4, y + 23, 2, color);
+        self.circle(x + 4, y + 44, 2, color);
+        x += 18;
+        self.thin_clock_digit(x, y, (minute / 10) as u8, color);
+        x += 43;
+        self.thin_clock_digit(x, y, (minute % 10) as u8, color);
     }
 }

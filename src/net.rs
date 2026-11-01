@@ -7,8 +7,8 @@
 
 extern crate alloc;
 
-use core::fmt::Write;
 use alloc::vec;
+use core::fmt::Write;
 use esp_hal::time::Instant as HalInstant;
 use esp_println::println;
 use esp_radio::wifi::WifiDevice;
@@ -21,7 +21,11 @@ use smoltcp::{
 };
 use static_cell::StaticCell;
 
-use crate::{adb::{self, Header, A_CLSE, A_CNXN, A_OKAY, A_OPEN, A_WRTE}, material::MaterialFrame, runtime::RuntimeFrame};
+use crate::{
+    adb::{self, A_CLSE, A_CNXN, A_OKAY, A_OPEN, A_WRTE, Header},
+    material::MaterialFrame,
+    runtime::RuntimeFrame,
+};
 
 const ADB_MAX_PAYLOAD: usize = 1024;
 const ADB_VERSION: u32 = 0x0100_0001;
@@ -29,7 +33,10 @@ const ADB_MAX_DATA: u32 = ADB_MAX_PAYLOAD as u32;
 const WADB_PORT: u16 = 5555;
 const ADB_CLOSE_GRACE_MS: u64 = 1_200;
 static DHCP_HOSTNAME: &[u8] = b"android-aosp-wear";
-static DHCP_OPTIONS: [DhcpOption<'static>; 1] = [DhcpOption { kind: 12, data: DHCP_HOSTNAME }];
+static DHCP_OPTIONS: [DhcpOption<'static>; 1] = [DhcpOption {
+    kind: 12,
+    data: DHCP_HOSTNAME,
+}];
 
 static WADB_RX_BUF: StaticCell<[u8; 4096]> = StaticCell::new();
 static WADB_TX_BUF: StaticCell<[u8; 4096]> = StaticCell::new();
@@ -125,7 +132,10 @@ impl AdbRx {
             }
             if header.data_length == 0 {
                 self.reset();
-                return Some(AdbMessage { header, payload: HVec::new() });
+                return Some(AdbMessage {
+                    header,
+                    payload: HVec::new(),
+                });
             }
             self.header = Some(header);
             return None;
@@ -143,7 +153,8 @@ impl AdbRx {
         // ADB protocol 0x01000001 (advertised by this device) deliberately
         // skips payload checksums. Modern adb therefore sends data_check=0.
         // Keep accepting the legacy checksum too for older hosts.
-        let valid = header.data_check == 0 || adb::checksum(payload.as_slice()) == header.data_check;
+        let valid =
+            header.data_check == 0 || adb::checksum(payload.as_slice()) == header.data_check;
         self.reset();
         if valid {
             Some(AdbMessage { header, payload })
@@ -202,9 +213,7 @@ impl AdbStream {
     }
 
     fn matches(&self, host_id: u32, device_id: u32) -> bool {
-        self.mode != AdbStreamMode::Closed
-            && self.host_id == host_id
-            && self.device_id == device_id
+        self.mode != AdbStreamMode::Closed && self.host_id == host_id && self.device_id == device_id
     }
 }
 
@@ -237,9 +246,8 @@ impl NetworkService {
     pub fn new(device: &mut WifiDevice<'static>) -> Self {
         let mac = device.mac_address();
         let mut cfg = Config::new(EthernetAddress(mac).into());
-        cfg.random_seed = u64::from_le_bytes([
-            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], 0x5a, 0x33,
-        ]);
+        cfg.random_seed =
+            u64::from_le_bytes([mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], 0x5a, 0x33]);
         let iface = Interface::new(cfg, device, Instant::ZERO);
 
         let mut sockets = SocketSet::new(vec![]);
@@ -250,10 +258,8 @@ impl NetworkService {
         let dhcp_handle = sockets.add(dhcp);
         let rx = &mut WADB_RX_BUF.init([0; 4096])[..];
         let tx = &mut WADB_TX_BUF.init([0; 4096])[..];
-        let mut adb_socket = tcp::Socket::new(
-            tcp::SocketBuffer::new(rx),
-            tcp::SocketBuffer::new(tx),
-        );
+        let mut adb_socket =
+            tcp::Socket::new(tcp::SocketBuffer::new(rx), tcp::SocketBuffer::new(tx));
         // ADB sends many tiny 24-byte control packets. Nagle adds avoidable
         // latency to OKAY/WRTE/CLSE handshakes on a local Wi-Fi network.
         adb_socket.set_nagle_enabled(false);
@@ -309,20 +315,40 @@ impl NetworkService {
 
     pub fn set_link_state(&mut self, state: LinkState) {
         self.link = state;
-        if matches!(state, LinkState::Down | LinkState::Associating | LinkState::LinkUp) {
+        if matches!(
+            state,
+            LinkState::Down | LinkState::Associating | LinkState::LinkUp
+        ) {
             self.clear_ip();
         }
     }
 
-    pub fn link_state(&self) -> LinkState { self.link }
-    pub fn ip(&self) -> Option<Ipv4Address> { self.ip }
-    pub fn wadb_active(&self) -> bool { self.wadb_listening }
-    pub fn wadb_seen_client(&self) -> bool { self.wadb_seen_client }
-    pub fn take_network_time(&mut self) -> Option<u32> { self.ntp_unix_seconds.take() }
-    pub fn request_time_sync(&mut self) { self.ntp_pending = false; self.ntp_next_request_ms = 0; }
-    pub fn take_web_event(&mut self) -> Option<WebRemoteEvent> { self.web_event.take() }
+    pub fn link_state(&self) -> LinkState {
+        self.link
+    }
+    pub fn ip(&self) -> Option<Ipv4Address> {
+        self.ip
+    }
+    pub fn wadb_active(&self) -> bool {
+        self.wadb_listening
+    }
+    pub fn wadb_seen_client(&self) -> bool {
+        self.wadb_seen_client
+    }
+    pub fn take_network_time(&mut self) -> Option<u32> {
+        self.ntp_unix_seconds.take()
+    }
+    pub fn request_time_sync(&mut self) {
+        self.ntp_pending = false;
+        self.ntp_next_request_ms = 0;
+    }
+    pub fn take_web_event(&mut self) -> Option<WebRemoteEvent> {
+        self.web_event.take()
+    }
     pub fn set_web_frame(&mut self, frame: &RuntimeFrame) {
-        if let RuntimeFrame::Material(m) = frame { self.web_frame = Some(*m); }
+        if let RuntimeFrame::Material(m) = frame {
+            self.web_frame = Some(*m);
+        }
     }
 
     pub fn reset(&mut self) {
@@ -331,16 +357,22 @@ impl NetworkService {
         self.adb_rx.reset();
         self.adb_stream.clear();
         let socket = self.sockets.get_mut::<tcp::Socket>(self.adb_handle);
-        if socket.is_open() { socket.abort(); }
+        if socket.is_open() {
+            socket.abort();
+        }
         self.wadb_listening = false;
         self.wadb_seen_client = false;
         self.ntp_pending = false;
         self.ntp_next_request_ms = 0;
         self.ntp_request_started_ms = 0;
         let ntp = self.sockets.get_mut::<udp::Socket>(self.ntp_handle);
-        if ntp.is_open() { ntp.close(); }
+        if ntp.is_open() {
+            ntp.close();
+        }
         let web = self.sockets.get_mut::<tcp::Socket>(self.web_handle);
-        if web.is_open() { web.abort(); }
+        if web.is_open() {
+            web.abort();
+        }
         self.web_request.clear();
         self.web_event = None;
         self.web_listening = false;
@@ -366,7 +398,9 @@ impl NetworkService {
     fn poll_web(&mut self, enabled: bool) {
         if !enabled || self.ip.is_none() {
             let socket = self.sockets.get_mut::<tcp::Socket>(self.web_handle);
-            if socket.is_open() { socket.abort(); }
+            if socket.is_open() {
+                socket.abort();
+            }
             self.web_request.clear();
             self.web_listening = false;
             return;
@@ -377,12 +411,17 @@ impl NetworkService {
             !socket.is_open()
         };
         if need_listen {
-            let result = self.sockets.get_mut::<tcp::Socket>(self.web_handle).listen(WEB_PORT);
+            let result = self
+                .sockets
+                .get_mut::<tcp::Socket>(self.web_handle)
+                .listen(WEB_PORT);
             match result {
                 Ok(()) => {
                     self.web_listening = true;
                     self.web_request.clear();
-                    if let Some(ip) = self.ip { println!("web: remote UI listening on http://{}/", ip); }
+                    if let Some(ip) = self.ip {
+                        println!("web: remote UI listening on http://{}/", ip);
+                    }
                 }
                 Err(e) => {
                     self.web_listening = false;
@@ -395,18 +434,31 @@ impl NetworkService {
         let mut incoming = [0u8; 768];
         let n = {
             let socket = self.sockets.get_mut::<tcp::Socket>(self.web_handle);
-            if socket.can_recv() { socket.recv_slice(&mut incoming).unwrap_or(0) } else { 0 }
+            if socket.can_recv() {
+                socket.recv_slice(&mut incoming).unwrap_or(0)
+            } else {
+                0
+            }
         };
         if n != 0 {
             let room = 1024usize.saturating_sub(self.web_request.len());
             let take = n.min(room);
             let _ = self.web_request.extend_from_slice(&incoming[..take]);
         }
-        if !self.web_request.as_slice().windows(4).any(|w| w == b"\r\n\r\n") { return; }
+        if !self
+            .web_request
+            .as_slice()
+            .windows(4)
+            .any(|w| w == b"\r\n\r\n")
+        {
+            return;
+        }
 
         let mut first_line = HString::<192>::new();
         if let Ok(request) = core::str::from_utf8(self.web_request.as_slice()) {
-            if let Some(line) = request.lines().next() { let _ = first_line.push_str(line); }
+            if let Some(line) = request.lines().next() {
+                let _ = first_line.push_str(line);
+            }
         }
         let first = first_line.as_str();
         let mut status = "200 OK";
@@ -418,7 +470,10 @@ impl NetworkService {
             self.write_web_state(&mut state_body);
             body = state_body.as_str();
         } else if first.starts_with("GET /event?e=") {
-            let value = first.strip_prefix("GET /event?e=").and_then(|v| v.split_whitespace().next()).unwrap_or("");
+            let value = first
+                .strip_prefix("GET /event?e=")
+                .and_then(|v| v.split_whitespace().next())
+                .unwrap_or("");
             self.web_event = match value {
                 "rotl" => Some(WebRemoteEvent::Rotate(-1)),
                 "rotr" => Some(WebRemoteEvent::Rotate(1)),
@@ -453,22 +508,38 @@ impl NetworkService {
             let _ = out.push_str("{\"screen\":1,\"cursor\":0,\"time\":0,\"valid\":false,\"wifi\":false,\"bt\":false,\"adb\":false,\"ssid\":\"\",\"rssi\":-127}");
             return;
         };
-        let _ = write!(out,
+        let _ = write!(
+            out,
             "{{\"screen\":{},\"cursor\":{},\"time\":{},\"valid\":{},\"wifi\":{},\"bt\":{},\"adb\":{},\"link\":{},\"rssi\":{},\"ip\":\"",
-            f.screen, f.cursor, f.time_minutes, if f.time_valid { "true" } else { "false" },
-            if f.wifi { "true" } else { "false" }, if f.bt { "true" } else { "false" },
-            if f.adb { "true" } else { "false" }, f.wifi_link_state, f.wifi_ap_rssi);
-        if let Some(ip) = self.ip { let _ = write!(out, "{}", ip); }
+            f.screen,
+            f.cursor,
+            f.time_minutes,
+            if f.time_valid { "true" } else { "false" },
+            if f.wifi { "true" } else { "false" },
+            if f.bt { "true" } else { "false" },
+            if f.adb { "true" } else { "false" },
+            f.wifi_link_state,
+            f.wifi_ap_rssi
+        );
+        if let Some(ip) = self.ip {
+            let _ = write!(out, "{}", ip);
+        }
         let _ = out.push_str("\",\"ssid\":\"");
         for &b in &f.wifi_ap_ssid[..f.wifi_ap_ssid_len as usize] {
-            let ch = if b.is_ascii_alphanumeric() || matches!(b, b' ' | b'-' | b'_' | b'(' | b')') { b as char } else { '?' };
+            let ch = if b.is_ascii_alphanumeric() || matches!(b, b' ' | b'-' | b'_' | b'(' | b')') {
+                b as char
+            } else {
+                '?'
+            };
             let _ = out.push(ch);
         }
         let _ = out.push_str("\"}");
     }
 
     fn poll_ntp(&mut self) {
-        if self.ip.is_none() { return; }
+        if self.ip.is_none() {
+            return;
+        }
         let now = now_ms();
         let socket = self.sockets.get_mut::<udp::Socket>(self.ntp_handle);
         if !socket.is_open() {
@@ -485,8 +556,12 @@ impl NetworkService {
                 if n >= 48 {
                     let mode = packet[0] & 0x07;
                     let stratum = packet[1];
-                    let ntp_seconds = u32::from_be_bytes([packet[40], packet[41], packet[42], packet[43]]);
-                    if (mode == 4 || mode == 5) && stratum != 0 && ntp_seconds > NTP_UNIX_EPOCH_DELTA {
+                    let ntp_seconds =
+                        u32::from_be_bytes([packet[40], packet[41], packet[42], packet[43]]);
+                    if (mode == 4 || mode == 5)
+                        && stratum != 0
+                        && ntp_seconds > NTP_UNIX_EPOCH_DELTA
+                    {
                         let unix = ntp_seconds - NTP_UNIX_EPOCH_DELTA;
                         self.ntp_unix_seconds = Some(unix);
                         self.ntp_pending = false;
@@ -499,12 +574,16 @@ impl NetworkService {
         }
 
         if self.ntp_pending {
-            if now.saturating_sub(self.ntp_request_started_ms) < 5_000 { return; }
+            if now.saturating_sub(self.ntp_request_started_ms) < 5_000 {
+                return;
+            }
             self.ntp_pending = false;
             self.ntp_server_index = (self.ntp_server_index + 1) % NTP_SERVERS.len() as u8;
             self.ntp_next_request_ms = now.saturating_add(1_000);
         }
-        if now < self.ntp_next_request_ms || !socket.can_send() { return; }
+        if now < self.ntp_next_request_ms || !socket.can_send() {
+            return;
+        }
 
         let mut request = [0u8; 48];
         request[0] = 0x23; // LI=0, SNTP/NTP v4, client mode.
@@ -525,7 +604,10 @@ impl NetworkService {
     }
 
     fn poll_dhcp(&mut self) {
-        let event = self.sockets.get_mut::<dhcpv4::Socket>(self.dhcp_handle).poll();
+        let event = self
+            .sockets
+            .get_mut::<dhcpv4::Socket>(self.dhcp_handle)
+            .poll();
         match event {
             None => {}
             Some(dhcpv4::Event::Configured(config)) => {
@@ -566,7 +648,9 @@ impl NetworkService {
         self.ntp_next_request_ms = 0;
         self.iface.update_ip_addrs(|addrs| addrs.clear());
         self.iface.routes_mut().remove_default_ipv4_route();
-        self.sockets.get_mut::<dhcpv4::Socket>(self.dhcp_handle).reset();
+        self.sockets
+            .get_mut::<dhcpv4::Socket>(self.dhcp_handle)
+            .reset();
     }
 
     fn poll_wadb(&mut self, enabled: bool) {
@@ -574,7 +658,9 @@ impl NetworkService {
         let socket = self.sockets.get_mut::<tcp::Socket>(self.adb_handle);
 
         if !enabled || !online {
-            if socket.is_open() { socket.abort(); }
+            if socket.is_open() {
+                socket.abort();
+            }
             self.wadb_listening = false;
             self.adb_rx.reset();
             self.adb_stream.clear();
@@ -603,8 +689,12 @@ impl NetworkService {
 
         let mut incoming = [0u8; 512];
         while socket.can_recv() {
-            let Ok(n) = socket.recv_slice(&mut incoming) else { break; };
-            if n == 0 { break; }
+            let Ok(n) = socket.recv_slice(&mut incoming) else {
+                break;
+            };
+            if n == 0 {
+                break;
+            }
             for &byte in &incoming[..n] {
                 if let Some(message) = self.adb_rx.push(byte) {
                     handle_adb(
@@ -638,15 +728,28 @@ impl NetworkService {
     }
 }
 
-fn send_http_response(socket: &mut tcp::Socket<'_>, status: &str, content_type: &str, body: &[u8]) -> bool {
+fn send_http_response(
+    socket: &mut tcp::Socket<'_>,
+    status: &str,
+    content_type: &str,
+    body: &[u8],
+) -> bool {
     let mut header = HString::<192>::new();
-    let _ = write!(header,
+    let _ = write!(
+        header,
         "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
-        status, content_type, body.len());
+        status,
+        content_type,
+        body.len()
+    );
     let needed = header.len().saturating_add(body.len());
     let free = socket.send_capacity().saturating_sub(socket.send_queue());
-    if free < needed { return false; }
-    if !matches!(socket.send_slice(header.as_bytes()), Ok(n) if n == header.len()) { return false; }
+    if free < needed {
+        return false;
+    }
+    if !matches!(socket.send_slice(header.as_bytes()), Ok(n) if n == header.len()) {
+        return false;
+    }
     matches!(socket.send_slice(body), Ok(n) if n == body.len())
 }
 
@@ -688,9 +791,7 @@ fn send_packet(
         println!("adbd: failed to queue header");
         return false;
     }
-    if !payload.is_empty()
-        && !matches!(socket.send_slice(payload), Ok(n) if n == payload.len())
-    {
+    if !payload.is_empty() && !matches!(socket.send_slice(payload), Ok(n) if n == payload.len()) {
         // This should not happen after the capacity check; if it ever does the
         // transport is already unusable, so make it visible in the log.
         println!("adbd: failed to queue complete payload");
@@ -719,7 +820,10 @@ fn handle_adb(
         A_OPEN => {
             let host_id = message.header.arg0;
             let payload = message.payload.as_slice();
-            let end = payload.iter().position(|&b| b == 0).unwrap_or(payload.len());
+            let end = payload
+                .iter()
+                .position(|&b| b == 0)
+                .unwrap_or(payload.len());
             let service = core::str::from_utf8(&payload[..end]).unwrap_or("");
 
             if !(service.starts_with("shell:") || service == "shell") {
@@ -793,18 +897,29 @@ fn handle_adb(
                 match b {
                     b'\r' => {}
                     b'\n' => execute = true,
-                    0x04 => { execute = true; logout = true; }
-                    0x08 | 0x7f => { let _ = stream.input.pop(); }
-                    0x20..=0x7e => { let _ = stream.input.push(b as char); }
+                    0x04 => {
+                        execute = true;
+                        logout = true;
+                    }
+                    0x08 | 0x7f => {
+                        let _ = stream.input.pop();
+                    }
+                    0x20..=0x7e => {
+                        let _ = stream.input.push(b as char);
+                    }
                     _ => {}
                 }
             }
-            if !execute { return; }
+            if !execute {
+                return;
+            }
 
             let command = stream.input.clone();
             stream.input.clear();
             let cmd = command.trim();
-            if cmd == "exit" { logout = true; }
+            if cmd == "exit" {
+                logout = true;
+            }
 
             let mut out = HString::<1536>::new();
             if !logout {

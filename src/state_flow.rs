@@ -7,7 +7,11 @@ pub(crate) fn set_runtime_flag(
     enabled: bool,
 ) -> Result<runtime::RuntimeFrame, runtime::RuntimeError> {
     let mask = 1i32 << bit;
-    let state = if enabled { os.state() | mask } else { os.state() & !mask };
+    let state = if enabled {
+        os.state() | mask
+    } else {
+        os.state() & !mask
+    };
     os.replace_state(state)
 }
 
@@ -31,7 +35,9 @@ pub(crate) fn dispatch_with_pager<D: BlockDevice>(
             // into a write-every-20ms pseudo-swap device.
             let old_tag = 0x5a50_0000u32 | old_screen;
             if pager.write_i32(dev, old_screen, old_tag, old_state).is_ok() {
-                if old_screen < 32 { *used |= 1u32 << old_screen; }
+                if old_screen < 32 {
+                    *used |= 1u32 << old_screen;
+                }
             }
 
             let new_tag = 0x5a50_0000u32 | new_screen;
@@ -39,7 +45,9 @@ pub(crate) fn dispatch_with_pager<D: BlockDevice>(
                 // Page-in only Activity-local cursor bits. Global settings and
                 // connectivity flags stay from the current system state.
                 let restored = (new_state & !0x000001e0) | (saved & 0x000001e0);
-                if let Ok(restored_frame) = os.replace_state(restored) { frame = restored_frame; }
+                if let Ok(restored_frame) = os.replace_state(restored) {
+                    frame = restored_frame;
+                }
             }
         }
     }

@@ -5,10 +5,16 @@
 //! bring-up the PC serves a raw GPT disk image over the existing USB device
 //! channel. The rest of the bootloader sees a normal 512-byte BlockDevice.
 
-use core::{cell::RefCell, fmt::{self, Write as _}};
+use core::{
+    cell::RefCell,
+    fmt::{self, Write as _},
+};
 
+use crate::{
+    desktop::{self, DesktopEvent},
+    runtime::RuntimeFrame,
+};
 use embedded_sdmmc::{Block, BlockCount, BlockDevice, BlockIdx};
-use crate::{desktop::{self, DesktopEvent}, runtime::RuntimeFrame};
 
 use esp_hal::{
     Blocking,
@@ -295,9 +301,25 @@ impl<'d> UsbPcBlockDevice<'d> {
     pub fn viewer_hello(&self) {
         let mut link = self.link.borrow_mut();
         #[cfg(feature = "display-st7789")]
-        let _ = link.send_parts(&["@ZWUI", "HELLO", "5", "240", "280", crate::config::PRODUCT, crate::config::MODEL]);
+        let _ = link.send_parts(&[
+            "@ZWUI",
+            "HELLO",
+            "5",
+            "240",
+            "280",
+            crate::config::PRODUCT,
+            crate::config::MODEL,
+        ]);
         #[cfg(feature = "display-ssd1306")]
-        let _ = link.send_parts(&["@ZWUI", "HELLO", "5", "128", "64", crate::config::PRODUCT, crate::config::MODEL]);
+        let _ = link.send_parts(&[
+            "@ZWUI",
+            "HELLO",
+            "5",
+            "128",
+            "64",
+            crate::config::PRODUCT,
+            crate::config::MODEL,
+        ]);
     }
 
     pub fn viewer_boot(&self) {
@@ -306,14 +328,26 @@ impl<'d> UsbPcBlockDevice<'d> {
 
     pub fn viewer_progress(&self, label: &str, phase: u8) {
         let phase = match phase % 8 {
-            0 => "0", 1 => "1", 2 => "2", 3 => "3",
-            4 => "4", 5 => "5", 6 => "6", _ => "7",
+            0 => "0",
+            1 => "1",
+            2 => "2",
+            3 => "3",
+            4 => "4",
+            5 => "5",
+            6 => "6",
+            _ => "7",
         };
-        let _ = self.link.borrow_mut().send_parts(&["@ZWUI", "PROGRESS", label, phase]);
+        let _ = self
+            .link
+            .borrow_mut()
+            .send_parts(&["@ZWUI", "PROGRESS", label, phase]);
     }
 
     pub fn viewer_status(&self, title: &str, l1: &str, l2: &str, l3: &str) {
-        let _ = self.link.borrow_mut().send_parts(&["@ZWUI", "STATUS", title, l1, l2, l3]);
+        let _ = self
+            .link
+            .borrow_mut()
+            .send_parts(&["@ZWUI", "STATUS", title, l1, l2, l3]);
     }
 
     pub fn viewer_runtime(&self, frame: &RuntimeFrame) {
@@ -321,17 +355,38 @@ impl<'d> UsbPcBlockDevice<'d> {
             RuntimeFrame::Legacy(f) => self.viewer_status(&f.title, &f.line1, &f.line2, &f.line3),
             RuntimeFrame::Material(f) => {
                 let mut b = SmallLine::new();
-                let _ = write!(b, "@ZWUI|M3|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|",
-                    f.screen, f.cursor, f.brightness,
-                    if f.dnd { 1 } else { 0 }, if f.airplane { 1 } else { 0 }, f.theme,
-                    if f.locked { 1 } else { 0 }, if f.wifi { 1 } else { 0 },
-                    if f.bt { 1 } else { 0 }, if f.adb { 1 } else { 0 },
-                    f.notes, f.time_minutes, f.swap_pages, f.timer_secs, f.stopwatch_secs,
-                    if f.alarm_enabled { 1 } else { 0 }, if f.auto_time { 1 } else { 0 },
-                    if f.time_valid { 1 } else { 0 }, f.timezone_hours,
-                    f.wifi_ap_count, f.wifi_ap_index, f.wifi_ap_rssi, f.wifi_password_len,
-                    f.wifi_editor_char, f.wifi_link_state);
-                for &byte in &f.wifi_ap_ssid[..f.wifi_ap_ssid_len as usize] { let _ = write!(b, "{:02x}", byte); }
+                let _ = write!(
+                    b,
+                    "@ZWUI|M3|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|",
+                    f.screen,
+                    f.cursor,
+                    f.brightness,
+                    if f.dnd { 1 } else { 0 },
+                    if f.airplane { 1 } else { 0 },
+                    f.theme,
+                    if f.locked { 1 } else { 0 },
+                    if f.wifi { 1 } else { 0 },
+                    if f.bt { 1 } else { 0 },
+                    if f.adb { 1 } else { 0 },
+                    f.notes,
+                    f.time_minutes,
+                    f.swap_pages,
+                    f.timer_secs,
+                    f.stopwatch_secs,
+                    if f.alarm_enabled { 1 } else { 0 },
+                    if f.auto_time { 1 } else { 0 },
+                    if f.time_valid { 1 } else { 0 },
+                    f.timezone_hours,
+                    f.wifi_ap_count,
+                    f.wifi_ap_index,
+                    f.wifi_ap_rssi,
+                    f.wifi_password_len,
+                    f.wifi_editor_char,
+                    f.wifi_link_state
+                );
+                for &byte in &f.wifi_ap_ssid[..f.wifi_ap_ssid_len as usize] {
+                    let _ = write!(b, "{:02x}", byte);
+                }
                 let _ = write!(b, "\r\n");
                 let _ = self.link.borrow_mut().send(b.as_bytes());
             }
@@ -339,7 +394,10 @@ impl<'d> UsbPcBlockDevice<'d> {
     }
 
     pub fn viewer_error(&self, code: &str, detail: &str) {
-        let _ = self.link.borrow_mut().send_parts(&["@ZWUI", "ERROR", code, detail]);
+        let _ = self
+            .link
+            .borrow_mut()
+            .send_parts(&["@ZWUI", "ERROR", code, detail]);
     }
 
     pub fn viewer_pong(&self) {
@@ -349,7 +407,10 @@ impl<'d> UsbPcBlockDevice<'d> {
     /// Developer debug output used by the ZADB bridge. This is intentionally
     /// line-oriented and multiplexed through the same no-reset PC bridge.
     pub fn viewer_adb_output(&self, kind: &str, text: &str) {
-        let _ = self.link.borrow_mut().send_parts(&["@ZADB", "OUT", kind, text]);
+        let _ = self
+            .link
+            .borrow_mut()
+            .send_parts(&["@ZADB", "OUT", kind, text]);
     }
 
     /// Tell the PC block server it may now forward interactive viewer commands.
@@ -382,7 +443,9 @@ impl BlockDevice for UsbPcBlockDevice<'_> {
     fn read(&self, blocks: &mut [Block], start_block_idx: BlockIdx) -> Result<(), Self::Error> {
         let capacity = self.capacity()?;
         let start = start_block_idx.0;
-        let end = start.checked_add(blocks.len() as u32).ok_or(PcBlockError::Range)?;
+        let end = start
+            .checked_add(blocks.len() as u32)
+            .ok_or(PcBlockError::Range)?;
         if end > capacity {
             return Err(PcBlockError::Range);
         }
@@ -397,7 +460,9 @@ impl BlockDevice for UsbPcBlockDevice<'_> {
     fn write(&self, blocks: &[Block], start_block_idx: BlockIdx) -> Result<(), Self::Error> {
         let capacity = self.capacity()?;
         let start = start_block_idx.0;
-        let end = start.checked_add(blocks.len() as u32).ok_or(PcBlockError::Range)?;
+        let end = start
+            .checked_add(blocks.len() as u32)
+            .ok_or(PcBlockError::Range)?;
         if end > capacity {
             return Err(PcBlockError::Range);
         }
@@ -421,7 +486,10 @@ struct SmallLine {
 
 impl SmallLine {
     const fn new() -> Self {
-        Self { buf: [0; 640], len: 0 }
+        Self {
+            buf: [0; 640],
+            len: 0,
+        }
     }
 
     fn as_bytes(&self) -> &[u8] {

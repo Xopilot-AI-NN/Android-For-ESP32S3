@@ -1,7 +1,9 @@
 //! Bounded encoding of TrouBLE 0.5.1 BLE bonds for a PageStore payload.
 //! The record contains SECRET LTK/IRK bytes; store only in protected storage.
 use heapless::Vec;
-use trouble_host::prelude::{BdAddr, BondInformation, Identity, IdentityResolvingKey, LongTermKey, SecurityLevel};
+use trouble_host::prelude::{
+    BdAddr, BondInformation, Identity, IdentityResolvingKey, LongTermKey, SecurityLevel,
+};
 
 pub const MAX_BONDS: usize = 4;
 pub const MAX_BOND_BLOB: usize = 6 + MAX_BONDS * 41;
@@ -9,11 +11,20 @@ const MAGIC: [u8; 4] = *b"BND1";
 const RECORD: usize = 41;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BondCodecError { BadFormat, TooManyBonds, BufferTooSmall }
+pub enum BondCodecError {
+    BadFormat,
+    TooManyBonds,
+    BufferTooSmall,
+}
 
-pub fn encode_bonds(bonds: &Vec<BondInformation, MAX_BONDS>, out: &mut [u8]) -> Result<usize, BondCodecError> {
+pub fn encode_bonds(
+    bonds: &Vec<BondInformation, MAX_BONDS>,
+    out: &mut [u8],
+) -> Result<usize, BondCodecError> {
     let size = 6 + bonds.len() * RECORD;
-    if out.len() < size { return Err(BondCodecError::BufferTooSmall); }
+    if out.len() < size {
+        return Err(BondCodecError::BufferTooSmall);
+    }
     out[..size].fill(0);
     out[..4].copy_from_slice(&MAGIC);
     out[4] = 1;
@@ -41,8 +52,12 @@ pub fn decode_bonds(bytes: &[u8]) -> Result<Vec<BondInformation, MAX_BONDS>, Bon
         return Err(BondCodecError::BadFormat);
     }
     let n = bytes[5] as usize;
-    if n > MAX_BONDS { return Err(BondCodecError::TooManyBonds); }
-    if bytes.len() != 6 + n * RECORD { return Err(BondCodecError::BadFormat); }
+    if n > MAX_BONDS {
+        return Err(BondCodecError::TooManyBonds);
+    }
+    if bytes.len() != 6 + n * RECORD {
+        return Err(BondCodecError::BadFormat);
+    }
     let mut result = Vec::new();
     for i in 0..n {
         let p = 6 + i * RECORD;
@@ -57,14 +72,24 @@ pub fn decode_bonds(bytes: &[u8]) -> Result<Vec<BondInformation, MAX_BONDS>, Bon
         key_bytes.copy_from_slice(&bytes[p + 23..p + 39]);
         let identity = Identity {
             bd_addr: BdAddr::new(addr),
-            irk: if bytes[p + 6] == 1 { Some(IdentityResolvingKey::from_le_bytes(irk_bytes)) } else { None },
+            irk: if bytes[p + 6] == 1 {
+                Some(IdentityResolvingKey::from_le_bytes(irk_bytes))
+            } else {
+                None
+            },
         };
         let level = match bytes[p + 39] {
             0 => SecurityLevel::NoEncryption,
             1 => SecurityLevel::Encrypted,
             _ => SecurityLevel::EncryptedAuthenticated,
         };
-        result.push(BondInformation::new(identity, LongTermKey::from_le_bytes(key_bytes), level, bytes[p + 40] == 1))
+        result
+            .push(BondInformation::new(
+                identity,
+                LongTermKey::from_le_bytes(key_bytes),
+                level,
+                bytes[p + 40] == 1,
+            ))
             .map_err(|_| BondCodecError::TooManyBonds)?;
     }
     Ok(result)

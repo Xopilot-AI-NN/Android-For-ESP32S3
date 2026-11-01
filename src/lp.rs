@@ -22,7 +22,9 @@ pub struct LogicalPartition {
 }
 
 impl LogicalPartition {
-    pub fn size_bytes(self) -> u64 { self.num_sectors * 512 }
+    pub fn size_bytes(self) -> u64 {
+        self.num_sectors * 512
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -45,24 +47,29 @@ pub fn find_logical<D: BlockDevice>(
     wanted: &str,
 ) -> Result<LogicalPartition, LpError> {
     let geometry = read_geometry(dev, super_part)?;
-    if metadata_slot >= geometry.slot_count { return Err(LpError::Unsupported); }
+    if metadata_slot >= geometry.slot_count {
+        return Err(LpError::Unsupported);
+    }
 
     let metadata_offset = RESERVED_BYTES
         + GEOMETRY_SIZE * 2
         + u64::from(geometry.metadata_max_size) * u64::from(metadata_slot);
 
     let mut first = [0u8; HEADER_V12_SIZE];
-    gpt::read_partition(dev, super_part, metadata_offset, &mut first)
-        .map_err(|_| LpError::Io)?;
+    gpt::read_partition(dev, super_part, metadata_offset, &mut first).map_err(|_| LpError::Io)?;
 
-    if le_u32(&first[0..4]) != HEADER_MAGIC { return Err(LpError::BadHeader); }
+    if le_u32(&first[0..4]) != HEADER_MAGIC {
+        return Err(LpError::BadHeader);
+    }
     let major = le_u16(&first[4..6]);
     let minor = le_u16(&first[6..8]);
     let header_size = le_u32(&first[8..12]) as usize;
     if major != 10 || minor > 2 || !matches!(header_size, HEADER_V1_SIZE | HEADER_V12_SIZE) {
         return Err(LpError::Unsupported);
     }
-    if header_size as u32 > geometry.metadata_max_size { return Err(LpError::BadHeader); }
+    if header_size as u32 > geometry.metadata_max_size {
+        return Err(LpError::BadHeader);
+    }
 
     let mut header = [0u8; HEADER_V12_SIZE];
     header[..header_size].copy_from_slice(&first[..header_size]);
@@ -76,7 +83,9 @@ pub fn find_logical<D: BlockDevice>(
 
     let tables_size = le_u32(&header[44..48]) as usize;
     if tables_size == 0
-        || header_size.checked_add(tables_size).ok_or(LpError::OutOfBounds)?
+        || header_size
+            .checked_add(tables_size)
+            .ok_or(LpError::OutOfBounds)?
             > geometry.metadata_max_size as usize
     {
         return Err(LpError::BadHeader);
@@ -105,12 +114,16 @@ pub fn find_logical<D: BlockDevice>(
         let entry = table_entry(&tables, partitions, index)?;
         let name_end = entry[..36].iter().position(|b| *b == 0).unwrap_or(36);
         let name = core::str::from_utf8(&entry[..name_end]).map_err(|_| LpError::Unsupported)?;
-        if name != wanted { continue; }
+        if name != wanted {
+            continue;
+        }
 
         let first_extent = le_u32(&entry[40..44]);
         let num_extents = le_u32(&entry[44..48]);
         // v1 runtime intentionally supports one contiguous linear extent.
-        if num_extents != 1 { return Err(LpError::Unsupported); }
+        if num_extents != 1 {
+            return Err(LpError::Unsupported);
+        }
         let extent = table_entry(&tables, extents, first_extent)?;
         let num_sectors = le_u64(&extent[0..8]);
         let target_type = le_u32(&extent[8..12]);
@@ -123,8 +136,13 @@ pub fn find_logical<D: BlockDevice>(
             .checked_add(num_sectors)
             .and_then(|v| v.checked_mul(512))
             .ok_or(LpError::OutOfBounds)?;
-        if end > super_part.size_bytes() { return Err(LpError::OutOfBounds); }
-        return Ok(LogicalPartition { first_sector: target_data, num_sectors });
+        if end > super_part.size_bytes() {
+            return Err(LpError::OutOfBounds);
+        }
+        return Ok(LogicalPartition {
+            first_sector: target_data,
+            num_sectors,
+        });
     }
     Err(LpError::PartitionNotFound)
 }
@@ -136,9 +154,16 @@ pub fn read_logical<D: BlockDevice>(
     offset: u64,
     out: &mut [u8],
 ) -> Result<(), LpError> {
-    let end = offset.checked_add(out.len() as u64).ok_or(LpError::OutOfBounds)?;
-    if end > logical.size_bytes() { return Err(LpError::OutOfBounds); }
-    let base = logical.first_sector.checked_mul(512).ok_or(LpError::OutOfBounds)?;
+    let end = offset
+        .checked_add(out.len() as u64)
+        .ok_or(LpError::OutOfBounds)?;
+    if end > logical.size_bytes() {
+        return Err(LpError::OutOfBounds);
+    }
+    let base = logical
+        .first_sector
+        .checked_mul(512)
+        .ok_or(LpError::OutOfBounds)?;
     gpt::read_partition(dev, super_part, base + offset, out).map_err(|_| LpError::Io)
 }
 
@@ -151,9 +176,7 @@ struct Geometry {
 fn read_geometry<D: BlockDevice>(dev: &D, super_part: Partition) -> Result<Geometry, LpError> {
     let mut raw = [0u8; GEOMETRY_STRUCT_SIZE];
     gpt::read_partition(dev, super_part, RESERVED_BYTES, &mut raw).map_err(|_| LpError::Io)?;
-    if le_u32(&raw[0..4]) != GEOMETRY_MAGIC
-        || le_u32(&raw[4..8]) as usize != GEOMETRY_STRUCT_SIZE
-    {
+    if le_u32(&raw[0..4]) != GEOMETRY_MAGIC || le_u32(&raw[4..8]) as usize != GEOMETRY_STRUCT_SIZE {
         return Err(LpError::BadGeometry);
     }
     let expected = raw[8..40].to_vec();
@@ -174,30 +197,51 @@ fn read_geometry<D: BlockDevice>(dev: &D, super_part: Partition) -> Result<Geome
     {
         return Err(LpError::Unsupported);
     }
-    Ok(Geometry { metadata_max_size, slot_count })
+    Ok(Geometry {
+        metadata_max_size,
+        slot_count,
+    })
 }
 
 #[derive(Clone, Copy)]
-struct TableDesc { offset: usize, count: u32, entry_size: usize }
+struct TableDesc {
+    offset: usize,
+    count: u32,
+    entry_size: usize,
+}
 
 fn table_desc(raw: &[u8], tables_size: usize) -> Result<TableDesc, LpError> {
     let offset = le_u32(&raw[0..4]) as usize;
     let count = le_u32(&raw[4..8]);
     let entry_size = le_u32(&raw[8..12]) as usize;
-    let bytes = (count as usize).checked_mul(entry_size).ok_or(LpError::OutOfBounds)?;
+    let bytes = (count as usize)
+        .checked_mul(entry_size)
+        .ok_or(LpError::OutOfBounds)?;
     if entry_size == 0 || offset.checked_add(bytes).ok_or(LpError::OutOfBounds)? > tables_size {
         return Err(LpError::BadHeader);
     }
-    Ok(TableDesc { offset, count, entry_size })
+    Ok(TableDesc {
+        offset,
+        count,
+        entry_size,
+    })
 }
 
 fn table_entry<'a>(tables: &'a [u8], desc: TableDesc, index: u32) -> Result<&'a [u8], LpError> {
-    if index >= desc.count { return Err(LpError::OutOfBounds); }
+    if index >= desc.count {
+        return Err(LpError::OutOfBounds);
+    }
     let start = desc.offset + index as usize * desc.entry_size;
     let end = start + desc.entry_size;
     tables.get(start..end).ok_or(LpError::OutOfBounds)
 }
 
-fn le_u16(b: &[u8]) -> u16 { u16::from_le_bytes([b[0], b[1]]) }
-fn le_u32(b: &[u8]) -> u32 { u32::from_le_bytes([b[0], b[1], b[2], b[3]]) }
-fn le_u64(b: &[u8]) -> u64 { u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]) }
+fn le_u16(b: &[u8]) -> u16 {
+    u16::from_le_bytes([b[0], b[1]])
+}
+fn le_u32(b: &[u8]) -> u32 {
+    u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+}
+fn le_u64(b: &[u8]) -> u64 {
+    u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]])
+}

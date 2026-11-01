@@ -1,7 +1,7 @@
 //! Link radio services, framework actions and the active system state.
-use crate::*;
 use crate::persistence::*;
 use crate::state_flow::*;
+use crate::*;
 
 #[cfg(feature = "radio-services")]
 pub(crate) fn service_radio_runtime<D: BlockDevice>(
@@ -11,7 +11,9 @@ pub(crate) fn service_radio_runtime<D: BlockDevice>(
     dev: &D,
     pager_used: &mut u32,
 ) -> Option<runtime::RuntimeFrame> {
-    if rtc::take_network_sync_request() { radios.request_network_time_sync(); }
+    if rtc::take_network_sync_request() {
+        radios.request_network_time_sync();
+    }
     radios.tick(((os.state() >> 23) & 1) != 0);
 
     // The browser remote uses the same RuntimeEvent path as the physical crown
@@ -62,13 +64,17 @@ pub(crate) fn service_radio_runtime<D: BlockDevice>(
                 os.clear_wifi_scan();
                 if radios.scan_wifi() {
                     for i in 0..radios.wifi_ap_count() {
-                        if let Some((ssid, rssi)) = radios.wifi_ap_info(i) { os.push_wifi_ap(ssid, rssi); }
+                        if let Some((ssid, rssi)) = radios.wifi_ap_info(i) {
+                            os.push_wifi_ap(ssid, rssi);
+                        }
                     }
                 }
                 redraw = true;
             }
             runtime::WifiUiAction::Connect { ssid, password } => {
-                if let Some(credentials) = WifiCredentials::from_parts(ssid.as_str(), password.as_str()) {
+                if let Some(credentials) =
+                    WifiCredentials::from_parts(ssid.as_str(), password.as_str())
+                {
                     if radios.connect_wifi(credentials) {
                         let _ = set_runtime_flag(os, 21, true);
                     }
