@@ -38,6 +38,13 @@ pub fn save_screenshot<D: BlockDevice>(dev: &D, pixels: &[u16]) -> bool {
     let Ok(part) = gpt::find_partition(dev, "userdata") else {
         return false;
     };
+    // Existing filesystem data is never a valid scratch area for a capture.
+    let mut previous = [0u8; 512];
+    if gpt::read_partition(dev, part, 0, &mut previous).is_err()
+        || (previous.iter().any(|&b| b != 0) && &previous[..8] != b"WALLv1\0\0")
+    {
+        return false;
+    }
     let mut bytes = Vec::with_capacity(PIXELS * 2);
     for p in pixels {
         bytes.extend_from_slice(&p.to_be_bytes());

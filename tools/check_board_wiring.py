@@ -8,7 +8,7 @@ config = (ROOT / "src" / "config.rs").read_text()
 display = (ROOT / "src" / "display.rs").read_text()
 
 try:
-    tft = boot.split('    #[cfg(all(feature = "display-st7789", not(feature = "display-software-spi")))]\n    let physical_display = {', 1)[1].split('    };', 1)[0]
+    tft = boot.split('    #[cfg(all(feature = "display-st7789", not(feature = "display-software-spi")))]\n    let mut physical_display = {', 1)[1].split('    };', 1)[0]
     sd = boot.split('// SD requires >=74 clocks', 1)[1].split('let device = ExclusiveDevice::new', 1)[0]
 except IndexError as e:
     raise SystemExit('FAIL: expected TFT/SD initialization block not found') from e
