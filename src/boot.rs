@@ -88,9 +88,9 @@ pub(crate) fn run() -> ! {
             backlight_ledc.timer::<esp_hal::ledc::LowSpeed>(esp_hal::ledc::timer::Number::Timer0);
         timer
             .configure(esp_hal::ledc::timer::config::Config {
-                duty: esp_hal::ledc::timer::config::Duty::Duty10Bit,
+                duty: esp_hal::ledc::timer::config::Duty::Duty8Bit,
                 clock_source: esp_hal::ledc::timer::LSClockSource::APBClk,
-                frequency: Rate::from_khz(20),
+                frequency: Rate::from_khz(80),
             })
             .expect("backlight PWM timer");
         timer
@@ -106,7 +106,7 @@ pub(crate) fn run() -> ! {
                 drive_mode: esp_hal::gpio::DriveMode::PushPull,
             })
             .expect("backlight PWM channel");
-        crate::backlight::PwmBacklight(channel)
+        crate::backlight::PwmBacklight::new(channel)
     };
     #[cfg(all(feature = "display-st7789", not(feature = "display-software-spi")))]
     let physical_display = {

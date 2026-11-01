@@ -180,6 +180,8 @@ pub struct Runtime {
     crown_sensitivity: u8,
     crown_reverse: bool,
     high_contrast: bool,
+    last_input_secs: u64,
+    timeout_parent: u8,
 }
 
 #[cfg(feature = "rhai-runtime")]
@@ -289,6 +291,8 @@ impl Runtime {
             crown_sensitivity: 1,
             crown_reverse: false,
             high_contrast: false,
+            last_input_secs: Instant::now().duration_since_epoch().as_secs(),
+            timeout_parent: 20,
         };
         let frame = runtime.render()?;
         Ok((runtime, frame))
@@ -362,12 +366,20 @@ impl Runtime {
                 .security
                 .remaining(Instant::now().duration_since_epoch().as_secs());
             m.lock_timeout_secs = self.security.timeout;
+            m.timeout_is_display = self.timeout_parent == 14;
+            m.display_sleep =
+                self.display_should_sleep(Instant::now().duration_since_epoch().as_secs());
         }
         Ok(frame)
     }
 
     pub fn state(&self) -> i32 {
         self.state
+    }
+    fn display_should_sleep(&self, now: u64) -> bool {
+        clock::alert() == 0
+            && self.bluetooth_pin.is_none()
+            && now.saturating_sub(self.last_input_secs) >= u64::from(self.security.timeout)
     }
 
     pub fn crown_sensitivity(&self) -> u8 {
@@ -523,7 +535,12 @@ impl Runtime {
             self.security.tick(now);
         }
         if event != RuntimeEvent::Sync {
+            let asleep = self.display_should_sleep(now);
+            self.last_input_secs = now;
             self.security.activity(now);
+            if asleep {
+                return self.render();
+            }
         }
         let event = match event {
             RuntimeEvent::Rotate(d) if self.crown_reverse => {
@@ -544,10 +561,41 @@ impl Runtime {
             return self.render();
         }
         let screen = (self.state & 0x1f) as u8;
+        let was_bt_enabled = self.state & (1 << 22) != 0;
         let cursor = ((self.state >> 5) & 15) as u8;
+        if screen == 14 {
+            match event {
+                RuntimeEvent::Rotate(d) => {
+                    self.state =
+                        (self.state & !0x1e0) | ((i32::from(cursor) + d).rem_euclid(4) << 5)
+                }
+                RuntimeEvent::Press => match cursor {
+                    0 => self.state = (self.state & !0x1ff) | 28,
+                    1 => {
+                        let next = (((self.state >> 18) & 3) + 1) % 4;
+                        self.state = (self.state & !(3 << 18)) | (next << 18);
+                    }
+                    2 => {
+                        self.timeout_parent = 14;
+                        self.security.begin(5);
+                        self.state = (self.state & !0x1ff) | 20;
+                    }
+                    _ => self.state = (self.state & !0x1ff) | 5 | (2 << 5),
+                },
+                RuntimeEvent::Back => self.state = (self.state & !0x1ff) | 5 | (2 << 5),
+                RuntimeEvent::Home => self.state = (self.state & !0x1ff) | 1,
+                _ => {}
+            }
+            return self.render();
+        }
         if screen == 20 {
             if self.security.view != 0 {
+                let was_timeout = self.security.view == 5;
                 self.security.event(event, now);
+                if was_timeout && self.security.view == 0 && self.timeout_parent == 14 {
+                    self.state = (self.state & !0x1ff) | 14 | (2 << 5);
+                    self.timeout_parent = 20;
+                }
                 if event == RuntimeEvent::Home {
                     self.state = (self.state & !0x1ff) | 1;
                 }
@@ -562,7 +610,10 @@ impl Runtime {
                     0 => self
                         .security
                         .begin(if self.security.has_pin { 4 } else { 1 }),
-                    1 => self.security.begin(5),
+                    1 => {
+                        self.timeout_parent = 20;
+                        self.security.begin(5);
+                    }
                     2 => {
                         if self.security_saved[5] == 0
                             && self.security.encode() != self.security_saved
@@ -752,6 +803,14 @@ impl Runtime {
         }
         let old_screen = screen;
         self.state = new_state;
+        if ((new_state & 31) == 30 && old_screen != 30)
+            || (event == RuntimeEvent::Press
+                && !was_bt_enabled
+                && new_state & (1 << 22) != 0
+                && ((screen == 13 && cursor == 0) || (screen == 4 && cursor == 1)))
+        {
+            self.bluetooth_action = Some(BluetoothUiAction::Pair);
+        }
         if (new_state & 0x1f) as u8 == 23 && old_screen != 23 {
             self.wifi_ui.pending_scan = true;
             self.wifi_ui.aps.clear();

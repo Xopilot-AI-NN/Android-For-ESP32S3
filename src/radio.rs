@@ -91,6 +91,8 @@ pub struct RadioServices {
     hid: Option<crate::ble_host::BleHost>,
     #[cfg(feature = "ble-hid")]
     pub(crate) bonds_loaded: bool,
+    #[cfg(feature = "ble-hid")]
+    hid_error: bool,
     wifi_requested: bool,
     bt_requested: bool,
     saved_wifi: Option<WifiCredentials>,
@@ -155,6 +157,8 @@ impl RadioServices {
             hid: None,
             #[cfg(feature = "ble-hid")]
             bonds_loaded: false,
+            #[cfg(feature = "ble-hid")]
+            hid_error: false,
             wifi_requested: false,
             bt_requested: false,
             saved_wifi: None,

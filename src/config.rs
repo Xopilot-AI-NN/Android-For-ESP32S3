@@ -23,7 +23,7 @@ pub const TFT_MHZ: u32 = 2; // Diagnostic: slow SPI to isolate bus/timing issues
 #[cfg(feature = "display-st7789")]
 pub const TFT_Y_OFFSET: u16 = 20;
 #[cfg(feature = "display-st7789")]
-pub const TFT_MADCTL: u8 = 0x00; // RGB portrait; use 0x08 if panel needs BGR
+pub const TFT_MADCTL: u8 = 0x08; // BGR portrait: physical panel swaps red/blue in RGB mode.
 
 // microSD / SPI2: MISO=GPIO7, CLK=GPIO8, MOSI=GPIO9, CS=GPIO10.
 // Encoder / button: A=GPIO11, B=GPIO12, power/crown=GPIO13.

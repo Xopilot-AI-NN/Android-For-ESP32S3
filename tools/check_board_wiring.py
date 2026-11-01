@@ -22,10 +22,12 @@ checks = {
     'TFT CS GPIO5': 'Output::new(p.GPIO5, Level::High' in tft,
     'TFT BLK GPIO6 PWM': (
         'Channel0, p.GPIO6' in boot
-        and 'crate::backlight::PwmBacklight(channel)' in boot
+        and 'crate::backlight::PwmBacklight::new(channel)' in boot
         and 'let bl = pwm_backlight;' in tft
-        and 'frequency: Rate::from_khz(20)' in boot
+        and 'frequency: Rate::from_khz(80)' in boot
+        and 'Duty::Duty8Bit' in boot
     ),
+    'TFT panel BGR order': 'pub const TFT_MADCTL: u8 = 0x08;' in config,
     'Encoder hardware PCNT': 'BootKeys::new(p.PCNT, p.GPIO11, p.GPIO12, p.GPIO13)' in boot,
     'SD SPI2': 'p.SPI2' in sd,
     'SD MISO GPIO7': '.with_miso(p.GPIO7)' in sd,

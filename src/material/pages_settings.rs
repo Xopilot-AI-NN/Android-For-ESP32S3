@@ -11,6 +11,7 @@ impl Surface {
             let i = (start + row).min(3);
             self.wear_row(55 + row as i32 * 64, labels[i], i == cur, t);
         }
+        self.scroll_indicator(f.cursor, 4, t);
     }
 
     pub(super) fn date_time(&mut self, f: MaterialFrame, t: Theme) {
@@ -55,6 +56,7 @@ impl Surface {
         if f.auto_time && !f.time_valid {
             self.text_center(251, "SYNCING OVER WI-FI / PHONE", 1, t.primary);
         }
+        self.scroll_indicator(f.cursor, 5, t);
     }
 
     pub(super) fn unavailable_page(&mut self, title: &str, icon: &str, body: &str, t: Theme) {
@@ -161,6 +163,7 @@ impl Surface {
             }
         };
         self.text_center(262, message, 1, t.on_surface_variant);
+        self.scroll_indicator(f.cursor, 5, t);
     }
     pub(super) fn pin_entry(&mut self, f: MaterialFrame, t: Theme) {
         if f.security_view == 7 {
@@ -171,7 +174,15 @@ impl Surface {
             return;
         }
         if f.security_view == 5 {
-            self.photo_header(f, "Автоблокировка", t);
+            self.photo_header(
+                f,
+                if f.timeout_is_display {
+                    "Сон экрана"
+                } else {
+                    "Автоблокировка"
+                },
+                t,
+            );
             let label = if f.pin_digit == 0 {
                 alloc::string::String::from("30 секунд")
             } else {
@@ -269,5 +280,6 @@ impl Surface {
         if f.adb {
             self.text_center(253, "WIRELESS ADB IS A DEVELOPER FEATURE", 1, t.error);
         }
+        self.scroll_indicator(f.cursor, 4, t);
     }
 }

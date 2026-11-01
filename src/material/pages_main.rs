@@ -114,16 +114,15 @@ impl Surface {
             "List view",
         ];
         let positions = [
-            (52, 67),
-            (120, 59),
-            (188, 67),
-            (52, 140),
-            (120, 133),
-            (188, 140),
-            (120, 207),
+            (50, 75),
+            (120, 75),
+            (190, 75),
+            (50, 151),
+            (120, 151),
+            (190, 151),
         ];
         let cur = f.cursor.min(6) as usize;
-        for i in 0..7 {
+        for i in 0..6 {
             let (x, y) = positions[i];
             let selected = i == cur;
             let radius = if selected { 32 } else { 26 };
@@ -151,8 +150,21 @@ impl Surface {
                 },
             );
         }
-        self.round_rect(33, 247, 174, 28, 14, t.primary_container);
-        self.text_center(257, labels[cur], 1, t.on_primary_container);
+        self.text_center(206, if cur < 6 { labels[cur] } else { "" }, 1, t.on_surface);
+        self.round_rect(
+            55,
+            232,
+            130,
+            40,
+            20,
+            if cur == 6 { t.primary } else { t.surface_high },
+        );
+        self.text_center(
+            245,
+            "List view",
+            1,
+            if cur == 6 { t.on_primary } else { t.on_surface },
+        );
     }
 
     pub(super) fn list_launcher(&mut self, f: MaterialFrame, t: Theme) {
@@ -192,8 +204,7 @@ impl Surface {
                 t,
             );
         }
-        self.round_rect(235, 76, 3, 114, 1, t.surface_high);
-        self.round_rect(235, 76 + cur as i32 * 14, 3, 24, 1, t.primary);
+        self.scroll_indicator(cur as u8, 7, t);
     }
 
     pub(super) fn assistant_page(&mut self, _f: MaterialFrame, t: Theme) {
@@ -302,6 +313,7 @@ impl Surface {
             let index = (start + row).min(8);
             self.wear_row(63 + row as i32 * 67, labels[index], index == cur, t);
         }
+        self.scroll_indicator(cur as u8, 9, t);
     }
 
     pub(super) fn clock(&mut self, f: MaterialFrame, t: Theme) {

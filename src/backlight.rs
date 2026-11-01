@@ -6,7 +6,18 @@ use esp_hal::ledc::{
     channel::{Channel, ChannelIFace},
 };
 
-pub struct PwmBacklight<'a>(pub Channel<'a, LowSpeed>);
+pub struct PwmBacklight<'a> {
+    channel: Channel<'a, LowSpeed>,
+    last: Option<u8>,
+}
+impl<'a> PwmBacklight<'a> {
+    pub fn new(channel: Channel<'a, LowSpeed>) -> Self {
+        Self {
+            channel,
+            last: Some(0),
+        }
+    }
+}
 impl ErrorType for PwmBacklight<'_> {
     type Error = Infallible;
 }
@@ -21,9 +32,12 @@ impl OutputPin for PwmBacklight<'_> {
 impl crate::display::Backlight for PwmBacklight<'_> {
     fn set_brightness(&mut self, percent: u8) -> Result<(), Infallible> {
         // Configured once at boot; the bounded duty is always valid.
-        self.0
-            .set_duty(percent.min(100))
-            .expect("configured PWM duty");
+        let percent = percent.min(100);
+        if self.last == Some(percent) {
+            return Ok(());
+        }
+        self.channel.set_duty(percent).expect("configured PWM duty");
+        self.last = Some(percent);
         Ok(())
     }
 }

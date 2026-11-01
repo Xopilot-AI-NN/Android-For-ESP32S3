@@ -45,55 +45,38 @@ impl Surface {
 
     pub(super) fn display_settings(&mut self, f: MaterialFrame, t: Theme) {
         self.photo_header(f, "Display", t);
-        self.round_rect(
-            15,
-            64,
-            210,
-            68,
-            29,
-            if f.cursor == 0 {
-                t.primary_container
-            } else {
-                t.surface_high
-            },
-        );
-        self.icon_sun(44, 96, t.primary);
-        self.text(68, 75, "Brightness", 2, t.on_surface);
-        self.slider(70, 105, 129, f.brightness, t);
-        self.round_rect(
-            15,
-            144,
-            210,
-            61,
-            29,
-            if f.cursor == 1 {
-                t.primary_container
-            } else {
-                t.surface_high
-            },
-        );
-        self.text(33, 154, "COLOR THEME", 1, t.on_surface_variant);
-        let name = match f.theme {
+        let brightness = alloc::format!("{} %", f.brightness);
+        let timeout = if f.lock_timeout_secs == 30 {
+            alloc::string::String::from("30 секунд")
+        } else {
+            alloc::format!("{} мин", f.lock_timeout_secs / 60)
+        };
+        let theme_name = match f.theme {
             1 => "Blue",
             2 => "Purple",
             3 => "Coral",
             _ => "Teal",
         };
-        self.text(33, 176, name, 2, t.on_surface);
-        self.circle(192, 173, 15, t.primary);
-        self.round_rect(
-            33,
-            217,
-            174,
-            42,
-            21,
-            if f.cursor == 2 {
-                t.primary_container
-            } else {
-                t.surface_high
-            },
-        );
-        self.text_center(231, "Back", 2, t.on_surface);
+        let labels = ["Brightness", "COLOR THEME", "Сон экрана", "BACK"];
+        let values = [
+            brightness.as_str(),
+            theme_name,
+            timeout.as_str(),
+            "К настройкам",
+        ];
+        let cur = f.cursor.min(3);
+        let start = cur.saturating_sub(1).min(1);
+        for row in 0..3 {
+            let index = (start + row) as usize;
+            self.info_card(
+                62 + i32::from(row) * 65,
+                labels[index],
+                values[index],
+                index == usize::from(cur),
+                t,
+            );
+        }
+        self.scroll_indicator(cur, 4, t);
     }
 
     pub(super) fn brightness_editor(&mut self, f: MaterialFrame, t: Theme) {
@@ -128,10 +111,12 @@ impl Surface {
             );
         } else {
             let status = match f.bt_status {
-                1 => "Select on phone / PC",
+                1 => "Новое устройство: начать",
                 2 => "Connected / securing",
                 3 => "Media remote ready",
-                5 => "Pairing failed / retry",
+                5 => "Ошибка BLE. Перезапустите",
+                6 => "Выберите AOSP Wear на телефоне",
+                7 => "Запуск Bluetooth...",
                 _ => "Press Pair new device",
             };
             self.text_center(145, status, 1, t.on_surface_variant);

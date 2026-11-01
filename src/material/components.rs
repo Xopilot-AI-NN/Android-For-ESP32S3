@@ -100,9 +100,18 @@ impl Surface {
         } else {
             self.text(x + 57, y + (h - 7 * scale) / 2, label, scale, color);
         }
-        if selected {
-            self.round_rect(x + w - 6, cy - 12, 3, 24, 2, t.primary);
+    }
+
+    pub(super) fn scroll_indicator(&mut self, cursor: u8, count: u8, t: Theme) {
+        if count <= 3 {
+            return;
         }
+        const TOP: i32 = 76;
+        const TRACK: i32 = 120;
+        const THUMB: i32 = 24;
+        self.round_rect(235, TOP, 3, TRACK, 1, t.surface_high);
+        let y = TOP + i32::from(cursor.min(count - 1)) * (TRACK - THUMB) / i32::from(count - 1);
+        self.round_rect(235, y, 3, THUMB, 1, t.primary);
     }
 
     pub(super) fn app_row(&mut self, y: i32, label: &str, selected: bool, icon: u8, t: Theme) {

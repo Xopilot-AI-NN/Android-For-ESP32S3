@@ -131,7 +131,9 @@ impl Surface {
             "Задать PIN" | "Изменить PIN" | "Отключить PIN" | "Заблокировать" => {
                 self.icon_lock(cx, cy, color)
             }
-            "Автоблокировка" | "Применить" => self.icon_clock(cx, cy, color),
+            "Автоблокировка" | "Применить" | "Сон экрана" => {
+                self.icon_clock(cx, cy, color)
+            }
             "Контрастность" => self.icon_sun(cx, cy, color),
             "Connectivity" | "Wi-Fi" | "CONNECTIVITY" | "WI-FI" => self.icon_wifi(cx, cy, color),
             "Bluetooth" | "BLUETOOTH" => self.icon_bt(cx, cy, color),

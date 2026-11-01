@@ -55,13 +55,30 @@ The firmware build properties and local getprop report the same default locale.
   Home (≥1800 ms), measured against the monotonic counter.
 - Crown rotation uses ESP32-S3 PCNT quadrature counting with a hardware glitch
   filter, so SPI rendering no longer loses intermediate edges. Settings →
-  Gestures provides low/normal/high sensitivity (8/4/2 edges per UI step) and
+  Gestures provides low/normal/high sensitivity (4/2/2 edges per UI step) and
   reverse direction. Accessibility provides a working high-contrast option.
+  Normal is as responsive per edge as the former Fast mode; Normal emits at
+  most one step per loop and Fast at most two. Large movements drain smoothly;
+  reversing cancels unrendered motion rather than replaying stale steps.
   Preferences persist in reserved page 71.
-- ST7789 BLK/GPIO6 uses LEDC hardware PWM at 20 kHz, 10-bit resolution. The
+- ST7789 BLK/GPIO6 uses LEDC hardware PWM at 80 kHz, 8-bit resolution. The
   brightness editor changes the actual duty (5–100%). Flashlight temporarily
   uses 100% and restores the selected brightness on exit. Media, timer, tiles
-  and watch face derive colors from the selected theme.
+  and watch face derive colors from the selected theme. Identical brightness
+  values no longer restart PWM on every frame. Actual panel flicker/camera
+  banding still needs an on-device check.
+- MADCTL now selects BGR (`0x08`) for the user's panel: the reported coral/blue
+  swap with unchanged purple indicates exchanged red and blue channels.
+  RGB565 framebuffer values remain unchanged; conversion is in the controller.
+- The app launcher opens as a list. The optional grid has aligned rows instead
+  of staggered circles. Settings and the app list share one proportional edge
+  scroll indicator; the misleading marker inside every selected card is gone.
+- Display → Screen sleep selects 30 seconds or 1–10 minutes (the same timeout
+  as Security → Auto-lock). Idle screen-off works without a PIN: backlight duty
+  is zero and DISPON is disabled. The first crown action wakes only; the new
+  frame is transferred before the light comes on. Timer/alarm alerts wake the
+  display. The ESP32 keeps running timers/radio/storage; this is screen sleep,
+  not complete power-off or deep sleep.
 - Security provides four-digit PIN enrollment with confirmation, current-PIN
   verification to change/disable, immediate locking and an idle timeout of
   30 seconds or 1–10 minutes. PIN entry uses crown rotation and press; Back
@@ -84,6 +101,21 @@ or replacing the external disk, modifying its contents or reflashing can bypass
 it. Keep a private backup of the disk; forgetting the PIN requires recovery.
 The current desktop viewer uses its own renderer; the preview below is
 rendered from the actual firmware surface, not from that viewer.
+
+### Bluetooth diagnosis
+
+The running watch was detected by a real laptop BLE scan as `AOSP Wear`.
+Its radio was advertising; phone pairing/media operation
+has not yet been confirmed. Entering Pair new device or explicitly enabling
+Bluetooth from the watch now opens a 120-second pairing window immediately.
+Startup, actual advertising readiness, pairing and errors have separate status
+codes and logs. The no-reset `zadb.py bt-status` command additionally reports
+remaining pairing time and internal heap. A fatal host/startup timeout reports
+that a reboot is needed instead of silently waiting forever.
+
+This remains BLE HID Consumer Control, not Bluetooth Classic audio or a Google
+Wear OS companion service. If phone pairing still fails after the update,
+the phone model/OS and the new `bt-status` plus `BLE:` logs are needed to trace it.
 
 ## Built outputs
 

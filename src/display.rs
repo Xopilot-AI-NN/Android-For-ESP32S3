@@ -170,6 +170,7 @@ mod tft {
         _rst: RST,
         bl: BL,
         material_surface: Surface,
+        awake: bool,
     }
 
     impl<SPI, CS, DC, RST, BL> St7789Display<SPI, CS, DC, RST, BL>
@@ -202,6 +203,7 @@ mod tft {
                 _rst: rst,
                 bl,
                 material_surface: Surface::new(),
+                awake: true,
             };
             s.cmd(0x01, &[])?; // SWRESET
             delay.delay_ms(120);
@@ -496,15 +498,28 @@ mod tft {
         fn runtime(&mut self, frame: &RuntimeFrame) -> Result<(), DisplayError> {
             match frame {
                 RuntimeFrame::Material(scene) => {
+                    if scene.display_sleep {
+                        self.bl.set_brightness(0).map_err(|_| DisplayError::Bus)?;
+                        if self.awake {
+                            self.cmd(0x28, &[])?;
+                            self.awake = false;
+                        }
+                        return Ok(());
+                    }
+                    if !self.awake {
+                        self.cmd(0x29, &[])?;
+                        self.awake = true;
+                    }
+                    let dirty = self.material_surface.render(*scene);
+                    self.flush_material_rect(dirty)?;
+                    // On wake, show the PIN frame before enabling the backlight.
                     self.bl
                         .set_brightness(if scene.screen == 29 {
                             100
                         } else {
                             scene.brightness.clamp(5, 100)
                         })
-                        .map_err(|_| DisplayError::Bus)?;
-                    let dirty = self.material_surface.render(*scene);
-                    self.flush_material_rect(dirty)
+                        .map_err(|_| DisplayError::Bus)
                 }
                 RuntimeFrame::Legacy(f) => self.status(&f.title, &f.line1, &f.line2, &f.line3),
             }
@@ -531,6 +546,8 @@ mod tft {
             dc_high: bool,
             bytes: usize,
             brightness: u8,
+            command: u8,
+            madctl: u8,
         }
         struct Bus(Rc<RefCell<Wire>>);
         impl SpiErrorType for Bus {
@@ -544,6 +561,11 @@ mod tft {
                 let mut wire = self.0.borrow_mut();
                 assert!(!wire.cs_high, "writing with CS deasserted");
                 wire.bytes += bytes.len();
+                if !wire.dc_high {
+                    wire.command = bytes[0];
+                } else if wire.command == 0x36 {
+                    wire.madctl = bytes[0];
+                }
                 // Model esp-hal: the final transfer remains active on return.
                 wire.busy = true;
                 Ok(())
@@ -617,6 +639,7 @@ mod tft {
                 &mut NoDelay,
             )
             .unwrap();
+            assert_eq!(wire.borrow().madctl, 0x08);
             display.cmd(0x29, &[]).unwrap();
             display.cmd(0x3a, &[0x55]).unwrap();
             display.fill_rect(0, 0, 3, 1, WHITE).unwrap(); // Short trailing pixel write.
@@ -627,6 +650,16 @@ mod tft {
             assert_eq!(wire.borrow().brightness, 70);
             let mut dim = frame;
             dim.brightness = 25;
+            display.runtime(&RuntimeFrame::Material(dim)).unwrap();
+            assert_eq!(wire.borrow().brightness, 25);
+            dim.display_sleep = true;
+            display.runtime(&RuntimeFrame::Material(dim)).unwrap();
+            assert_eq!(wire.borrow().brightness, 0);
+            assert_eq!(wire.borrow().command, 0x28);
+            let sent = wire.borrow().bytes;
+            display.runtime(&RuntimeFrame::Material(dim)).unwrap();
+            assert_eq!(wire.borrow().bytes, sent);
+            dim.display_sleep = false;
             display.runtime(&RuntimeFrame::Material(dim)).unwrap();
             assert_eq!(wire.borrow().brightness, 25);
             dim.screen = 29;

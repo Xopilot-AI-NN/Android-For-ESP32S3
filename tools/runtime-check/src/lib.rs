@@ -92,6 +92,7 @@ mod tests {
         os.replace_state(13 | (1 << 5)).unwrap();
         os.dispatch(RuntimeEvent::Press).unwrap();
         assert_eq!(os.state() & 31, 30);
+        assert_eq!(os.take_bluetooth_action(), Some(BluetoothUiAction::Pair));
         os.dispatch(RuntimeEvent::Press).unwrap();
         assert_eq!(os.take_bluetooth_action(), Some(BluetoothUiAction::Pair));
         os.set_bluetooth_status(4, Some(123456));
@@ -106,6 +107,9 @@ mod tests {
             Some(BluetoothUiAction::Confirm(false))
         );
         os.set_bluetooth_status(3, None);
+        os.replace_state(4 | (1 << 5)).unwrap();
+        os.dispatch(RuntimeEvent::Press).unwrap();
+        assert_eq!(os.take_bluetooth_action(), Some(BluetoothUiAction::Pair));
         os.replace_state(11).unwrap();
         os.dispatch(RuntimeEvent::Press).unwrap(); // Open preset grid
         os.dispatch(RuntimeEvent::Press).unwrap(); // 5 minute timer
@@ -168,6 +172,9 @@ mod tests {
         }
 
         fn enter(os: &mut Runtime, pin: [u8; 4]) {
+            if frame(os).display_sleep {
+                os.dispatch(RuntimeEvent::Press).unwrap();
+            }
             for digit in pin {
                 let current = frame(os).pin_digit;
                 os.dispatch(RuntimeEvent::Rotate(i32::from(digit) - i32::from(current)))
@@ -232,6 +239,39 @@ mod tests {
         assert_eq!(frame(&mut restored).security_view, 7);
         restored.dispatch(RuntimeEvent::Home).unwrap();
         assert_eq!(frame(&mut restored).screen, 0);
+    }
+
+    #[test]
+    fn screen_sleep_wakes_without_activation_and_timeout_is_configurable() {
+        time::set(3000);
+        let mut os = start();
+        time::set(3030);
+        assert!(frame(&mut os).display_sleep);
+        os.set_bluetooth_status(4, Some(123456));
+        assert!(!frame(&mut os).display_sleep);
+        os.set_bluetooth_status(1, None);
+        assert!(frame(&mut os).display_sleep);
+        os.dispatch(RuntimeEvent::Sync).unwrap();
+        assert!(frame(&mut os).display_sleep);
+        os.dispatch(RuntimeEvent::Rotate(1)).unwrap();
+        assert!(!frame(&mut os).display_sleep);
+        assert_eq!(os.state() & 31, 1);
+        os.dispatch(RuntimeEvent::Rotate(1)).unwrap();
+        assert_eq!(os.state() & 31, 4);
+        os.replace_state(14 | (2 << 5)).unwrap();
+        os.dispatch(RuntimeEvent::Press).unwrap();
+        assert_eq!(frame(&mut os).security_view, 5);
+        os.dispatch(RuntimeEvent::Rotate(10)).unwrap();
+        os.dispatch(RuntimeEvent::Press).unwrap();
+        assert_eq!(os.state() & 31, 14);
+        assert_eq!(frame(&mut os).lock_timeout_secs, 600);
+        time::set(3629);
+        assert!(!frame(&mut os).display_sleep);
+        time::set(3630);
+        assert!(frame(&mut os).display_sleep);
+        os.dispatch(RuntimeEvent::Press).unwrap();
+        assert_eq!(os.state() & 31, 14);
+        assert_eq!(frame(&mut os).security_view, 0);
     }
 
     #[test]

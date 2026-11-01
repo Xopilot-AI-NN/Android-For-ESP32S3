@@ -62,6 +62,8 @@ pub struct MaterialFrame {
     pub security_message: u8,
     pub lockout_secs: u16,
     pub lock_timeout_secs: u16,
+    pub display_sleep: bool,
+    pub timeout_is_display: bool,
 }
 
 impl MaterialFrame {
@@ -139,6 +141,8 @@ impl MaterialFrame {
             security_message: 0,
             lockout_secs: 0,
             lock_timeout_secs: 30,
+            display_sleep: false,
+            timeout_is_display: false,
         })
     }
 
@@ -332,7 +336,7 @@ impl Surface {
         match frame.screen {
             0 => self.lock_screen(frame, t),
             1 => self.watchface(frame, t),
-            2 => self.launcher(frame, t),
+            2 => self.list_launcher(frame, t),
             3 => self.notifications(frame, t),
             4 => self.quick_settings(frame, t),
             5 => self.settings(frame, t),
@@ -356,7 +360,7 @@ impl Surface {
             23 => self.wifi_networks(frame, t),
             24 => self.wifi_password(frame, t),
             25 => self.wifi_connecting(frame, t),
-            26 => self.list_launcher(frame, t),
+            26 => self.launcher(frame, t),
             27 => self.assistant_page(frame, t),
             28 => self.brightness_editor(frame, t),
             29 => self.fill_rect(0, 0, WIDTH as i32, HEIGHT as i32, rgb565(255, 255, 255)),

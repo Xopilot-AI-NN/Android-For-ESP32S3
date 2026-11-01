@@ -4,12 +4,19 @@ use crate::{ble_host::BleHost, runtime::BluetoothUiAction};
 
 impl RadioServices {
     pub fn set_bluetooth(&mut self, enabled: bool) {
+        self.bt_requested = enabled;
+        if !enabled {
+            self.hid_error = false;
+        }
         if enabled && self.hid.is_none() {
             if internal_free_bytes() < MIN_BLE_INTERNAL_FREE {
                 println!("BLE: insufficient internal heap");
+                self.hid_error = true;
                 return;
             }
             let Some(bt) = self.bt_device.take() else {
+                println!("BLE: controller unavailable; reboot required");
+                self.hid_error = true;
                 return;
             };
             match BleConnector::new(self.controller, bt, Default::default()) {
@@ -19,14 +26,16 @@ impl RadioServices {
                     self.hid = Some(BleHost::new(connector, address, HVec::new()));
                     // A newly created host must restore its bonds before its first poll.
                     self.bonds_loaded = false;
+                    self.hid_error = false;
+                    println!("BLE: HID controller created, restoring bonds before startup");
                 }
                 Err(e) => {
                     println!("BLE: controller init failed: {:?}", e);
+                    self.hid_error = true;
                     return;
                 }
             }
         }
-        self.bt_requested = enabled;
         if let Some(host) = self.hid.as_mut() {
             host.set_enabled(enabled);
         }
@@ -41,6 +50,9 @@ impl RadioServices {
     }
 
     pub fn bluetooth_snapshot(&self) -> (u8, Option<u32>) {
+        if self.hid_error {
+            return (5, None);
+        }
         self.hid
             .as_ref()
             .map(BleHost::snapshot)
@@ -103,9 +115,14 @@ impl RadioServices {
     pub fn format_bt_status<const N: usize>(&self, out: &mut HString<N>) {
         let _ = write!(
             out,
-            "enabled={} hid_state={}",
+            "enabled={} hid_state={} pairing_secs={} internal_free={}",
             self.bt_requested as u8,
-            self.bluetooth_snapshot().0
+            self.bluetooth_snapshot().0,
+            self.hid
+                .as_ref()
+                .map(|host| host.pairing_remaining())
+                .unwrap_or(0),
+            internal_free_bytes()
         );
     }
     pub fn format_bt_scan<const N: usize>(&self, out: &mut HString<N>) {

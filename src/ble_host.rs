@@ -8,10 +8,7 @@ use core::{
     pin::Pin,
     task::{Context, Poll},
 };
-use embassy_futures::{
-    join::join,
-    select::{Either, select},
-};
+use embassy_futures::select::{Either, select};
 use embassy_time::Timer;
 use esp_hal::time::Instant;
 use esp_radio::ble::controller::BleConnector;
@@ -117,6 +114,7 @@ impl BleHost {
         }
     }
     pub fn poll(&mut self) {
+        let before = self.state.borrow().status;
         let mut cx = Context::from_waker(core::task::Waker::noop());
         // Poll once per OS iteration; never block waiting for a peer.
         if self.task_finished {
@@ -126,11 +124,20 @@ impl BleHost {
             self.task_finished = true;
             self.state.borrow_mut().status = 5;
         }
+        let after = self.state.borrow().status;
+        if before != after {
+            esp_println::println!("BLE: HID state {} -> {}", before, after);
+        }
     }
     pub fn set_enabled(&mut self, value: bool) {
         let mut s = self.state.borrow_mut();
+        if value && self.task_finished {
+            s.status = 5;
+            return;
+        }
         s.enabled = value;
         if !value {
+            s.status = 0;
             s.disconnect = true;
             s.pair_until = 0;
             s.media.clear();
@@ -178,6 +185,9 @@ impl BleHost {
     pub fn snapshot(&self) -> (u8, Option<u32>) {
         let s = self.state.borrow();
         (s.status, s.pin)
+    }
+    pub fn pairing_remaining(&self) -> u16 {
+        (self.state.borrow().pair_until.saturating_sub(now_ms()) / 1000).min(120) as u16
     }
     pub fn bonds_to_save(&self) -> Option<Vec<BondInformation, 4>> {
         let s = self.state.borrow();
@@ -236,7 +246,7 @@ async fn run(connector: BleConnector<'static>, mut address: [u8; 6], shared: Rc<
                 Timer::after_millis(50).await;
                 continue;
             }
-            shared.borrow_mut().status = 1;
+            shared.borrow_mut().status = 7;
             let mut adv = [0; 31];
             let Ok(len) = AdStructure::encode_slice(
                 &[
@@ -253,17 +263,36 @@ async fn run(connector: BleConnector<'static>, mut address: [u8; 6], shared: Rc<
                 adv_data: &adv[..len],
                 scan_data: &[],
             };
-            let Ok(advertiser) = peripheral.advertise(&Default::default(), payload).await else {
-                shared.borrow_mut().status = 5;
-                Timer::after_millis(1000).await;
-                continue;
+            let advertiser = match select(
+                peripheral.advertise(&Default::default(), payload),
+                Timer::after_millis(10_000),
+            )
+            .await
+            {
+                Either::First(Ok(advertiser)) => advertiser,
+                Either::First(Err(error)) => {
+                    esp_println::println!("BLE: advertising start failed: {:?}", error);
+                    shared.borrow_mut().status = 5;
+                    Timer::after_millis(1000).await;
+                    continue;
+                }
+                Either::Second(_) => {
+                    esp_println::println!("BLE: advertising startup timed out; reboot required");
+                    shared.borrow_mut().status = 5;
+                    return;
+                }
             };
+            let pairing = now_ms() < shared.borrow().pair_until;
+            shared.borrow_mut().status = if pairing { 6 } else { 1 };
+            esp_println::println!("BLE: advertising ready as AOSP Wear");
             let idle = async {
                 loop {
                     Timer::after_millis(50).await;
-                    if !shared.borrow().enabled || shared.borrow().forget {
+                    let mut s = shared.borrow_mut();
+                    if !s.enabled || s.forget {
                         return;
                     }
+                    s.status = if now_ms() < s.pair_until { 6 } else { 1 };
                 }
             };
             let raw = match select(advertiser.accept(), idle).await {
@@ -473,7 +502,7 @@ async fn run(connector: BleConnector<'static>, mut address: [u8; 6], shared: Rc<
             s.status = if s.enabled { 1 } else { 0 };
         }
     };
-    let _ = join(
+    let _ = select(
         async {
             if let Err(e) = runner.run().await {
                 esp_println::println!("BLE host stopped: {:?}", e);
