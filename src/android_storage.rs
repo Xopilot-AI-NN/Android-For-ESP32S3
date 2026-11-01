@@ -2,7 +2,7 @@ extern crate alloc;
 
 use alloc::{string::String, string::ToString};
 #[cfg(not(feature = "pc-block-boot"))]
-use embedded_hal::{delay::DelayNs, spi::SpiDevice};
+use embedded_hal::{delay::DelayNs, digital::OutputPin, spi::SpiBus};
 use embedded_sdmmc::BlockDevice;
 #[cfg(not(feature = "pc-block-boot"))]
 use embedded_sdmmc::SdCard;
@@ -20,7 +20,7 @@ use crate::{
 pub enum AndroidBootError {
     Card,
     #[cfg(not(feature = "pc-block-boot"))]
-    SdInit(embedded_sdmmc::SdCardError),
+    SdInit(crate::sd_init::InitError),
     Gpt(gpt::GptError),
     BootControl,
     MissingSlot,
@@ -36,7 +36,7 @@ impl core::fmt::Display for AndroidBootError {
         match self {
             Self::Card => f.write_str("card I/O error"),
             #[cfg(not(feature = "pc-block-boot"))]
-            Self::SdInit(error) => write!(f, "SD initialization: {error:?}"),
+            Self::SdInit(error) => write!(f, "SD initialization: {error}"),
             Self::Gpt(e) => write!(f, "GPT error: {:?}", e),
             Self::BootControl => f.write_str("boot-control error"),
             Self::MissingSlot => f.write_str("no bootable slot"),
@@ -144,40 +144,18 @@ fn append_component(bundle: &mut String, marker: &str, text: &str) -> Result<(),
 }
 
 #[cfg(not(feature = "pc-block-boot"))]
-pub fn load_system<SPI, DELAY, PostInit>(
-    spi: SPI,
+pub fn load_system<BUS, CS, DELAY, PostInit>(
+    spi: crate::sd_spi::SdSpiSession<BUS, CS, DELAY>,
     delay: DELAY,
     post_init: PostInit,
-) -> Result<BootSession<SdCard<SPI, DELAY>>, AndroidBootError>
+) -> Result<BootSession<SdCard<crate::sd_spi::SdSpiSession<BUS, CS, DELAY>, DELAY>>, AndroidBootError>
 where
-    SPI: SpiDevice<u8>,
-    DELAY: DelayNs + Clone,
-    PostInit: FnOnce(&SdCard<SPI, DELAY>),
+    BUS: SpiBus<u8>,
+    CS: OutputPin,
+    DELAY: DelayNs,
+    PostInit: FnOnce(&SdCard<crate::sd_spi::SdSpiSession<BUS, CS, DELAY>, DELAY>),
 {
-    let mut retry_delay = delay.clone();
-    let card = SdCard::new(spi, delay);
-    // Retry only card acquisition, before GPT/A-B writes. Preserve the actual
-    // command/CRC/transport failure instead of collapsing everything to Card.
-    for attempt in 1..=3 {
-        match card.num_bytes() {
-            Ok(bytes) => {
-                esp_println::println!(
-                    "microSD: initialized, {} MiB, {:?}",
-                    bytes / (1024 * 1024),
-                    card.get_card_type()
-                );
-                break;
-            }
-            Err(error) => {
-                esp_println::println!("microSD: initialization attempt {attempt}/3: {error:?}");
-                if attempt == 3 {
-                    return Err(AndroidBootError::SdInit(error));
-                }
-                card.mark_card_uninit();
-                retry_delay.delay_ms(100);
-            }
-        }
-    }
+    let card = crate::sd_init::open(spi, delay).map_err(AndroidBootError::SdInit)?;
     post_init(&card);
     load_block_device(card)
 }

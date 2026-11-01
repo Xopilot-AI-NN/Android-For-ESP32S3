@@ -61,6 +61,8 @@ mod radio;
 mod rtc;
 mod runtime;
 #[cfg(not(feature = "pc-block-boot"))]
+mod sd_init;
+#[cfg(not(feature = "pc-block-boot"))]
 mod sd_spi;
 #[cfg(feature = "display-software-spi")]
 mod soft_spi;

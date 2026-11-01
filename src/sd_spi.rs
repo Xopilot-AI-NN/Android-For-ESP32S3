@@ -29,6 +29,15 @@ impl<B: SpiBus<u8>, C: OutputPin, D: DelayNs> SdSpiSession<B, C, D> {
         }
     }
 
+    /// Start a complete SD command, not an individual response byte.
+    pub fn begin_command(&mut self) -> Result<(), DeviceError<B::Error, C::Error>> {
+        self.bus.flush().map_err(DeviceError::Spi)?;
+        self.cs.set_high().map_err(DeviceError::Cs)?;
+        self.selected = false;
+        self.bus.write(&[0xff]).map_err(DeviceError::Spi)?;
+        self.bus.flush().map_err(DeviceError::Spi)?;
+        self.select()
+    }
     pub fn bus_mut(&mut self) -> &mut B {
         &mut self.bus
     }

@@ -36,6 +36,8 @@ pub use display::St7789Display;
 mod material;
 #[path = "../../../src/sd_spi.rs"]
 mod sd_spi;
+#[path = "../../../src/sd_init.rs"]
+mod sd_init;
 #[path = "../../../src/rtc.rs"]
 mod rtc;
 #[path = "../../../src/media.rs"]
