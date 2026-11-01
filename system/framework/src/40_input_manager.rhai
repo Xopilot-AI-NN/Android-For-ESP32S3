@@ -74,8 +74,8 @@ fn on_event(state,kind,value) {
         if screen==6 {return pack_state(6,wrap(cursor+value,4),b,dnd,air,th,locked,wifi,bt,adb,notes);}
         if screen==7 {return pack_state(7,wrap(cursor+value,4),b,dnd,air,th,locked,wifi,bt,adb,notes);}
         if screen==9 {return pack_state(9,wrap(cursor+value,3),b,dnd,air,th,locked,wifi,bt,adb,notes);}
-        if screen==10 {return pack_state(10,wrap(cursor+value,3),b,dnd,air,th,locked,wifi,bt,adb,notes);}
-        if screen==11 {return pack_state(11,wrap(cursor+value,4),b,dnd,air,th,locked,wifi,bt,adb,notes);}
+        if screen==10 {return pack_state(10,wrap(cursor+value,6),b,dnd,air,th,locked,wifi,bt,adb,notes);}
+        if screen==11 {return pack_state(11,wrap(cursor+value,5),b,dnd,air,th,locked,wifi,bt,adb,notes);}
         if screen==12 {return pack_state(12,wrap(cursor+value,3),b,dnd,air,th,locked,wifi,bt,adb,notes);}
         if screen==13 {return pack_state(13,wrap(cursor+value,3),b,dnd,air,th,locked,wifi,bt,adb,notes);}
         if screen==14 {return pack_state(14,wrap(cursor+value,3),b,dnd,air,th,locked,wifi,bt,adb,notes);}
@@ -157,13 +157,17 @@ fn on_event(state,kind,value) {
             if cursor==0 {return with_screen(state,7,0);}
             return with_screen(state,11,cursor-1);
         }
-        if screen==10 {return state;} // Native BLE media action; all three controls stay here.
+        if screen==10 {
+            if cursor==5 {return with_screen(state,2,1);}
+            return state; // Native HID media action, handled by Runtime.
+        }
         if screen==27 {return with_screen(state,2,5);}
 
         if screen==11 {
             if cursor==0 {clock_action(2); return state;}
             if cursor==1 {clock_action(0); return state;}
-            if cursor==2 {clock_action(3); return state;}
+            if cursor==2 {return with_screen(state,31,0);}
+            if cursor==3 {clock_action(1); return state;}
             return with_screen(state,6,0);
         }
 
@@ -177,8 +181,8 @@ fn on_event(state,kind,value) {
         }
         if screen==13 {
             if cursor==0 {return pack_state(13,cursor,b,dnd,0,th,locked,wifi,1-bt,adb,notes);}
-            if cursor==1 {return with_screen(state,30,0);}
-            return with_screen(state,7,1);
+            if cursor==1 {return pack_state(30,0,b,dnd,0,th,locked,wifi,1,adb,notes);}
+            return with_screen(state,10,0);
         }
         if screen==14 {
             if cursor==0 {return with_screen(state,28,0);}

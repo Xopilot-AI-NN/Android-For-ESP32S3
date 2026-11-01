@@ -28,3 +28,7 @@ ro.aosp_esp32.ui=wearos-material3-expressive
 ro.aosp_esp32.shell=wear-runtime-v8
 
 ro.aosp_esp32.version=17.2.1
+
+# Default watch system language
+ro.product.locale=ru-RU
+persist.sys.locale=ru-RU
