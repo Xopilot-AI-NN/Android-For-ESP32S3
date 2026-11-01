@@ -32,22 +32,39 @@ mod encoder;
 #[path = "../../../src/font.rs"]
 mod font;
 pub use display::St7789Display;
-#[path = "../../../src/material.rs"]
-mod material;
-#[path = "../../../src/sd_spi.rs"]
-mod sd_spi;
-#[path = "../../../src/sd_init.rs"]
-mod sd_init;
-#[path = "../../../src/sd_bitbang.rs"]
-mod sd_bitbang;
 #[path = "../../../src/disk_probe.rs"]
 mod disk_probe;
-#[path = "../../../src/rtc.rs"]
-mod rtc;
+#[path = "../../../src/material.rs"]
+mod material;
 #[path = "../../../src/media.rs"]
 mod media;
+#[path = "../../../src/rtc.rs"]
+mod rtc;
 #[path = "../../../src/runtime.rs"]
 mod runtime;
+#[path = "../../../src/sd_bitbang.rs"]
+mod sd_bitbang;
+#[path = "../../../src/sd_init.rs"]
+mod sd_init;
+#[path = "../../../src/sd_spi.rs"]
+mod sd_spi;
+
+#[path = "../../../src/android_boot.rs"]
+mod android_boot;
+#[path = "../../../src/android_storage.rs"]
+mod android_storage;
+#[path = "../../../src/avb.rs"]
+mod avb;
+#[path = "../../../src/boot_control.rs"]
+mod boot_control;
+#[path = "../../../src/cpio.rs"]
+mod cpio;
+#[path = "../../../src/gpt.rs"]
+mod gpt;
+#[cfg(test)]
+mod image_boot;
+#[path = "../../../src/lp.rs"]
+mod lp;
 
 #[cfg(test)]
 mod tests {
