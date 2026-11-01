@@ -31,13 +31,28 @@ impl<B: SpiBus<u8>, C: OutputPin, D: DelayNs> SdSpiSession<B, C, D> {
 
     /// Start a complete SD command, not an individual response byte.
     pub fn begin_command(&mut self) -> Result<(), DeviceError<B::Error, C::Error>> {
-        self.bus.flush().map_err(DeviceError::Spi)?;
-        self.cs.set_high().map_err(DeviceError::Cs)?;
-        self.selected = false;
-        self.bus.write(&[0xff]).map_err(DeviceError::Spi)?;
-        self.bus.flush().map_err(DeviceError::Spi)?;
+        self.finish_command()?;
         self.select()
     }
+    /// Finish the response with eight selected clocks, then release CS and
+    /// clock DO to high impedance. Idle waits must occur with the card released.
+    pub fn finish_command(&mut self) -> Result<(), DeviceError<B::Error, C::Error>> {
+        let flush = self.bus.flush();
+        let trailer = if flush.is_ok() && self.selected {
+            self.bus.write(&[0xff]).and_then(|()| self.bus.flush())
+        } else {
+            Ok(())
+        };
+        // Cleanup must release CS even if the bus operation failed.
+        let cs = self.cs.set_high();
+        self.selected = false;
+        let idle = self.bus.write(&[0xff]).and_then(|()| self.bus.flush());
+        flush.map_err(DeviceError::Spi)?;
+        trailer.map_err(DeviceError::Spi)?;
+        cs.map_err(DeviceError::Cs)?;
+        idle.map_err(DeviceError::Spi)
+    }
+    #[cfg(not(feature = "sd-software-spi"))]
     pub fn bus_mut(&mut self) -> &mut B {
         &mut self.bus
     }
@@ -53,12 +68,7 @@ impl<B: SpiBus<u8>, C: OutputPin, D: DelayNs> SdSpiSession<B, C, D> {
 
     /// Release only after the session ends or a transport error, not per byte.
     fn release(&mut self) {
-        let _ = self.bus.flush();
-        let _ = self.cs.set_high();
-        self.selected = false;
-        // Clock the card's DO output to high impedance after deselecting it.
-        let _ = self.bus.write(&[0xff]);
-        let _ = self.bus.flush();
+        let _ = self.finish_command();
     }
 }
 

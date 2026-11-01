@@ -21,6 +21,8 @@ display-diagnostic = ["display-st7789"]
 # Independent GPIO SPI bypass for ST7789V3, OFF by default.
 display-software-spi = ["display-st7789"]
 pc-block-boot = []
+# Full-duplex GPIO fallback for diagnosing the SD hardware SPI path.
+sd-software-spi = []
 radio-services = ["dep:esp-radio", "dep:esp-rtos", "dep:static_cell", "dep:smoltcp"]
 
 [dependencies]

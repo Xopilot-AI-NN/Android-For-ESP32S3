@@ -726,6 +726,7 @@ pub(crate) fn run() -> ! {
 
         // SD requires >=74 clocks at <=400 kHz with CS deasserted before CMD0.
         let mut cs = Output::new(p.GPIO10, Level::High, OutputConfig::default());
+        #[cfg(not(feature = "sd-software-spi"))]
         let mut spi = Spi::new(
             p.SPI2,
             SpiConfig::default()
@@ -737,6 +738,28 @@ pub(crate) fn run() -> ! {
         .with_mosi(p.GPIO9)
         .with_miso(p.GPIO7);
 
+        #[cfg(feature = "sd-software-spi")]
+        let mut spi = sd_bitbang::SdBitBang::new(
+            Output::new(p.GPIO8, Level::Low, OutputConfig::default()),
+            Output::new(p.GPIO9, Level::High, OutputConfig::default()),
+            esp_hal::gpio::Input::new(
+                p.GPIO7,
+                esp_hal::gpio::InputConfig::default().with_pull(esp_hal::gpio::Pull::Up),
+            ),
+            delay,
+        )
+        .expect("SD GPIO config");
+        #[cfg(feature = "sd-software-spi")]
+        use embedded_hal::spi::SpiBus as _;
+        println!(
+            "microSD: backend={} startup={} kHz",
+            if cfg!(feature = "sd-software-spi") {
+                "gpio-mode0"
+            } else {
+                "SPI2"
+            },
+            config::SD_INIT_KHZ
+        );
         let _ = cs.set_high();
         if let Err(err) = spi.write(&[0xFF; 10]) {
             // 80 idle clocks, CS high.
@@ -744,15 +767,18 @@ pub(crate) fn run() -> ! {
             let _ = display.error("SD SPI ERROR", "CHECK GPIO7-10");
             enter_fastboot(display, desktop_input, &mut keys, &delay);
         }
-        println!("microSD: SPI2 MISO=7 SCK=8 MOSI=9 CS=10");
+        println!("microSD: MISO=7 SCK=8 MOSI=9 CS=10");
         // SPI2 belongs only to SD; keep command and response in one CS session.
         let device = sd_spi::SdSpiSession::new(spi, cs, delay);
         println!("microSD: continuous CS session (command/response/data)");
 
         let _ = display.boot_progress("LOADING", 2);
         let mut session = match android_storage::load_system(device, delay, |card| {
-            // embedded-sdmmc initializes the card while still at <=400 kHz. Once
-            // initialization has completed, re-clock the SPI bus for image/GPT I/O.
+            #[cfg(feature = "sd-software-spi")]
+            let _ = card;
+            // Checked startup and the first CSD read use the slow clock. Only
+            // a successfully initialized hardware bus is accelerated for GPT I/O.
+            #[cfg(not(feature = "sd-software-spi"))]
             card.spi(|sd_device| {
                 let fast = SpiConfig::default()
                     .with_frequency(Rate::from_mhz(config::SD_DATA_MHZ))

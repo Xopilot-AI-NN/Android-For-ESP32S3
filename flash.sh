@@ -58,6 +58,12 @@ if [[ "${AOSP_WEAR_DISPLAY_DIAGNOSTIC:-0}" == "1" ]]; then
   fi
   FEATURES+=",display-diagnostic"
 fi
+if [[ "${AOSP_WEAR_SD_SOFTWARE_SPI:-0}" == "1" ]]; then
+  if [[ "$STORAGE_NAME" != "sd" ]]; then
+    echo "AOSP_WEAR_SD_SOFTWARE_SPI requires ./flash sd" >&2; exit 2
+  fi
+  FEATURES+=",sd-software-spi"
+fi
 FLAGS=(--no-default-features --features "$FEATURES")
 
 BOOT_VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"

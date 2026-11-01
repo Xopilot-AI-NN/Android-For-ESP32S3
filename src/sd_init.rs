@@ -121,6 +121,14 @@ where
     for _ in 0..64 {
         let r1 = byte(spi)?;
         if r1 & 0x80 == 0 {
+            if r1 & !1 != 0 {
+                let mut trailing = [0xff; 8];
+                spi.transfer_in_place(&mut trailing)
+                    .map_err(|_| InitError::Transport)?;
+                esp_println::println!(
+                    "microSD: CMD{cmd} tx={packet:02x?} R1=0x{r1:02x} trailing={trailing:02x?}"
+                );
+            }
             return Ok(r1);
         }
     }
@@ -149,7 +157,7 @@ where
     D: DelayNs,
 {
     esp_println::println!(
-        "microSD: checked startup v2; CRC_ON after ready; ACMD41 budget 200 x 10ms"
+        "microSD: checked startup v3; released idle; CRC_ON after ready; ACMD41 budget 200 x 10ms"
     );
     let mut idle = false;
     for _ in 0..50 {
@@ -159,7 +167,10 @@ where
                 break;
             }
             Ok(r1) => return Err(InitError::Response { command: 0, r1 }),
-            Err(InitError::NoResponse { .. }) => delay.delay_ms(10),
+            Err(InitError::NoResponse { .. }) => {
+                spi.finish_command().map_err(|_| InitError::Transport)?;
+                delay.delay_ms(10);
+            }
             Err(e) => return Err(e),
         }
     }
@@ -191,6 +202,7 @@ where
             });
         }
         let acmd41 = command(spi, 41, if v2 { 0x4000_0000 } else { 0 })?;
+        spi.finish_command().map_err(|_| InitError::Transport)?;
         if attempt == 0 || last != (cmd55, acmd41) || attempt % 50 == 49 {
             esp_println::println!(
                 "microSD: init poll {} CMD55 R1=0x{cmd55:02x} ACMD41 R1=0x{acmd41:02x}",
@@ -257,6 +269,7 @@ mod tests {
         never_reply: bool,
         bad_ocr: bool,
         reject_crc: bool,
+        bad_prefix: bool,
         sleeps: u32,
     }
     struct Bus(Rc<RefCell<Model>>);
@@ -264,7 +277,11 @@ mod tests {
     struct Delay(Rc<RefCell<Model>>);
     impl DelayNs for Delay {
         fn delay_ns(&mut self, ns: u32) {
-            self.0.borrow_mut().sleeps += ns / 1_000_000;
+            let mut m = self.0.borrow_mut();
+            if ns >= 1_000_000 {
+                assert!(!m.selected, "idle delay must release CS");
+            }
+            m.sleeps += ns / 1_000_000;
         }
     }
     impl embedded_hal::digital::ErrorType for Cs {
@@ -298,7 +315,7 @@ mod tests {
                     8 => {
                         response.extend([1, 0, 0, 1, if m.bad_echo { 0xab } else { 0xaa }]);
                     }
-                    55 => response.push(1),
+                    55 => response.push(if m.bad_prefix && m.polls == 1 { 7 } else { 1 }),
                     41 => {
                         assert_eq!(&b[1..5], &0x40000000u32.to_be_bytes());
                         m.polls += 1;
@@ -354,6 +371,20 @@ mod tests {
         assert_eq!(command_crc(&[0x40, 0, 0, 0, 0]), 0x95);
         assert_eq!(command_crc(&[0x48, 0, 0, 1, 0xaa]), 0x87);
         assert_eq!(command_crc(&[0x69, 0x40, 0, 0, 0]), 0x77);
+        assert_eq!(command_crc(&[0x77, 0, 0, 0, 0]), 0x65);
+    }
+    #[test]
+    fn second_cmd55_error_is_reported_instead_of_waiting_for_acmd41() {
+        let m = Rc::new(RefCell::new(Model {
+            ready_after: 10,
+            bad_prefix: true,
+            ..Default::default()
+        }));
+        assert!(matches!(
+            run(m.clone()),
+            Err(InitError::Response { command: 55, r1: 7 })
+        ));
+        assert_eq!(m.borrow().polls, 1);
     }
     #[test]
     fn ready_without_valid_ocr_or_crc_ack_is_not_a_verified_card() {

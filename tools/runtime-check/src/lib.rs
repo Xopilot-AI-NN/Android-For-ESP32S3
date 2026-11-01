@@ -38,6 +38,8 @@ mod material;
 mod sd_spi;
 #[path = "../../../src/sd_init.rs"]
 mod sd_init;
+#[path = "../../../src/sd_bitbang.rs"]
+mod sd_bitbang;
 #[path = "../../../src/rtc.rs"]
 mod rtc;
 #[path = "../../../src/media.rs"]

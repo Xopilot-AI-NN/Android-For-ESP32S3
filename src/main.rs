@@ -60,6 +60,8 @@ mod page_store;
 mod radio;
 mod rtc;
 mod runtime;
+#[cfg(all(not(feature = "pc-block-boot"), feature = "sd-software-spi"))]
+mod sd_bitbang;
 #[cfg(not(feature = "pc-block-boot"))]
 mod sd_init;
 #[cfg(not(feature = "pc-block-boot"))]

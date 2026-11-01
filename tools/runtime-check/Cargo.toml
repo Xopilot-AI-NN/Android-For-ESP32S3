@@ -11,6 +11,7 @@ display-st7789 = []
 display-ssd1306 = []
 display-diagnostic = []
 pc-block-boot = []
+sd-software-spi = []
 radio-services = []
 
 [dependencies]
