@@ -70,69 +70,7 @@ pub(crate) fn recovery_menu<D: BootDisplay>(
     desktop: &mut DesktopInput<'_>,
     delay: &Delay,
 ) -> BootMode {
-    let mut selected_fastboot = false;
-    let mut last_power = keys.power_pressed();
-    loop {
-        if selected_fastboot {
-            let _ = display.status("RECOVERY", "> FASTBOOT", "  NORMAL BOOT", "PRESS TO SELECT");
-        } else {
-            let _ = display.status("RECOVERY", "> NORMAL BOOT", "  FASTBOOT", "PRESS TO SELECT");
-        }
-
-        for _ in 0..20 {
-            if keys.poll_rotation() != 0 {
-                selected_fastboot = !selected_fastboot;
-                break;
-            }
-
-            if let Some(event) = desktop.poll() {
-                match event {
-                    DesktopEvent::Sync => {
-                        display.hello();
-                        break;
-                    }
-                    DesktopEvent::Ping => display.pong(),
-                    DesktopEvent::Rotate(_) => {
-                        selected_fastboot = !selected_fastboot;
-                        break;
-                    }
-                    DesktopEvent::Power => {
-                        return if selected_fastboot {
-                            BootMode::Fastboot
-                        } else {
-                            BootMode::Normal
-                        };
-                    }
-                    DesktopEvent::Fastboot => return BootMode::Fastboot,
-                    DesktopEvent::Normal => return BootMode::Normal,
-                    DesktopEvent::Recovery => {}
-                    DesktopEvent::Swipe(_) => {}
-                    DesktopEvent::CompanionTime(_)
-                    | DesktopEvent::AdbGetProp
-                    | DesktopEvent::AdbServices
-                    | DesktopEvent::AdbPackages
-                    | DesktopEvent::AdbDumpsys
-                    | DesktopEvent::WifiScan
-                    | DesktopEvent::WifiStatus
-                    | DesktopEvent::WifiConnect(_)
-                    | DesktopEvent::WifiDisconnect
-                    | DesktopEvent::BtScan
-                    | DesktopEvent::BtStatus
-                    | DesktopEvent::BtConnect(_)
-                    | DesktopEvent::BtDisconnect => {}
-                }
-            }
-
-            let power = keys.power_pressed();
-            if power && !last_power {
-                return if selected_fastboot {
-                    BootMode::Fastboot
-                } else {
-                    BootMode::Normal
-                };
-            }
-            last_power = power;
-            delay.delay_millis(20);
-        }
-    }
+    let _ = desktop;
+    crate::power::recovery_board(display, keys, delay);
+    BootMode::Normal
 }

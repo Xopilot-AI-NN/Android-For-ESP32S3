@@ -45,7 +45,6 @@ mod config;
 mod cpio;
 mod desktop;
 mod display;
-#[cfg(not(feature = "pc-block-boot"))]
 mod fastboot;
 mod font;
 #[cfg(feature = "display-ssd1306")]
@@ -84,6 +83,7 @@ mod boot;
 #[cfg(not(feature = "pc-block-boot"))]
 mod boot_modes;
 mod persistence;
+mod power;
 #[cfg(feature = "radio-services")]
 mod radio_bridge;
 mod state_flow;

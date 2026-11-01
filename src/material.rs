@@ -72,6 +72,7 @@ pub struct MaterialFrame {
     pub date_day: u8,
     pub date_month: u8,
     pub stopwatch_running: bool,
+    pub power_menu: bool,
 }
 
 impl MaterialFrame {
@@ -159,6 +160,7 @@ impl MaterialFrame {
             date_day: 0,
             date_month: 0,
             stopwatch_running: false,
+            power_menu: false,
         })
     }
 
@@ -331,6 +333,10 @@ impl Surface {
             t.outline = 0xffff;
         }
         self.fill_rect(0, 0, WIDTH as i32, HEIGHT as i32, t.bg);
+        if frame.power_menu {
+            self.power_page(frame, t);
+            return Rect::FULL;
+        }
         if frame.security_view != 0 && (frame.screen == 0 || frame.screen == 20) {
             self.pin_entry(frame, t);
             if frame.clock_alert != 0 {
@@ -451,5 +457,7 @@ mod theme_tests {
 mod compositor;
 #[path = "material/dial.rs"]
 mod dial;
+#[path = "material/pages_boot.rs"]
+mod pages_boot;
 #[path = "material/pages_faces.rs"]
 mod pages_faces;

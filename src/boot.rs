@@ -18,6 +18,18 @@ pub(crate) fn run() -> ! {
         .with_cpu_clock(CpuClock::max())
         .with_psram(esp_hal::psram::PsramConfig::default());
     let p = esp_hal::init(hal_cfg);
+    let requested = crate::power::take();
+    if requested == Some(runtime::SystemAction::PowerOff) {
+        use esp_hal::gpio::RtcPinWithResistors;
+        let _dark = Output::new(p.GPIO6, Level::Low, OutputConfig::default());
+        p.GPIO13.rtcio_pullup(true);
+        p.GPIO13.rtcio_pulldown(false);
+        let source = esp_hal::rtc_cntl::sleep::Ext0WakeupSource::new(
+            p.GPIO13,
+            esp_hal::rtc_cntl::sleep::WakeupLevel::Low,
+        );
+        esp_hal::rtc_cntl::Rtc::new(p.LPWR).sleep_deep(&[&source]);
+    }
     println!("performance: ESP32-S3 CPU=240MHz (CpuClock::max); USB-PC/radio profile active");
 
     let (_, psram_size) = esp_hal::psram::psram_raw_parts(&p.PSRAM);
@@ -67,7 +79,7 @@ pub(crate) fn run() -> ! {
     );
 
     #[cfg(feature = "display-ssd1306")]
-    let physical_display = {
+    let mut physical_display = {
         let i2c = I2c::new(
             p.I2C0,
             I2cConfig::default().with_frequency(Rate::from_khz(400)),
@@ -85,7 +97,7 @@ pub(crate) fn run() -> ! {
         OutputConfig::default(),
     ));
     #[cfg(all(feature = "display-st7789", not(feature = "display-software-spi")))]
-    let physical_display = {
+    let mut physical_display = {
         let spi = Spi::new(
             p.SPI3,
             SpiConfig::default()
@@ -104,7 +116,7 @@ pub(crate) fn run() -> ! {
     };
 
     #[cfg(all(feature = "display-st7789", feature = "display-software-spi"))]
-    let physical_display = {
+    let mut physical_display = {
         // GPIO1 = SCL/SCK, GPIO2 = SDA/MOSI, GPIO3 = RES/RST,
         // GPIO4 = DC, GPIO5 = CS, GPIO6 = BLK (active high).
         // This deliberately does NOT use SPI3 or the GPIO matrix.
@@ -121,6 +133,16 @@ pub(crate) fn run() -> ! {
         St7789Display::new(spi, cs, dc, rst, bl, &mut init_delay)
             .expect("ST7789V3 software SPI init failed")
     };
+
+    let mut keys = BootKeys::new(p.PCNT, p.GPIO11, p.GPIO12, p.GPIO13);
+    if requested == Some(runtime::SystemAction::Fastboot) {
+        let usb = UsbSerialJtag::new(p.USB_DEVICE);
+        let (rx, tx) = usb.split();
+        fastboot::run(rx, tx, &mut physical_display, &mut keys, &delay);
+    }
+    if requested == Some(runtime::SystemAction::Recovery) {
+        crate::power::recovery_board(&mut physical_display, &mut keys, &delay);
+    }
 
     #[cfg(feature = "pc-block-boot")]
     {
@@ -280,7 +302,6 @@ pub(crate) fn run() -> ! {
         // viewer talks to the block-server bridge and never reopens ttyACM0.
         session.block_device().viewer_interactive();
         let mut next_ui_refresh_ms: u64 = 0;
-        let mut keys = BootKeys::new(p.PCNT, p.GPIO11, p.GPIO12, p.GPIO13);
 
         loop {
             keys.set_sensitivity(os.crown_sensitivity());
@@ -322,22 +343,10 @@ pub(crate) fn run() -> ! {
                     // PC-block mode keeps storage ownership, so these screens
                     // are informational instead of destructive reboots.
                     DesktopEvent::Fastboot => {
-                        session.block_device().viewer_status(
-                            "FASTBOOT",
-                            "PC BLOCK ACTIVE",
-                            "REBOOT MODE TODO",
-                            "NO RESET",
-                        );
-                        None
+                        crate::power::request(runtime::SystemAction::Fastboot)
                     }
                     DesktopEvent::Recovery => {
-                        session.block_device().viewer_status(
-                            "RECOVERY",
-                            "PC BLOCK ACTIVE",
-                            "REBOOT MODE TODO",
-                            "NO RESET",
-                        );
-                        None
+                        crate::power::request(runtime::SystemAction::Recovery)
                     }
                     DesktopEvent::Power => Some(runtime::RuntimeEvent::Press),
                     DesktopEvent::Normal => Some(runtime::RuntimeEvent::Home),
@@ -655,6 +664,9 @@ pub(crate) fn run() -> ! {
                     println!("time: software RTC settings updated");
                 }
             }
+            if let Some(action) = os.take_system_action() {
+                crate::power::request(action);
+            }
             delay.delay_millis(20);
         }
     }
@@ -671,8 +683,6 @@ pub(crate) fn run() -> ! {
         let mut display = DesktopMirror::new(physical_display, usb_tx, DesktopSurface::St7789);
         #[cfg(feature = "display-ssd1306")]
         let mut display = DesktopMirror::new(physical_display, usb_tx, DesktopSurface::Ssd1306);
-
-        let mut keys = BootKeys::new(p.PCNT, p.GPIO11, p.GPIO12, p.GPIO13);
 
         let _ = display.boot_logo();
         delay.delay_millis(config::BOOT_SPLASH_MS);
@@ -1094,6 +1104,9 @@ pub(crate) fn run() -> ! {
                     persisted_rtc_config = rtc_config;
                     println!("time: software RTC settings updated");
                 }
+            }
+            if let Some(action) = os.take_system_action() {
+                crate::power::request(action);
             }
             delay.delay_millis(20);
         }

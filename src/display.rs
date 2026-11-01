@@ -24,9 +24,15 @@ pub trait BootDisplay {
             }
         }
     }
-    #[cfg(not(feature = "pc-block-boot"))]
     fn fastboot(&mut self) -> Result<(), DisplayError> {
         self.status("FASTBOOT MODE", "USB: READY", "PWR: REBOOT", "CMD: HELP")
+    }
+    fn boot_menu(&mut self, kind: u8, _cursor: u8) -> Result<(), DisplayError> {
+        if kind == 1 {
+            self.fastboot()
+        } else {
+            self.status("RECOVERY", "REBOOT", "FASTBOOT", "POWER OFF")
+        }
     }
     fn error(&mut self, code: &str, detail: &str) -> Result<(), DisplayError>;
 }
@@ -161,9 +167,10 @@ mod tft {
     const H: i32 = 280;
     const BLACK: u16 = 0x0000;
     const WHITE: u16 = 0xFFFF;
+    #[cfg(feature = "display-diagnostic")]
     const BLUE: u16 = 0x249F;
+    #[cfg(feature = "display-diagnostic")]
     const GREEN: u16 = 0x3E08;
-    const YELLOW: u16 = 0xFEC0;
     const RED: u16 = 0xF986;
     const DIM: u16 = 0x7BEF;
 
@@ -441,33 +448,6 @@ mod tft {
             let x = (W - Self::text_width(text, scale)) / 2;
             self.text(x, y, text, scale, color)
         }
-
-        fn mark(&mut self) -> Result<(), DisplayError> {
-            // Four-color AOSP development mark; deliberately uses no Google/Wear OS asset.
-            self.fill_rect(91, 62, 29, 10, BLUE)?;
-            self.fill_rect(120, 62, 29, 10, RED)?;
-            self.fill_rect(91, 72, 29, 10, GREEN)?;
-            self.fill_rect(120, 72, 29, 10, YELLOW)?;
-            self.text_center(91, "A", 6, WHITE)
-        }
-
-        fn spinner(&mut self, phase: u8) -> Result<(), DisplayError> {
-            const P: [(i32, i32); 8] = [
-                (120, 214),
-                (136, 208),
-                (142, 192),
-                (136, 176),
-                (120, 170),
-                (104, 176),
-                (98, 192),
-                (104, 208),
-            ];
-            for (i, &(x, y)) in P.iter().enumerate() {
-                let c = if i == phase as usize % 8 { WHITE } else { DIM };
-                self.fill_rect(x - 3, y - 3, 7, 7, c)?;
-            }
-            Ok(())
-        }
     }
 
     impl<SPI, CS, DC, RST, BL> BootDisplay for St7789Display<SPI, CS, DC, RST, BL>
@@ -479,16 +459,22 @@ mod tft {
         BL: Backlight,
     {
         fn boot_logo(&mut self) -> Result<(), DisplayError> {
-            self.clear(BLACK)?;
-            self.mark()?;
-            self.text_center(151, "ANDROID 17", 2, WHITE)?;
-            self.text_center(178, "AOSP WEAR OS", 2, DIM)
+            self.frame_valid = false;
+            for phase in 1..=12 {
+                self.material_surface.boot_frame((phase * 255 / 12) as u8);
+                self.flush_material_rect(Rect::FULL)?;
+            }
+            Ok(())
         }
         fn boot_progress(&mut self, label: &str, phase: u8) -> Result<(), DisplayError> {
-            self.clear(BLACK)?;
-            self.mark()?;
-            self.text_center(145, label, 2, WHITE)?;
-            self.spinner(phase)
+            self.frame_valid = false;
+            self.material_surface.boot_progress_frame(label, phase);
+            self.flush_material_rect(Rect::FULL)
+        }
+        fn boot_menu(&mut self, kind: u8, cursor: u8) -> Result<(), DisplayError> {
+            self.frame_valid = false;
+            self.material_surface.boot_menu_frame(kind, cursor);
+            self.flush_material_rect(Rect::FULL)
         }
         fn status(
             &mut self,

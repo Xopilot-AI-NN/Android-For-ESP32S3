@@ -12,6 +12,7 @@ pub enum ButtonAction {
     Press,
     Back,
     Home,
+    Power,
 }
 
 impl ButtonState {
@@ -29,6 +30,7 @@ impl ButtonState {
             return None;
         }
         Some(match now.saturating_sub(self.pressed_ms) {
+            3500.. => ButtonAction::Power,
             1800.. => ButtonAction::Home,
             700.. => ButtonAction::Back,
             _ => ButtonAction::Press,

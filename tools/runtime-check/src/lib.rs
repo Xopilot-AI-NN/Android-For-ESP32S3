@@ -300,6 +300,17 @@ mod tests {
         assert_eq!(frame(&mut restored).watch_face, 1);
     }
     #[test]
+    fn power_menu_queues_actions_without_executing_hardware_in_runtime() {
+        time::set(5000);
+        let mut os = start();
+        os.dispatch(RuntimeEvent::Power).unwrap();
+        assert!(frame(&mut os).power_menu);
+        os.dispatch(RuntimeEvent::Rotate(1)).unwrap();
+        os.dispatch(RuntimeEvent::Press).unwrap();
+        assert_eq!(os.take_system_action(), Some(runtime::SystemAction::Reboot));
+        assert_eq!(os.take_system_action(), None);
+    }
+    #[test]
     fn timer_presets_and_custom_duration() {
         time::set(1000);
         let mut os = start();

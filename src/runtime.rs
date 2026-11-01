@@ -114,6 +114,16 @@ pub enum RuntimeEvent {
     Rotate(i32),
     Swipe(i32),
     Press,
+    Power,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum SystemAction {
+    Reboot = 1,
+    Fastboot = 2,
+    Recovery = 3,
+    PowerOff = 4,
 }
 
 #[derive(Clone, Debug)]
@@ -186,6 +196,9 @@ pub struct Runtime {
     timeout_parent: u8,
     transition_started_ms: u64,
     watch_face: u8,
+    power_menu: bool,
+    power_cursor: u8,
+    system_action: Option<SystemAction>,
 }
 
 #[cfg(feature = "rhai-runtime")]
@@ -299,6 +312,9 @@ impl Runtime {
             timeout_parent: 20,
             transition_started_ms: 0,
             watch_face: 0,
+            power_menu: false,
+            power_cursor: 0,
+            system_action: None,
         };
         let frame = runtime.render()?;
         Ok((runtime, frame))
@@ -380,6 +396,10 @@ impl Runtime {
                 (now_ms.saturating_sub(self.transition_started_ms) * 255 / 180).min(255) as u8;
             m.watch_face = self.watch_face;
             m.stopwatch_running = clock::stopwatch_running();
+            m.power_menu = self.power_menu;
+            if self.power_menu {
+                m.cursor = self.power_cursor;
+            }
             m.time_seconds = crate::rtc::local_seconds();
             if let Some((day, month)) = crate::rtc::calendar() {
                 m.date_day = day;
@@ -392,6 +412,9 @@ impl Runtime {
 
     pub fn state(&self) -> i32 {
         self.state
+    }
+    pub fn take_system_action(&mut self) -> Option<SystemAction> {
+        self.system_action.take()
     }
     fn idle_brightness(&self, now_ms: u64) -> u8 {
         idle::level(
@@ -565,6 +588,37 @@ impl Runtime {
     pub fn dispatch(&mut self, event: RuntimeEvent) -> Result<RuntimeFrame, RuntimeError> {
         let now_ms = Instant::now().duration_since_epoch().as_millis() as u64;
         let now = now_ms / 1000;
+        if event == RuntimeEvent::Power {
+            self.power_menu = !self.power_menu;
+            self.power_cursor = 0;
+            self.last_input_ms = now_ms;
+            return self.render();
+        }
+        if self.power_menu {
+            self.last_input_ms = now_ms;
+            let count = if self.security.locked { 3 } else { 6 };
+            match event {
+                RuntimeEvent::Rotate(d) => {
+                    self.power_cursor = (i32::from(self.power_cursor) + d).rem_euclid(count) as u8
+                }
+                RuntimeEvent::Press => {
+                    self.system_action = match self.power_cursor {
+                        0 => Some(SystemAction::PowerOff),
+                        1 => Some(SystemAction::Reboot),
+                        3 if !self.security.locked => Some(SystemAction::Recovery),
+                        4 if !self.security.locked => Some(SystemAction::Fastboot),
+                        _ => None,
+                    };
+                    if self.power_cursor == 2 && !self.security.locked {
+                        self.state = (self.state & !0x1ff) | 1;
+                    }
+                    self.power_menu = false;
+                }
+                RuntimeEvent::Back | RuntimeEvent::Home => self.power_menu = false,
+                _ => {}
+            }
+            return self.render();
+        }
         if self.security_saved[5] != 0 || self.security.encode() == self.security_saved {
             self.security.tick(now);
         }
@@ -859,6 +913,7 @@ impl Runtime {
             RuntimeEvent::Rotate(delta) => ("rotate", delta),
             RuntimeEvent::Swipe(direction) => ("swipe", direction),
             RuntimeEvent::Press => ("press", 0),
+            RuntimeEvent::Power => unreachable!(),
         };
         let options = CallFnOptions::new().eval_ast(false).rewind_scope(true);
         let new_state = self
@@ -1112,6 +1167,9 @@ impl Runtime {
     pub fn set_security_storage(&mut self, _available: bool, _entropy: [u8; 16]) {}
     pub fn state(&self) -> i32 {
         0
+    }
+    pub fn take_system_action(&mut self) -> Option<SystemAction> {
+        None
     }
     pub fn replace_state(&mut self, _state: i32) -> Result<RuntimeFrame, RuntimeError> {
         self.render()
