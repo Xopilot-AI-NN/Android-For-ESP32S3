@@ -64,6 +64,9 @@ pub struct MaterialFrame {
     pub lock_timeout_secs: u16,
     pub display_sleep: bool,
     pub timeout_is_display: bool,
+    pub display_brightness: Option<u8>,
+    pub transition_alpha: u8,
+    pub animation_phase: u8,
 }
 
 impl MaterialFrame {
@@ -143,6 +146,9 @@ impl MaterialFrame {
             lock_timeout_secs: 30,
             display_sleep: false,
             timeout_is_display: false,
+            display_brightness: None,
+            transition_alpha: 255,
+            animation_phase: 0,
         })
     }
 
@@ -431,3 +437,5 @@ mod theme_tests {
         }
     }
 }
+#[path = "material/compositor.rs"]
+mod compositor;

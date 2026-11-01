@@ -10,6 +10,8 @@ use heapless::{String as HString, Vec as HVec};
 
 #[path = "runtime/clock.rs"]
 mod clock;
+#[path = "runtime/idle.rs"]
+mod idle;
 #[path = "runtime/security.rs"]
 mod security;
 use clock::{clock_action, clock_snapshot};
@@ -180,8 +182,9 @@ pub struct Runtime {
     crown_sensitivity: u8,
     crown_reverse: bool,
     high_contrast: bool,
-    last_input_secs: u64,
+    last_input_ms: u64,
     timeout_parent: u8,
+    transition_started_ms: u64,
 }
 
 #[cfg(feature = "rhai-runtime")]
@@ -291,8 +294,9 @@ impl Runtime {
             crown_sensitivity: 1,
             crown_reverse: false,
             high_contrast: false,
-            last_input_secs: Instant::now().duration_since_epoch().as_secs(),
+            last_input_ms: Instant::now().duration_since_epoch().as_millis() as u64,
             timeout_parent: 20,
+            transition_started_ms: 0,
         };
         let frame = runtime.render()?;
         Ok((runtime, frame))
@@ -367,8 +371,12 @@ impl Runtime {
                 .remaining(Instant::now().duration_since_epoch().as_secs());
             m.lock_timeout_secs = self.security.timeout;
             m.timeout_is_display = self.timeout_parent == 14;
-            m.display_sleep =
-                self.display_should_sleep(Instant::now().duration_since_epoch().as_secs());
+            let now_ms = Instant::now().duration_since_epoch().as_millis() as u64;
+            m.display_brightness = Some(self.idle_brightness(now_ms));
+            m.display_sleep = m.display_brightness == Some(0);
+            m.transition_alpha =
+                (now_ms.saturating_sub(self.transition_started_ms) * 255 / 180).min(255) as u8;
+            m.animation_phase = (now_ms % 1000 * 255 / 1000) as u8;
         }
         Ok(frame)
     }
@@ -376,12 +384,17 @@ impl Runtime {
     pub fn state(&self) -> i32 {
         self.state
     }
-    fn display_should_sleep(&self, now: u64) -> bool {
-        clock::alert() == 0
-            && self.bluetooth_pin.is_none()
-            && now.saturating_sub(self.last_input_secs) >= u64::from(self.security.timeout)
+    fn idle_brightness(&self, now_ms: u64) -> u8 {
+        idle::level(
+            ((self.state >> 9) & 127) as u8,
+            now_ms.saturating_sub(self.last_input_ms),
+            self.security.timeout,
+            clock::alert() != 0 || self.bluetooth_pin.is_some() || (self.state & 31) == 29,
+        )
     }
-
+    fn display_should_sleep(&self, now_ms: u64) -> bool {
+        self.idle_brightness(now_ms) == 0
+    }
     pub fn crown_sensitivity(&self) -> u8 {
         self.crown_sensitivity
     }
@@ -530,13 +543,15 @@ impl Runtime {
     }
 
     pub fn dispatch(&mut self, event: RuntimeEvent) -> Result<RuntimeFrame, RuntimeError> {
-        let now = Instant::now().duration_since_epoch().as_secs();
+        let now_ms = Instant::now().duration_since_epoch().as_millis() as u64;
+        let now = now_ms / 1000;
         if self.security_saved[5] != 0 || self.security.encode() == self.security_saved {
             self.security.tick(now);
         }
         if event != RuntimeEvent::Sync {
-            let asleep = self.display_should_sleep(now);
-            self.last_input_secs = now;
+            let asleep = self.display_should_sleep(now_ms);
+            self.last_input_ms = now_ms;
+            self.transition_started_ms = now_ms;
             self.security.activity(now);
             if asleep {
                 return self.render();

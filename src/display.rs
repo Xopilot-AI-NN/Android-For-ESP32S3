@@ -6,6 +6,9 @@ pub enum DisplayError {
 use crate::runtime::RuntimeFrame;
 pub trait Backlight: embedded_hal::digital::OutputPin {
     fn set_brightness(&mut self, percent: u8) -> Result<(), Self::Error>;
+    fn software_dimming(&self) -> bool {
+        false
+    }
 }
 
 pub trait BootDisplay {
@@ -151,6 +154,7 @@ mod tft {
         material::{Rect, Surface},
         runtime::RuntimeFrame,
     };
+    use alloc::{vec, vec::Vec};
     use embedded_hal::{delay::DelayNs, digital::OutputPin, spi::SpiBus};
 
     const W: i32 = 240;
@@ -171,6 +175,8 @@ mod tft {
         bl: BL,
         material_surface: Surface,
         awake: bool,
+        displayed: Vec<u16>,
+        frame_valid: bool,
     }
 
     impl<SPI, CS, DC, RST, BL> St7789Display<SPI, CS, DC, RST, BL>
@@ -204,6 +210,8 @@ mod tft {
                 bl,
                 material_surface: Surface::new(),
                 awake: true,
+                displayed: vec![0; 240 * 280],
+                frame_valid: false,
             };
             s.cmd(0x01, &[])?; // SWRESET
             delay.delay_ms(120);
@@ -339,6 +347,7 @@ mod tft {
         }
 
         fn clear(&mut self, color: u16) -> Result<(), DisplayError> {
+            self.frame_valid = false;
             self.fill_rect(0, 0, W, H, color)
         }
 
@@ -509,16 +518,34 @@ mod tft {
                     if !self.awake {
                         self.cmd(0x29, &[])?;
                         self.awake = true;
+                        self.frame_valid = false;
                     }
-                    let dirty = self.material_surface.render(*scene);
-                    self.flush_material_rect(dirty)?;
+                    self.material_surface.render(*scene);
+                    let brightness = scene
+                        .display_brightness
+                        .unwrap_or(scene.brightness)
+                        .clamp(5, 100);
+                    if self.bl.software_dimming() {
+                        self.material_surface.scale_pixels(brightness);
+                    }
+                    if self.frame_valid && scene.screen != 0 && scene.security_view == 0 {
+                        self.material_surface
+                            .blend_from(&self.displayed, scene.transition_alpha.max(64));
+                    }
+                    let dirty = if self.frame_valid {
+                        self.material_surface.changes_from(&self.displayed)
+                    } else {
+                        Some(Rect::FULL)
+                    };
+                    if let Some(dirty) = dirty {
+                        self.flush_material_rect(dirty)?;
+                        self.displayed
+                            .copy_from_slice(self.material_surface.pixels());
+                        self.frame_valid = true;
+                    }
                     // On wake, show the PIN frame before enabling the backlight.
                     self.bl
-                        .set_brightness(if scene.screen == 29 {
-                            100
-                        } else {
-                            scene.brightness.clamp(5, 100)
-                        })
+                        .set_brightness(if scene.screen == 29 { 100 } else { brightness })
                         .map_err(|_| DisplayError::Bus)
                 }
                 RuntimeFrame::Legacy(f) => self.status(&f.title, &f.line1, &f.line2, &f.line3),

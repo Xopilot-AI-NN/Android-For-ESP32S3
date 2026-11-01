@@ -20,12 +20,11 @@ checks = {
     'TFT RST GPIO3': 'Output::new(p.GPIO3, Level::High' in tft,
     'TFT DC GPIO4': 'Output::new(p.GPIO4, Level::Low' in tft,
     'TFT CS GPIO5': 'Output::new(p.GPIO5, Level::High' in tft,
-    'TFT BLK GPIO6 PWM': (
-        'Channel0, p.GPIO6' in boot
-        and 'crate::backlight::PwmBacklight::new(channel)' in boot
-        and 'let bl = pwm_backlight;' in tft
-        and 'frequency: Rate::from_khz(80)' in boot
-        and 'Duty::Duty8Bit' in boot
+    'TFT BLK GPIO6 constant DC': (
+        'crate::backlight::DcBacklight::new(Output::new(' in boot
+        and 'p.GPIO6' in boot
+        and 'let bl = dc_backlight;' in tft
+        and 'backlight_ledc' not in boot
     ),
     'TFT panel BGR order': 'pub const TFT_MADCTL: u8 = 0x08;' in config,
     'Encoder hardware PCNT': 'BootKeys::new(p.PCNT, p.GPIO11, p.GPIO12, p.GPIO13)' in boot,

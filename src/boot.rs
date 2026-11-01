@@ -79,35 +79,11 @@ pub(crate) fn run() -> ! {
     };
 
     #[cfg(feature = "display-st7789")]
-    let mut backlight_ledc = esp_hal::ledc::Ledc::new(p.LEDC);
-    #[cfg(feature = "display-st7789")]
-    let backlight_timer = {
-        use esp_hal::ledc::timer::TimerIFace;
-        backlight_ledc.set_global_slow_clock(esp_hal::ledc::LSGlobalClkSource::APBClk);
-        let mut timer =
-            backlight_ledc.timer::<esp_hal::ledc::LowSpeed>(esp_hal::ledc::timer::Number::Timer0);
-        timer
-            .configure(esp_hal::ledc::timer::config::Config {
-                duty: esp_hal::ledc::timer::config::Duty::Duty8Bit,
-                clock_source: esp_hal::ledc::timer::LSClockSource::APBClk,
-                frequency: Rate::from_khz(80),
-            })
-            .expect("backlight PWM timer");
-        timer
-    };
-    #[cfg(feature = "display-st7789")]
-    let pwm_backlight = {
-        use esp_hal::ledc::channel::ChannelIFace;
-        let mut channel = backlight_ledc.channel(esp_hal::ledc::channel::Number::Channel0, p.GPIO6);
-        channel
-            .configure(esp_hal::ledc::channel::config::Config {
-                timer: &backlight_timer,
-                duty_pct: 0,
-                drive_mode: esp_hal::gpio::DriveMode::PushPull,
-            })
-            .expect("backlight PWM channel");
-        crate::backlight::PwmBacklight::new(channel)
-    };
+    let dc_backlight = crate::backlight::DcBacklight::new(Output::new(
+        p.GPIO6,
+        Level::Low,
+        OutputConfig::default(),
+    ));
     #[cfg(all(feature = "display-st7789", not(feature = "display-software-spi")))]
     let physical_display = {
         let spi = Spi::new(
@@ -122,7 +98,7 @@ pub(crate) fn run() -> ! {
         let cs = Output::new(p.GPIO5, Level::High, OutputConfig::default());
         let dc = Output::new(p.GPIO4, Level::Low, OutputConfig::default());
         let rst = Output::new(p.GPIO3, Level::High, OutputConfig::default());
-        let bl = pwm_backlight;
+        let bl = dc_backlight;
         let mut init_delay = delay;
         St7789Display::new(spi, cs, dc, rst, bl, &mut init_delay).expect("ST7789V3 init failed")
     };
@@ -140,7 +116,7 @@ pub(crate) fn run() -> ! {
         let cs = Output::new(p.GPIO5, Level::High, OutputConfig::default());
         let dc = Output::new(p.GPIO4, Level::Low, OutputConfig::default());
         let rst = Output::new(p.GPIO3, Level::High, OutputConfig::default());
-        let bl = pwm_backlight;
+        let bl = dc_backlight;
         let mut init_delay = delay;
         St7789Display::new(spi, cs, dc, rst, bl, &mut init_delay)
             .expect("ST7789V3 software SPI init failed")
@@ -303,7 +279,7 @@ pub(crate) fn run() -> ! {
         // From this point the PC server may forward viewer commands. The
         // viewer talks to the block-server bridge and never reopens ttyACM0.
         session.block_device().viewer_interactive();
-        let mut ui_refresh_ticks: u8 = 0;
+        let mut next_ui_refresh_ms: u64 = 0;
         let mut keys = BootKeys::new(p.PCNT, p.GPIO11, p.GPIO12, p.GPIO13);
 
         loop {
@@ -598,9 +574,11 @@ pub(crate) fn run() -> ! {
                     }
                 }
             }
-            ui_refresh_ticks = ui_refresh_ticks.wrapping_add(1);
-            if ui_refresh_ticks >= 50 {
-                ui_refresh_ticks = 0;
+            let ui_now = esp_hal::time::Instant::now()
+                .duration_since_epoch()
+                .as_millis();
+            if ui_now >= next_ui_refresh_ms {
+                next_ui_refresh_ms = ui_now + 100;
                 {
                     // Tick clocks and alerts even while Settings or pairing is foreground.
                     if let Ok(mut frame) = os.render() {
@@ -872,7 +850,7 @@ pub(crate) fn run() -> ! {
         }
         let _ = display.runtime(&first_frame);
 
-        let mut ui_refresh_ticks: u8 = 0;
+        let mut next_ui_refresh_ms: u64 = 0;
         loop {
             keys.set_sensitivity(os.crown_sensitivity());
             let rotation = keys.poll_rotation();
@@ -1038,9 +1016,11 @@ pub(crate) fn run() -> ! {
                     }
                 }
             }
-            ui_refresh_ticks = ui_refresh_ticks.wrapping_add(1);
-            if ui_refresh_ticks >= 50 {
-                ui_refresh_ticks = 0;
+            let ui_now = esp_hal::time::Instant::now()
+                .duration_since_epoch()
+                .as_millis();
+            if ui_now >= next_ui_refresh_ms {
+                next_ui_refresh_ms = ui_now + 100;
                 {
                     // Tick clocks and alerts even while Settings or pairing is foreground.
                     if let Ok(mut frame) = os.render() {
