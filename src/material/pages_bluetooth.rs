@@ -38,8 +38,9 @@ impl Surface {
             f.cursor == 1,
             t,
         );
-        // Firmware currently handles cursor 2 as Back, not Media. Never draw a fake action.
-        self.info_card(205, "BACK", "CONNECTIVITY", f.cursor == 2, t);
+        // Match the three rows in the original watch photographs.
+        self.info_card(205, "MEDIA CONTROLS", "PHONE / PC", f.cursor == 2, t);
+        self.text_center(270, "HOLD CROWN: BACK", 1, t.on_surface_variant);
     }
 
     pub(super) fn display_settings(&mut self, f: MaterialFrame, t: Theme) {
@@ -106,20 +107,54 @@ impl Surface {
 
     pub(super) fn bluetooth_pairing(&mut self, f: MaterialFrame, t: Theme) {
         self.photo_header(f, "Bluetooth", t);
-        self.circle(120, 92, 36, t.primary_container);
-        self.icon_bt(120, 92, t.primary);
-        self.text_center(153, "AOSP Wear", 2, t.on_surface);
-        self.text_center(
-            181,
-            if f.bt {
-                "Pairing requires BLE HID"
-            } else {
-                "Turn on Bluetooth"
-            },
-            1,
-            t.on_surface_variant,
-        );
-        self.round_rect(25, 217, 190, 40, 20, t.surface_high);
-        self.text_center(230, "LONG PRESS TO GO BACK", 1, t.on_surface);
+        self.circle(120, 81, 25, t.primary_container);
+        self.icon_bt(120, 81, t.primary);
+        self.text_center(116, "AOSP Wear", 2, t.on_surface);
+        if let Some(pin) = f.bt_pin {
+            let digits = [
+                b'0' + ((pin / 100000) % 10) as u8,
+                b'0' + ((pin / 10000) % 10) as u8,
+                b'0' + ((pin / 1000) % 10) as u8,
+                b'0' + ((pin / 100) % 10) as u8,
+                b'0' + ((pin / 10) % 10) as u8,
+                b'0' + (pin % 10) as u8,
+            ];
+            self.text_center(
+                145,
+                core::str::from_utf8(&digits).unwrap_or("------"),
+                2,
+                t.primary,
+            );
+        } else {
+            let status = match f.bt_status {
+                1 => "Select on phone / PC",
+                2 => "Connected / securing",
+                3 => "Media remote ready",
+                5 => "Pairing failed / retry",
+                _ => "Press Pair new device",
+            };
+            self.text_center(145, status, 1, t.on_surface_variant);
+        }
+        let labels = if f.bt_pin.is_some() {
+            ["Confirm matching code", "Cancel", "Cancel"]
+        } else {
+            ["Pair new device", "Disconnect", "Forget devices"]
+        };
+        for (i, label) in labels.iter().enumerate() {
+            self.round_rect(
+                25,
+                170 + i as i32 * 32,
+                190,
+                29,
+                14,
+                if f.cursor as usize == i {
+                    t.primary_container
+                } else {
+                    t.surface_high
+                },
+            );
+            self.text_center(178 + i as i32 * 32, label, 1, t.on_surface);
+        }
+        self.text_center(266, "HOLD CROWN: BACK", 1, t.on_surface_variant);
     }
 }

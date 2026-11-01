@@ -11,10 +11,44 @@ pub(crate) fn service_radio_runtime<D: BlockDevice>(
     dev: &D,
     pager_used: &mut u32,
 ) -> Option<runtime::RuntimeFrame> {
+    #[cfg(feature = "ble-hid")]
+    if !radios.bonds_loaded {
+        let mut raw = [0u8; crate::ble_bonds::MAX_BOND_BLOB];
+        if let Some(pager) = pager {
+            if let Ok(n) = pager.read(dev, 68, 0x424e_4431, &mut raw) {
+                radios.restore_bonds(&raw[..n]);
+            }
+        }
+        radios.bonds_loaded = true;
+    }
     if rtc::take_network_sync_request() {
         radios.request_network_time_sync();
     }
     radios.tick(((os.state() >> 23) & 1) != 0);
+
+    let bluetooth_redraw = {
+        #[cfg(feature = "ble-hid")]
+        {
+            if let Some(action) = os.take_bluetooth_action() {
+                radios.bluetooth_action(action);
+            }
+            let (status, pin) = radios.bluetooth_snapshot();
+            let mut raw = [0u8; crate::ble_bonds::MAX_BOND_BLOB];
+            if let Some(n) = radios.encode_dirty_bonds(&mut raw) {
+                if let Some(pager) = pager {
+                    if pager.write(dev, 68, 0x424e_4431, &raw[..n]).is_ok() {
+                        radios.bonds_saved();
+                    }
+                }
+            }
+            os.set_bluetooth_status(status, pin)
+        }
+        #[cfg(not(feature = "ble-hid"))]
+        {
+            let _ = os.take_bluetooth_action();
+            os.set_bluetooth_status(0, None)
+        }
+    };
 
     // The browser remote uses the same RuntimeEvent path as the physical crown
     // and desktop viewer, so it cannot bypass normal navigation semantics.
@@ -50,6 +84,8 @@ pub(crate) fn service_radio_runtime<D: BlockDevice>(
         net::LinkState::Online => 4,
     };
     let mut redraw = os.set_wifi_link_state(link);
+    redraw |= os.set_wifi_ip(radios.ip_address().map(|ip| ip.octets()));
+    redraw |= bluetooth_redraw;
 
     if let Some(unix) = radios.take_network_time() {
         if rtc::set_network_unix_seconds(unix) {

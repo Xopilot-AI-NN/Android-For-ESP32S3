@@ -65,6 +65,7 @@ pub fn checksum(payload: &[u8]) -> u32 {
 
 fn prop(key: &str) -> Option<&'static str> {
     match key {
+        "ro.product.locale" | "persist.sys.locale" => Some(crate::material::DEFAULT_LOCALE),
         "ro.product.name" => Some(PRODUCT_NAME),
         "ro.product.model" => Some(PRODUCT_MODEL),
         "ro.product.device" => Some(PRODUCT_DEVICE),
@@ -103,6 +104,8 @@ fn prop(key: &str) -> Option<&'static str> {
 }
 
 const PROPS: &[&str] = &[
+    "ro.product.locale",
+    "persist.sys.locale",
     "ro.product.name",
     "ro.product.model",
     "ro.product.device",
@@ -137,8 +140,9 @@ const PROPS: &[&str] = &[
 ];
 
 /// Compact property summary used by the local ZADB bridge.
+#[cfg(feature = "pc-block-boot")]
 pub fn getprop() -> &'static str {
-    "ro.product.name=aosp_wear; ro.product.model=AOSP Wear OS; ro.product.device=aosp_wear; ro.product.manufacturer=AOSP; ro.build.version.release=17; ro.build.version.sdk=37; ro.build.display.id=AOSP Wear OS Android 17 QPR1"
+    "ro.product.locale=ru-RU; persist.sys.locale=ru-RU; ro.product.name=aosp_wear; ro.product.model=AOSP Wear OS; ro.product.device=aosp_wear; ro.product.manufacturer=AOSP; ro.build.version.release=17; ro.build.version.sdk=37; ro.build.display.id=AOSP Wear OS Android 17 QPR1"
 }
 
 pub fn services() -> &'static str {

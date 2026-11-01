@@ -33,7 +33,7 @@ esac
 
 FEATURES="rhai-runtime,display-${DISPLAY_NAME}"
 [[ "$STORAGE_NAME" == "pc" ]] && FEATURES+=",pc-block-boot"
-[[ "$RADIO_NAME" == "radio" ]] && FEATURES+=",radio-services"
+[[ "$RADIO_NAME" == "radio" ]] && FEATURES+=",ble-hid"
 if [[ "${AOSP_WEAR_DISPLAY_SOFTWARE_SPI:-0}" == "1" ]]; then
   if [[ "$DISPLAY_NAME" != "st7789" ]]; then
     echo "display-software-spi requires ST7789" >&2; exit 2

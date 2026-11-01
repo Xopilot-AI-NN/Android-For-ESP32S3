@@ -14,8 +14,29 @@ const SYSTEM_SETTINGS_SLOT: u32 = 66;
 const SYSTEM_SETTINGS_TAG: u32 = 0x5a53_4554; // "ZSET"
 const RTC_CONFIG_SLOT: u32 = 67;
 const RTC_CONFIG_TAG: u32 = 0x5a52_5443; // "ZRTC"
+const CLOCK_CONFIG_SLOT: u32 = 69;
+const CLOCK_CONFIG_TAG: u32 = 0x5a43_4c4b; // "ZCLK"
 // brightness..wireless-debugging, excluding screen/cursor and notifications.
 pub(crate) const SYSTEM_SETTINGS_MASK: i32 = 0x00ff_fe00;
+
+pub(crate) fn load_clock_config<D: BlockDevice>(
+    pager: &page_store::PageStore,
+    dev: &D,
+) -> Option<i32> {
+    pager
+        .read_i32(dev, CLOCK_CONFIG_SLOT, CLOCK_CONFIG_TAG)
+        .ok()
+}
+
+pub(crate) fn save_clock_config<D: BlockDevice>(
+    pager: &page_store::PageStore,
+    dev: &D,
+    config: i32,
+) -> bool {
+    pager
+        .write_i32(dev, CLOCK_CONFIG_SLOT, CLOCK_CONFIG_TAG, config)
+        .is_ok()
+}
 
 pub(crate) fn load_wifi_credentials<D: BlockDevice>(
     pager: &page_store::PageStore,

@@ -1,6 +1,5 @@
 #![no_std]
 #![no_main]
-#![feature(asm_experimental_arch)]
 
 extern crate alloc;
 use esp_backtrace as _;
@@ -50,7 +49,6 @@ mod font;
 #[cfg(feature = "display-ssd1306")]
 mod framebuffer;
 mod gpt;
-#[cfg(not(feature = "pc-block-boot"))]
 mod input;
 mod lp;
 mod material;
@@ -74,8 +72,9 @@ use display::BootDisplay;
 use display::Ssd1306Display;
 #[cfg(feature = "display-st7789")]
 use display::St7789Display;
+use input::BootKeys;
 #[cfg(not(feature = "pc-block-boot"))]
-use input::{BootKeys, BootMode};
+use input::BootMode;
 
 esp_bootloader_esp_idf::esp_app_desc!();
 

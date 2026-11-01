@@ -34,6 +34,7 @@ const MIN_BLE_INTERNAL_FREE: usize = 24 * 1024;
 const WIFI_CONNECT_TIMEOUT_MS: u64 = 30_000;
 const WIFI_RECONNECT_BACKOFF_MS: u64 = 5_000;
 const WIFI_DRIVER_SETTLE_MS: u32 = 150;
+#[cfg(not(feature = "ble-hid"))]
 const BLE_SCAN_MS: u64 = 6_000;
 
 fn internal_free_bytes() -> usize {
@@ -62,6 +63,7 @@ struct WifiAp {
     channel: u8,
 }
 
+#[cfg(not(feature = "ble-hid"))]
 #[derive(Clone, Debug)]
 struct BleDevice {
     address: [u8; 6],
@@ -70,6 +72,7 @@ struct BleDevice {
     name: HString<24>,
 }
 
+#[cfg(not(feature = "ble-hid"))]
 #[derive(Clone, Copy, Debug)]
 struct BleConnection {
     address: [u8; 6],
@@ -82,7 +85,12 @@ pub struct RadioServices {
     wifi_device: WifiDevice<'static>,
     net: NetworkService,
     bt_device: Option<BT<'static>>,
+    #[cfg(not(feature = "ble-hid"))]
     ble: Option<BleConnector<'static>>,
+    #[cfg(feature = "ble-hid")]
+    hid: Option<crate::ble_host::BleHost>,
+    #[cfg(feature = "ble-hid")]
+    pub(crate) bonds_loaded: bool,
     wifi_requested: bool,
     bt_requested: bool,
     saved_wifi: Option<WifiCredentials>,
@@ -95,11 +103,17 @@ pub struct RadioServices {
     wifi_reconnect_at: u64,
     wifi_failures: u8,
     wifi_aps: HVec<WifiAp, 10>,
+    #[cfg(not(feature = "ble-hid"))]
     ble_devices: HVec<BleDevice, 10>,
+    #[cfg(not(feature = "ble-hid"))]
     ble_scanning_until: Option<u64>,
+    #[cfg(not(feature = "ble-hid"))]
     ble_advertising: bool,
+    #[cfg(not(feature = "ble-hid"))]
     ble_pending_address: Option<[u8; 6]>,
+    #[cfg(not(feature = "ble-hid"))]
     ble_pending_since: Option<u64>,
+    #[cfg(not(feature = "ble-hid"))]
     ble_connection: Option<BleConnection>,
 }
 
@@ -135,7 +149,12 @@ impl RadioServices {
             wifi_device,
             net,
             bt_device: Some(bt),
+            #[cfg(not(feature = "ble-hid"))]
             ble: None,
+            #[cfg(feature = "ble-hid")]
+            hid: None,
+            #[cfg(feature = "ble-hid")]
+            bonds_loaded: false,
             wifi_requested: false,
             bt_requested: false,
             saved_wifi: None,
@@ -145,11 +164,17 @@ impl RadioServices {
             wifi_reconnect_at: 0,
             wifi_failures: 0,
             wifi_aps: HVec::new(),
+            #[cfg(not(feature = "ble-hid"))]
             ble_devices: HVec::new(),
+            #[cfg(not(feature = "ble-hid"))]
             ble_scanning_until: None,
+            #[cfg(not(feature = "ble-hid"))]
             ble_advertising: false,
+            #[cfg(not(feature = "ble-hid"))]
             ble_pending_address: None,
+            #[cfg(not(feature = "ble-hid"))]
             ble_pending_since: None,
+            #[cfg(not(feature = "ble-hid"))]
             ble_connection: None,
         })
     }
@@ -274,7 +299,25 @@ impl RadioServices {
     }
 }
 
+#[cfg(not(feature = "ble-hid"))]
 mod ble;
+#[cfg(not(feature = "ble-hid"))]
 mod hci;
+#[cfg(feature = "ble-hid")]
+mod hid;
 mod wifi;
-use hci::{hci_command, parse_ble_event, push_safe_text};
+#[cfg(not(feature = "ble-hid"))]
+use hci::{hci_command, parse_ble_event};
+
+fn push_safe_text<const N: usize>(out: &mut HString<N>, text: &str) {
+    for ch in text.chars() {
+        let safe = if ch == '\r' || ch == '\n' || ch == '|' {
+            '?'
+        } else {
+            ch
+        };
+        if out.push(safe).is_err() {
+            break;
+        }
+    }
+}

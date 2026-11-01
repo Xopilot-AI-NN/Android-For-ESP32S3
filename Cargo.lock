@@ -49,6 +49,7 @@ name = "aosp-wear-bootloader"
 version = "17.2.1"
 dependencies = [
  "embassy-futures",
+ "embassy-sync 0.7.2",
  "embassy-time",
  "embassy-time-driver",
  "embedded-hal 1.0.0",

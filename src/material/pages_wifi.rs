@@ -46,7 +46,11 @@ impl Surface {
             f.cursor == 1,
             t,
         );
-        self.info_card(207, "BACK", "CONNECTIVITY", f.cursor == 2, t);
+        self.info_card(200, "BACK", "CONNECTIVITY", f.cursor == 2, t);
+        if let Some(ip) = f.wifi_ip {
+            let label = alloc::format!("IP {}.{}.{}.{}", ip[0], ip[1], ip[2], ip[3]);
+            self.text_center(267, label.as_str(), 1, t.primary);
+        }
     }
 
     pub(super) fn wifi_ssid<'a>(f: &'a MaterialFrame) -> &'a str {
@@ -73,7 +77,7 @@ impl Surface {
             self.round_rect(15, 78, 210, 141, 36, t.surface_high);
             self.icon_wifi(120, 108, t.on_surface);
             let name = Self::wifi_ssid(&f);
-            self.text_center(140, name, if name.len() > 16 { 1 } else { 2 }, t.on_surface);
+            self.text_center_raw(140, name, if name.len() > 16 { 1 } else { 2 }, t.on_surface);
             let signal = if f.wifi_ap_rssi > -55 {
                 "EXCELLENT"
             } else if f.wifi_ap_rssi > -70 {
@@ -115,7 +119,7 @@ impl Surface {
         // Compact Gboard-like password editor: no suggestion strip, only the
         // field and keyboard.  It is laid out for one-dimensional encoder
         // focus, so the selected key lifts/enlarges instead of relying on touch.
-        self.text_center(5, Self::wifi_ssid(&f), 1, t.on_surface_variant);
+        self.text_center_raw(5, Self::wifi_ssid(&f), 1, t.on_surface_variant);
         self.round_rect(12, 21, 216, 40, 18, t.surface);
         if f.wifi_password_len == 0 {
             self.text(26, 37, "PASSWORD", 1, t.outline);
@@ -126,7 +130,7 @@ impl Surface {
             // preview is intentionally not serialized to desktop/web remotes.
             let n = f.wifi_password_preview_len.min(16) as usize;
             let visible = core::str::from_utf8(&f.wifi_password_preview[..n]).unwrap_or("?");
-            self.text(25, 35, visible, 1, t.on_surface);
+            self.text_raw(25, 35, visible, 1, t.on_surface);
             if f.wifi_password_len as usize > n {
                 self.text(15, 35, "~", 1, t.outline);
             }

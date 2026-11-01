@@ -8,6 +8,7 @@ use core::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use esp_hal::time::Instant;
 use heapless::{String as HString, Vec as HVec};
 
+#[path = "runtime/clock.rs"]
 mod clock;
 use clock::{clock_action, clock_snapshot};
 
@@ -86,6 +87,15 @@ pub enum WifiUiAction {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BluetoothUiAction {
+    Pair,
+    Confirm(bool),
+    Disconnect,
+    Forget,
+    Media(u16),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RuntimeError {
     Script,
     NonZero,
@@ -157,6 +167,12 @@ pub struct Runtime {
     /// explicitly instead of relying on closure/global-variable semantics.
     state: i32,
     wifi_ui: WifiUi,
+    flashlight_since_secs: Option<u64>,
+    bluetooth_action: Option<BluetoothUiAction>,
+    bluetooth_status: u8,
+    bluetooth_pin: Option<u32>,
+    wifi_ip: Option<[u8; 4]>,
+    timer_editor: u8,
 }
 
 #[cfg(feature = "rhai-runtime")]
@@ -169,6 +185,9 @@ impl Runtime {
         engine.set_max_operations(60_000);
         engine.set_max_call_levels(16);
 
+        engine.register_fn("system_locale", || {
+            crate::material::DEFAULT_LOCALE.to_string()
+        });
         engine.register_fn("boot_version", || 2_i32);
         engine.register_fn("android_api_level", || 37_i32);
         engine.register_fn("runtime_abi", || {
@@ -252,12 +271,36 @@ impl Runtime {
             ast,
             state,
             wifi_ui: WifiUi::new(),
+            flashlight_since_secs: None,
+            bluetooth_action: None,
+            bluetooth_status: 0,
+            bluetooth_pin: None,
+            wifi_ip: None,
+            timer_editor: 0,
         };
         let frame = runtime.render()?;
         Ok((runtime, frame))
     }
 
     pub fn render(&mut self) -> Result<RuntimeFrame, RuntimeError> {
+        if self.state & 31 != 11 {
+            self.timer_editor = 0;
+        }
+        // The flashlight drives an already retention-prone LCD fully white.
+        // Always return to Quick Settings after 45 seconds, even without input.
+        if (self.state & 31) == 29 {
+            let now = Instant::now().duration_since_epoch().as_secs();
+            if let Some(start) = self.flashlight_since_secs {
+                if now.saturating_sub(start) >= 45 {
+                    self.state = (self.state & -512) | 4 | (4 << 5);
+                    self.flashlight_since_secs = None;
+                }
+            } else {
+                self.flashlight_since_secs = Some(now);
+            }
+        } else {
+            self.flashlight_since_secs = None;
+        }
         let options = CallFnOptions::new().eval_ast(false).rewind_scope(true);
         let raw = self
             .engine
@@ -274,11 +317,44 @@ impl Runtime {
             })?;
         let mut frame = RuntimeFrame::parse(raw.as_str())?;
         self.enrich_wifi_frame(&mut frame);
+        if let RuntimeFrame::Material(m) = &mut frame {
+            m.bt_status = self.bluetooth_status;
+            m.bt_pin = self.bluetooth_pin;
+            m.alarm_minutes = clock::alarm_minutes();
+            m.clock_alert = clock::alert();
+            m.wifi_ip = self.wifi_ip;
+            m.timer_editor = self.timer_editor;
+            m.timer_duration_secs = clock::timer_duration();
+        }
         Ok(frame)
     }
 
     pub fn state(&self) -> i32 {
         self.state
+    }
+
+    pub fn clock_config(&self) -> i32 {
+        clock::config()
+    }
+    pub fn restore_clock_config(&mut self, value: i32) {
+        clock::restore_config(value);
+    }
+
+    pub fn take_bluetooth_action(&mut self) -> Option<BluetoothUiAction> {
+        self.bluetooth_action.take()
+    }
+
+    pub fn set_bluetooth_status(&mut self, status: u8, pin: Option<u32>) -> bool {
+        let changed = self.bluetooth_status != status || self.bluetooth_pin != pin;
+        self.bluetooth_status = status;
+        self.bluetooth_pin = pin;
+        changed
+    }
+
+    pub fn set_wifi_ip(&mut self, ip: Option<[u8; 4]>) -> bool {
+        let changed = self.wifi_ip != ip;
+        self.wifi_ip = ip;
+        changed
     }
 
     pub fn clear_wifi_scan(&mut self) {
@@ -291,10 +367,7 @@ impl Runtime {
         }
         let mut name = HString::<32>::new();
         for ch in ssid.chars() {
-            if ch.is_ascii() {
-                let _ = name.push(ch);
-            }
-            if name.len() >= 32 {
+            if name.push(ch).is_err() {
                 break;
             }
         }
@@ -365,6 +438,112 @@ impl Runtime {
 
     pub fn dispatch(&mut self, event: RuntimeEvent) -> Result<RuntimeFrame, RuntimeError> {
         let screen = (self.state & 0x1f) as u8;
+        let cursor = ((self.state >> 5) & 15) as u8;
+        if clock::alert() != 0 && event == RuntimeEvent::Press {
+            clock_action(6);
+            return self.render();
+        }
+        if screen == 11 && self.timer_editor != 0 {
+            match event {
+                RuntimeEvent::Rotate(delta) if self.timer_editor == 2 => {
+                    clock::set_timer_duration(
+                        i32::from(clock::timer_duration()).saturating_add(delta.saturating_mul(60)),
+                    );
+                }
+                RuntimeEvent::Rotate(delta) => {
+                    self.state =
+                        (self.state & !0x1e0) | ((i32::from(cursor) + delta).rem_euclid(5) << 5);
+                }
+                RuntimeEvent::Press => {
+                    if self.timer_editor == 2 {
+                        clock::start_timer();
+                        self.timer_editor = 1;
+                    } else if cursor < 4 {
+                        clock::set_timer_duration([300, 600, 900, 1800][cursor as usize]);
+                        clock::start_timer();
+                    } else {
+                        self.timer_editor = 2;
+                    }
+                }
+                RuntimeEvent::Back => {
+                    self.timer_editor = if self.timer_editor == 2 { 1 } else { 0 };
+                    self.state &= !0x1e0;
+                }
+                RuntimeEvent::Home => {
+                    self.state = (self.state & !0x1ff) | 1;
+                }
+                _ => {}
+            }
+            return self.render();
+        }
+        if screen == 11 && cursor == 0 && event == RuntimeEvent::Press {
+            self.timer_editor = 1;
+            return self.render();
+        }
+        if screen == 11 && cursor == 2 && event == RuntimeEvent::Press {
+            self.state = (self.state & !0x1ff) | 31;
+            return self.render();
+        }
+        if screen == 31 {
+            match event {
+                RuntimeEvent::Rotate(delta) => {
+                    self.state =
+                        (self.state & !0x1e0) | ((i32::from(cursor) + delta).rem_euclid(4) << 5);
+                }
+                RuntimeEvent::Press => {
+                    if cursor < 3 {
+                        clock_action([3, 4, 5][cursor as usize]);
+                    } else {
+                        self.state = (self.state & !0x1ff) | 11 | (2 << 5);
+                    }
+                }
+                RuntimeEvent::Back => {
+                    self.state = (self.state & !0x1ff) | 11 | (2 << 5);
+                }
+                RuntimeEvent::Home => {
+                    self.state = (self.state & !0x1ff) | 1;
+                }
+                _ => {}
+            }
+            return self.render();
+        }
+        if screen == 30 {
+            match event {
+                RuntimeEvent::Rotate(delta) => {
+                    let next = (i32::from(cursor) + delta).rem_euclid(3);
+                    self.state = (self.state & !0x1e0) | (next << 5);
+                }
+                RuntimeEvent::Press => {
+                    self.bluetooth_action = Some(if self.bluetooth_pin.is_some() {
+                        BluetoothUiAction::Confirm(cursor == 0)
+                    } else {
+                        match cursor {
+                            0 => BluetoothUiAction::Pair,
+                            1 => BluetoothUiAction::Disconnect,
+                            _ => BluetoothUiAction::Forget,
+                        }
+                    });
+                    if cursor == 0 {
+                        self.state = (self.state | (1 << 22)) & !(1 << 17);
+                    }
+                }
+                RuntimeEvent::Back | RuntimeEvent::Home => {
+                    if self.bluetooth_pin.is_some() {
+                        self.bluetooth_action = Some(BluetoothUiAction::Confirm(false));
+                    }
+                    self.state =
+                        (self.state & !0x1ff) | if event == RuntimeEvent::Home { 1 } else { 13 };
+                }
+                _ => {}
+            }
+            return self.render();
+        }
+        if screen == 10 && event == RuntimeEvent::Press {
+            if let Some(usage) = [0x00B6, 0x00CD, 0x00B5, 0x00EA, 0x00E9].get(cursor as usize) {
+                self.bluetooth_action = Some(BluetoothUiAction::Media(*usage));
+                return self.render();
+            }
+        }
         if screen == 23 || screen == 24 || screen == 25 {
             if self.dispatch_wifi_ui(event) {
                 return self.render();
@@ -616,5 +795,18 @@ impl Runtime {
     }
     pub fn take_wifi_ui_action(&mut self) -> Option<WifiUiAction> {
         None
+    }
+    pub fn take_bluetooth_action(&mut self) -> Option<BluetoothUiAction> {
+        None
+    }
+    pub fn set_bluetooth_status(&mut self, _status: u8, _pin: Option<u32>) -> bool {
+        false
+    }
+    pub fn clock_config(&self) -> i32 {
+        0
+    }
+    pub fn restore_clock_config(&mut self, _value: i32) {}
+    pub fn set_wifi_ip(&mut self, _ip: Option<[u8; 4]>) -> bool {
+        false
     }
 }

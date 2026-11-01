@@ -85,22 +85,21 @@ impl Surface {
             cy,
             if selected { t.on_primary } else { t.primary },
         );
-        let scale = if label.len() <= 12 && label != "Bluetooth" {
+        let scale = if Self::text_width(label, 2) <= w - 72 {
             2
         } else {
             1
         };
-        self.text(
-            x + 57,
-            y + (h - 7 * scale) / 2,
-            label,
-            scale,
-            if selected {
-                t.on_primary_container
-            } else {
-                t.on_surface
-            },
-        );
+        let color = if selected {
+            t.on_primary_container
+        } else {
+            t.on_surface
+        };
+        if scale == 1 && Self::text_width(label, 1) > w - 72 {
+            self.text_wrapped(x + 57, y + h / 2 - 12, label, w - 72, color);
+        } else {
+            self.text(x + 57, y + (h - 7 * scale) / 2, label, scale, color);
+        }
         if selected {
             self.round_rect(x + w - 6, cy - 12, 3, 24, 2, t.primary);
         }
@@ -174,52 +173,29 @@ impl Surface {
         selected: bool,
         t: Theme,
     ) {
-        // Photo layout: two columns of three horizontal pills; icon left, label right.
-        let (w, h) = if selected { (110, 58) } else { (106, 54) };
-        if selected {
-            self.round_rect(
-                cx - w / 2 - 2,
-                cy - h / 2 - 2,
-                w + 4,
-                h + 4,
-                h / 2 + 2,
-                t.primary_container,
-            );
-        }
-        let bg = if on {
-            t.primary_container
-        } else {
-            t.surface_high
-        };
-        let fg = if on {
-            t.on_primary_container
-        } else {
-            t.on_surface
-        };
-        self.round_rect(cx - w / 2, cy - h / 2, w, h, h / 2, bg);
-        let ix = cx - 30;
+        let (w, h) = if selected { (110, 58) } else { (104, 54) };
+        let bg = if on { t.primary } else { t.surface_high };
+        let fg = if on { t.on_primary } else { t.on_surface };
+        self.round_rect(
+            cx - w / 2,
+            cy - h / 2,
+            w,
+            h,
+            if selected { 18 } else { 27 },
+            bg,
+        );
         match label {
-            "Wi-Fi" => self.icon_wifi(ix, cy, if on { t.primary } else { fg }),
-            "Bluetooth" => self.icon_bt(ix, cy, if on { t.primary } else { fg }),
-            "DND" => self.icon_dnd(ix, cy, fg),
-            "Airplane" => self.icon_airplane(ix, cy, fg),
-            "Flashlight" => self.icon_sun(ix, cy, fg),
-            "Settings" => self.icon_settings(ix, cy, fg),
-            _ => self.circle(ix, cy, 5, fg),
+            "Wi-Fi" => self.icon_wifi(cx, cy - 7, fg),
+            "Bluetooth" => self.icon_bt(cx, cy - 7, fg),
+            "DND" => self.icon_dnd(cx, cy - 7, fg),
+            "Airplane" => self.icon_airplane(cx, cy - 7, fg),
+            "Flashlight" => self.symbol(Symbol::Flashlight, cx, cy - 7, fg),
+            "Settings" => self.icon_settings(cx, cy - 7, fg),
+            _ => {}
         }
-        let tx = cx - 10;
-        if label == "DND" {
-            self.text(tx, cy - 9, "Do not", 1, fg);
-            self.text(tx, cy + 2, "disturb", 1, fg);
-        } else if label == "Bluetooth" {
-            self.text(tx, cy - 3, "BT", 1, fg);
-        } else if label == "Flashlight" {
-            self.text(tx, cy - 3, "Light", 1, fg);
-        } else {
-            self.text(tx, cy - 3, label, 1, fg);
-        }
+        self.text_center_x(cx, cy + 13, label, 1, fg);
         if selected {
-            self.round_rect(cx - 10, cy + 16, 22, 2, 1, t.primary);
+            self.round_rect(cx - 9, cy + 26, 18, 2, 1, t.primary);
         }
     }
 
@@ -245,10 +221,10 @@ impl Surface {
             17,
             if active { t.primary } else { t.surface },
         );
-        self.circle(
+        self.row_icon(
+            title,
             x + 27,
             y + h / 2,
-            5,
             if active { t.on_primary } else { t.primary },
         );
         self.text(x + 53, y + 10, title, 1, t.on_surface);

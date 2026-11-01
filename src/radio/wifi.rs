@@ -255,6 +255,7 @@ impl RadioServices {
         );
     }
 
+    #[cfg(feature = "pc-block-boot")]
     pub fn format_wifi_scan<const N: usize>(&self, out: &mut HString<N>) {
         if self.wifi_aps.is_empty() {
             let _ = out.push_str("no access points found");

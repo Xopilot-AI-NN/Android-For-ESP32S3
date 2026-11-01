@@ -3,13 +3,13 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-main = (ROOT / "src" / "main.rs").read_text()
+boot = (ROOT / "src" / "boot.rs").read_text()
 config = (ROOT / "src" / "config.rs").read_text()
 display = (ROOT / "src" / "display.rs").read_text()
 
 try:
-    tft = main.split('    #[cfg(feature = "display-st7789")]\n    let physical_display = {', 1)[1].split('    };', 1)[0]
-    sd = main.split('// SD requires >=74 clocks', 1)[1].split('let device = ExclusiveDevice::new', 1)[0]
+    tft = boot.split('    #[cfg(all(feature = "display-st7789", not(feature = "display-software-spi")))]\n    let physical_display = {', 1)[1].split('    };', 1)[0]
+    sd = boot.split('// SD requires >=74 clocks', 1)[1].split('let device = ExclusiveDevice::new', 1)[0]
 except IndexError as e:
     raise SystemExit('FAIL: expected TFT/SD initialization block not found') from e
 

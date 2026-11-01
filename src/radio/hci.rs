@@ -1,19 +1,6 @@
 //! HCI protocol helpers. Only radio.rs owns the controller and packet reads.
 use super::*;
 
-pub(super) fn push_safe_text<const N: usize>(out: &mut HString<N>, text: &str) {
-    for ch in text.chars() {
-        let safe = if ch == '\r' || ch == '\n' || ch == '|' {
-            '?'
-        } else {
-            ch
-        };
-        if out.push(safe).is_err() {
-            break;
-        }
-    }
-}
-
 pub(super) fn hci_command(ble: &mut BleConnector<'static>, opcode: u16, params: &[u8]) -> bool {
     if params.len() > 255 {
         return false;

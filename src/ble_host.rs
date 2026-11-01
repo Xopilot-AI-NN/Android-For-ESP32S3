@@ -190,6 +190,10 @@ impl BleHost {
     pub fn saved(&mut self) {
         self.state.borrow_mut().bonds_dirty = false;
     }
+    /// Called before the first poll, while the lazy host future has not started.
+    pub fn restore_bonds(&mut self, bonds: Vec<BondInformation, 4>) {
+        self.state.borrow_mut().bonds = bonds;
+    }
 }
 
 async fn run(connector: BleConnector<'static>, mut address: [u8; 6], shared: Rc<RefCell<State>>) {

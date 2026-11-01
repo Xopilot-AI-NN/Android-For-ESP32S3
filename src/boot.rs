@@ -212,6 +212,9 @@ pub(crate) fn run() -> ! {
         // immediately after a reboot; a paired-phone/manual update remains the
         // authoritative source and will replace it when available.
         if let Some(pager) = pager.as_ref() {
+            if let Some(config) = load_clock_config(pager, session.block_device()) {
+                os.restore_clock_config(config);
+            }
             if let Some(config) = load_rtc_config(pager, session.block_device()) {
                 rtc::restore_config(config);
                 println!("time: restored software RTC settings");
@@ -251,6 +254,7 @@ pub(crate) fn run() -> ! {
         let mut persisted_settings = os.state() & SYSTEM_SETTINGS_MASK;
         let mut persisted_time = rtc::snapshot_minutes();
         let mut persisted_rtc_config = rtc::config_snapshot();
+        let mut persisted_clock_config = os.clock_config();
         first_frame.set_swap_pages(0);
         #[cfg(feature = "radio-services")]
         if let Some(radios) = radios.as_mut() {
@@ -267,8 +271,33 @@ pub(crate) fn run() -> ! {
         // viewer talks to the block-server bridge and never reopens ttyACM0.
         session.block_device().viewer_interactive();
         let mut ui_refresh_ticks: u8 = 0;
+        let mut keys = BootKeys::new(p.GPIO11, p.GPIO12, p.GPIO13);
 
         loop {
+            let rotation = keys.poll_rotation();
+            let event = keys.poll_button_event().or_else(|| {
+                if rotation != 0 {
+                    Some(runtime::RuntimeEvent::Rotate(rotation as i32))
+                } else {
+                    None
+                }
+            });
+            if let Some(event) = event {
+                if let Ok(frame) = dispatch_with_pager(
+                    &mut os,
+                    event,
+                    pager.as_ref(),
+                    session.block_device(),
+                    &mut pager_used,
+                ) {
+                    #[cfg(feature = "radio-services")]
+                    if let Some(radios) = radios.as_mut() {
+                        radios.sync_frame(&frame);
+                    }
+                    let _ = display.runtime(&frame);
+                    session.block_device().viewer_runtime(&frame);
+                }
+            }
             if let Some(event) = session.block_device().poll_desktop_event() {
                 let runtime_event = match event {
                     DesktopEvent::Sync => {
@@ -537,8 +566,8 @@ pub(crate) fn run() -> ! {
             ui_refresh_ticks = ui_refresh_ticks.wrapping_add(1);
             if ui_refresh_ticks >= 50 {
                 ui_refresh_ticks = 0;
-                let screen = (os.state() & 0x1f) as u8;
-                if matches!(screen, 0 | 1 | 6 | 10 | 11) {
+                {
+                    // Tick clocks and alerts even while Settings or pairing is foreground.
                     if let Ok(mut frame) = os.render() {
                         frame.set_swap_pages(pager_used.count_ones().min(255) as u8);
                         #[cfg(feature = "radio-services")]
@@ -585,6 +614,12 @@ pub(crate) fn run() -> ! {
                     {
                         persisted_time = Some(now);
                     }
+                }
+                let clock_config = os.clock_config();
+                if clock_config != persisted_clock_config
+                    && save_clock_config(pager, session.block_device(), clock_config)
+                {
+                    persisted_clock_config = clock_config;
                 }
                 let rtc_config = rtc::config_snapshot();
                 if rtc_config != persisted_rtc_config
@@ -732,6 +767,9 @@ pub(crate) fn run() -> ! {
         // immediately after a reboot; a paired-phone/manual update remains the
         // authoritative source and will replace it when available.
         if let Some(pager) = pager.as_ref() {
+            if let Some(config) = load_clock_config(pager, session.block_device()) {
+                os.restore_clock_config(config);
+            }
             if let Some(config) = load_rtc_config(pager, session.block_device()) {
                 rtc::restore_config(config);
                 println!("time: restored software RTC settings");
@@ -771,6 +809,7 @@ pub(crate) fn run() -> ! {
         let mut persisted_settings = os.state() & SYSTEM_SETTINGS_MASK;
         let mut persisted_time = rtc::snapshot_minutes();
         let mut persisted_rtc_config = rtc::config_snapshot();
+        let mut persisted_clock_config = os.clock_config();
         first_frame.set_swap_pages(0);
         #[cfg(feature = "radio-services")]
         if let Some(radios) = radios.as_mut() {
@@ -782,8 +821,6 @@ pub(crate) fn run() -> ! {
         }
         let _ = display.runtime(&first_frame);
 
-        let mut last_power = keys.power_pressed();
-        let mut power_hold_ticks: u16 = 0;
         let mut ui_refresh_ticks: u8 = 0;
         loop {
             let rotation = keys.poll_rotation();
@@ -802,21 +839,7 @@ pub(crate) fn run() -> ! {
                     let _ = display.runtime(&frame);
                 }
             }
-            // Encoder-only hardware contract: short press selects, a normal
-            // long press goes Back, and a very long press returns Home.  The
-            // decision is made on release so a long hold cannot accidentally
-            // trigger both Back and Home while the button is still down.
-            let power = keys.power_pressed();
-            if power {
-                power_hold_ticks = power_hold_ticks.saturating_add(1);
-            } else if last_power {
-                let action = if power_hold_ticks >= 90 {
-                    runtime::RuntimeEvent::Home // ~1.8 s
-                } else if power_hold_ticks >= 35 {
-                    runtime::RuntimeEvent::Back // ~0.7 s
-                } else {
-                    runtime::RuntimeEvent::Press
-                };
+            if let Some(action) = keys.poll_button_event() {
                 if let Ok(frame) = dispatch_with_pager(
                     &mut os,
                     action,
@@ -830,9 +853,7 @@ pub(crate) fn run() -> ! {
                     }
                     let _ = display.runtime(&frame);
                 }
-                power_hold_ticks = 0;
             }
-            last_power = power;
 
             if let Some(event) = desktop_input.poll() {
                 let runtime_event = match event {
@@ -968,8 +989,8 @@ pub(crate) fn run() -> ! {
             ui_refresh_ticks = ui_refresh_ticks.wrapping_add(1);
             if ui_refresh_ticks >= 50 {
                 ui_refresh_ticks = 0;
-                let screen = (os.state() & 0x1f) as u8;
-                if matches!(screen, 0 | 1 | 6 | 10 | 11) {
+                {
+                    // Tick clocks and alerts even while Settings or pairing is foreground.
                     if let Ok(mut frame) = os.render() {
                         frame.set_swap_pages(pager_used.count_ones().min(255) as u8);
                         #[cfg(feature = "radio-services")]
@@ -1014,6 +1035,12 @@ pub(crate) fn run() -> ! {
                     {
                         persisted_time = Some(now);
                     }
+                }
+                let clock_config = os.clock_config();
+                if clock_config != persisted_clock_config
+                    && save_clock_config(pager, session.block_device(), clock_config)
+                {
+                    persisted_clock_config = clock_config;
                 }
                 let rtc_config = rtc::config_snapshot();
                 if rtc_config != persisted_rtc_config

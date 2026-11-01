@@ -10,63 +10,96 @@ impl Surface {
     }
 
     pub(super) fn watchface(&mut self, f: MaterialFrame, t: Theme) {
-        // Faithful high-contrast dark dial from the user's lost firmware photos.
         self.status_strip(f, t);
-        self.big_time(58, f.time_minutes, f.time_valid, t.on_surface);
-        if !f.time_valid {
-            self.text_center(
-                150,
-                if f.auto_time {
-                    "SYNCING TIME"
+        let accent = rgb565(166, 222, 239);
+        let muted = rgb565(44, 69, 80);
+        for (x, y, progress) in [
+            (56, 65, if f.alarm_enabled { 100 } else { 0 }),
+            (
+                184,
+                65,
+                if f.wifi_link_state == 4 {
+                    100
+                } else if f.wifi {
+                    25
                 } else {
-                    "SET TIME"
+                    0
                 },
-                1,
-                t.on_surface_variant,
-            );
+            ),
+            (
+                56,
+                217,
+                (u32::from(f.timer_secs) * 100 / u32::from(f.timer_duration_secs.max(1))) as u8,
+            ),
+            (184, 217, ((f.stopwatch_secs % 60) * 100 / 60) as u8),
+        ] {
+            self.circle(x, y, 30, t.surface);
+            self.progress_ring(x, y, 33, progress, accent, muted);
         }
-        let cy = 206;
-        for (cx, active) in [(49, f.wifi), (120, f.alarm_enabled), (191, f.dnd)] {
-            self.circle(
-                cx,
-                cy,
-                27,
-                if active {
-                    t.primary_container
-                } else {
-                    t.surface_high
-                },
-            );
-        }
-        self.icon_wifi(
-            49,
-            cy,
-            if f.wifi {
-                t.primary
-            } else {
-                t.on_surface_variant
-            },
-        );
-        self.icon_clock(
-            120,
-            cy,
+        self.symbol(Symbol::Alarm, 56, 54, accent);
+        let alarm = Self::time_text(f.alarm_minutes);
+        self.text_center_x(
+            56,
+            77,
             if f.alarm_enabled {
-                t.primary
+                core::str::from_utf8(&alarm).unwrap_or("07:00")
             } else {
-                t.on_surface_variant
+                "Off"
             },
+            1,
+            t.on_surface,
         );
-        self.icon_dnd(
-            191,
-            cy,
-            if f.dnd {
-                t.primary
+        self.symbol(Symbol::Wifi, 184, 54, accent);
+        self.text_center_x(
+            184,
+            77,
+            if f.wifi_link_state == 4 {
+                "Online"
+            } else if f.wifi {
+                "Wi-Fi"
             } else {
-                t.on_surface_variant
+                "Off"
             },
+            1,
+            t.on_surface,
         );
+        self.big_time(117, f.time_minutes, f.time_valid, accent);
+        self.text_center(
+            174,
+            if f.time_valid { "" } else { "Set time to sync" },
+            1,
+            t.on_surface_variant,
+        );
+        self.symbol(Symbol::Timer, 56, 205, accent);
+        self.symbol(Symbol::Clock, 184, 205, accent);
+        let timer = Self::mmss_text(f.timer_secs);
+        let stopwatch = Self::mmss_text(f.stopwatch_secs);
+        self.text_center_x(
+            56,
+            229,
+            core::str::from_utf8(&timer).unwrap_or("00:00"),
+            1,
+            t.on_surface,
+        );
+        self.text_center_x(
+            184,
+            229,
+            core::str::from_utf8(&stopwatch).unwrap_or("00:00"),
+            1,
+            t.on_surface,
+        );
+        self.text_center_x(56, 259, "Timer", 1, t.on_surface_variant);
+        self.text_center_x(184, 259, "Stopwatch", 1, t.on_surface_variant);
+        for i in 0..3 {
+            self.circle(
+                110 + i * 10,
+                269,
+                if i == 1 { 3 } else { 2 },
+                if i == 1 { accent } else { muted },
+            );
+        }
         if f.notes > 0 {
-            self.circle(120, 259, 4, t.primary);
+            self.circle(120, 199, 3, t.primary);
         }
     }
 
@@ -111,7 +144,11 @@ impl Surface {
                 i as u8,
                 x,
                 y,
-                if selected { t.primary } else { t.on_surface },
+                if selected {
+                    t.primary
+                } else {
+                    Self::app_accent(i as u8)
+                },
             );
         }
         self.round_rect(33, 247, 174, 28, 14, t.primary_container);
@@ -133,6 +170,20 @@ impl Surface {
         let start = cur.saturating_sub(1).min(4);
         for row in 0..3 {
             let index = (start + row).min(6);
+            if index == 6 {
+                self.round_rect(
+                    55,
+                    203,
+                    130,
+                    72,
+                    32,
+                    if cur == 6 { t.primary } else { t.surface_high },
+                );
+                let color = if cur == 6 { t.on_primary } else { t.on_surface };
+                self.text_center(215, "Grid view", 2, color);
+                self.symbol(Symbol::Grid, 120, 253, color);
+                continue;
+            }
             self.app_row(
                 62 + row as i32 * 66,
                 labels[index],
@@ -141,6 +192,8 @@ impl Surface {
                 t,
             );
         }
+        self.round_rect(235, 76, 3, 114, 1, t.surface_high);
+        self.round_rect(235, 76 + cur as i32 * 14, 3, 24, 1, t.primary);
     }
 
     pub(super) fn assistant_page(&mut self, _f: MaterialFrame, t: Theme) {
@@ -264,9 +317,27 @@ impl Surface {
                 if selected { 28 } else { 23 },
                 if selected { t.primary } else { t.surface_high },
             );
-            self.icon_clock(cx, 165, if selected { t.on_primary } else { t.on_surface });
+            self.symbol(
+                [Symbol::Timer, Symbol::Clock, Symbol::Alarm][i],
+                cx,
+                165,
+                if selected { t.on_primary } else { t.on_surface },
+            );
             self.text_center_x(cx, 202, labels[i], 1, t.on_surface_variant);
         }
+        self.round_rect(
+            63,
+            237,
+            114,
+            30,
+            15,
+            if f.cursor == 3 {
+                t.primary_container
+            } else {
+                t.surface_high
+            },
+        );
+        self.text_center(246, "Back", 1, t.on_surface);
     }
 
     pub(super) fn connectivity(&mut self, f: MaterialFrame, t: Theme) {
@@ -278,7 +349,20 @@ impl Surface {
         for row in 0..3 {
             let index = (start + row).min(3);
             let y = 65 + row as i32 * 66;
-            self.wear_row(y, labels[index], index == cur, t);
+            self.round_rect(
+                12,
+                y,
+                216,
+                58,
+                29,
+                if index == cur {
+                    t.primary_container
+                } else {
+                    t.surface_high
+                },
+            );
+            self.row_icon(labels[index], 38, y + 29, t.primary);
+            self.text(62, y + 23, labels[index], 1, t.on_surface);
             if index < 3 {
                 self.toggle(174, y + 16, values[index], t);
             }
@@ -286,9 +370,9 @@ impl Surface {
     }
 
     pub(super) fn about(&mut self, f: MaterialFrame, t: Theme) {
-        self.title("ABOUT", t);
-        self.circle(120, 72, 30, t.primary_container);
-        self.text_center(57, "A", 4, t.primary);
+        self.photo_header(f, "About", t);
+        self.circle(120, 82, 25, t.primary_container);
+        self.text_center(69, "A", 3, t.primary);
         self.text_center(116, "AOSP WEAR", 2, t.on_surface);
         self.text_center(144, "ANDROID 17", 1, t.primary);
         self.round_rect(22, 168, 196, 36, 18, t.surface);
@@ -327,7 +411,7 @@ impl Surface {
                 if f.timer_secs > 0 {
                     "TIMER RUNNING"
                 } else {
-                    "5 MINUTE TIMER"
+                    "CHOOSE A TIMER"
                 },
             )
         } else {
@@ -351,7 +435,11 @@ impl Surface {
             self.icon_clock(52, 66, fg);
             self.text(82, 55, "CLOCK", 1, fg);
             self.text(27, 112, sub, 2, fg);
-            let timer = Self::mmss_text(if f.timer_secs == 0 { 300 } else { f.timer_secs });
+            let timer = Self::mmss_text(if f.timer_secs == 0 {
+                f.timer_duration_secs
+            } else {
+                f.timer_secs
+            });
             let timer_s = core::str::from_utf8(&timer).unwrap_or("05:00");
             self.text(27, 153, timer_s, 2, fg);
         } else {
@@ -372,57 +460,155 @@ impl Surface {
     }
 
     pub(super) fn media(&mut self, f: MaterialFrame, t: Theme) {
-        let tm = Self::time_text(f.time_minutes);
+        let time = Self::time_text(f.time_minutes);
         self.text_center(
             9,
-            core::str::from_utf8(&tm).unwrap_or("00:00"),
+            core::str::from_utf8(&time).unwrap_or("00:00"),
             1,
             t.on_surface_variant,
         );
-        self.circle(120, 73, 35, t.primary_container);
-        self.icon_media(120, 73, t.on_primary_container);
-        self.text_center(123, "Connect your phone", 2, t.on_surface);
-        self.text_center(153, "Pair in Bluetooth settings", 1, t.on_surface_variant);
-        let labels = ["<", ">", ">|"];
-        for i in 0..3 {
-            let cx = 56 + i as i32 * 64;
-            let selected = f.cursor as usize == i;
-            self.circle(
-                cx,
-                206,
-                if selected { 26 } else { 23 },
-                if selected { t.primary } else { t.surface_high },
+        self.text_center(42, "Media controls", 2, t.on_surface);
+        self.text_center(
+            69,
+            if f.bt_status == 3 {
+                "Phone connected"
+            } else {
+                "Pair your phone to play"
+            },
+            1,
+            t.on_surface_variant,
+        );
+        let cream = rgb565(255, 224, 165);
+        let ink = rgb565(57, 42, 18);
+        for (i, x) in [(0, 39), (2, 201)] {
+            self.circle(x, 151, if f.cursor == i { 29 } else { 26 }, cream);
+            self.symbol(
+                if i == 0 {
+                    Symbol::Previous
+                } else {
+                    Symbol::Next
+                },
+                x,
+                151,
+                ink,
+            );
+            if f.cursor == i {
+                self.ring(x, 151, 32, 2, t.on_surface);
+            }
+        }
+        self.scallop(
+            120,
+            151,
+            cream,
+            if f.cursor == 1 {
+                t.on_surface
+            } else {
+                t.surface_high
+            },
+        );
+        self.symbol(Symbol::Play, 120, 151, ink);
+        // HID reports do not contain playback state: Play/Pause is one toggle,
+        // and the watch must not fabricate a paused/playing status or metadata.
+        self.text_center(208, "Play / pause", 1, t.on_surface_variant);
+        for (i, x, label) in [(3, 43, "Vol -"), (4, 120, "Vol +"), (5, 197, "Back")] {
+            self.round_rect(
+                x - 33,
+                237,
+                66,
+                31,
+                15,
+                if f.cursor == i { cream } else { t.surface_high },
             );
             self.text_center_x(
-                cx,
-                197,
-                labels[i],
-                2,
-                if selected { t.on_primary } else { t.on_surface },
+                x,
+                247,
+                label,
+                1,
+                if f.cursor == i { ink } else { t.on_surface },
             );
         }
-        // Volumes are explicitly muted until a real BLE HID report channel exists.
-        self.round_rect(15, 249, 64, 25, 12, t.surface_high);
-        self.round_rect(88, 249, 64, 25, 12, t.surface_high);
-        self.round_rect(161, 249, 64, 25, 12, t.surface_high);
-        self.text_center_x(47, 258, "Vol -", 1, t.outline);
-        self.text_center_x(120, 258, "Vol +", 1, t.outline);
-        self.text_center_x(193, 258, "Back", 1, t.outline);
+    }
+
+    pub(super) fn timer_presets(&mut self, f: MaterialFrame, t: Theme) {
+        let lavender = rgb565(207, 198, 255);
+        let lime = rgb565(222, 244, 148);
+        let ink = rgb565(36, 30, 57);
+        self.symbol(Symbol::Timer, 120, 23, lavender);
+        self.text_center(45, "Timer", 2, t.on_surface);
+        if f.timer_editor == 2 {
+            let duration = Self::mmss_text(f.timer_duration_secs);
+            self.clock_text(104, &duration, lavender);
+            self.text_center(188, "Crown: adjust minutes", 1, t.on_surface_variant);
+            self.round_rect(55, 229, 130, 38, 19, lime);
+            self.text_center(242, "Start timer", 1, ink);
+            return;
+        }
+        if f.timer_secs > 0 {
+            let time = Self::mmss_text(f.timer_secs);
+            self.text_center(71, core::str::from_utf8(&time).unwrap_or("00:00"), 1, lime);
+        }
+        for (i, label) in ["5", "10", "15", "30"].iter().enumerate() {
+            let x = 18 + (i % 2) as i32 * 105;
+            let y = 90 + (i / 2) as i32 * 67;
+            self.round_rect(
+                x,
+                y,
+                99,
+                61,
+                if f.cursor as usize == i { 20 } else { 29 },
+                if f.cursor as usize == i {
+                    lime
+                } else {
+                    lavender
+                },
+            );
+            self.text_center_x(x + 49, y + 12, label, 2, ink);
+            self.text_center_x(x + 49, y + 39, "Min", 1, ink);
+        }
+        self.round_rect(
+            63,
+            235,
+            114,
+            35,
+            17,
+            if f.cursor == 4 { lavender } else { lime },
+        );
+        self.text_center(244, "+", 2, ink);
     }
 
     pub(super) fn clock_tools(&mut self, f: MaterialFrame, t: Theme) {
+        if f.timer_editor != 0 {
+            self.timer_presets(f, t);
+            return;
+        }
         self.title("CLOCK", t);
-        let cur = f.cursor.min(3) as usize;
-        let timer = Self::mmss_text(if f.timer_secs == 0 { 300 } else { f.timer_secs });
+        let cur = f.cursor.min(4) as usize;
+        let timer = Self::mmss_text(if f.timer_secs == 0 {
+            f.timer_duration_secs
+        } else {
+            f.timer_secs
+        });
         let stopwatch = Self::mmss_text(f.stopwatch_secs);
         let timer_s = core::str::from_utf8(&timer).unwrap_or("05:00");
         let stopwatch_s = core::str::from_utf8(&stopwatch).unwrap_or("00:00");
-        let labels = ["TIMER", "STOPWATCH", "ALARM", "BACK"];
-        let start = cur.saturating_sub(1).min(1);
+        let labels = ["TIMER", "STOPWATCH", "ALARM", "RESET STOPWATCH", "BACK"];
+        let start = cur.saturating_sub(1).min(2);
         for row in 0..3 {
-            let i = (start + row).min(3);
+            let i = (start + row).min(4);
             let y = 57 + row as i32 * 64;
-            self.wear_row(y, labels[i], i == cur, t);
+            self.round_rect(
+                12,
+                y,
+                216,
+                58,
+                29,
+                if i == cur {
+                    t.primary_container
+                } else {
+                    t.surface_high
+                },
+            );
+            self.text(30, y + 20, labels[i], 1, t.on_surface);
             if i == 0 {
                 self.text(
                     154,
@@ -452,6 +638,42 @@ impl Surface {
                     },
                 );
             }
+        }
+    }
+
+    pub(super) fn alarm_editor(&mut self, f: MaterialFrame, t: Theme) {
+        self.photo_header(f, "Alarm", t);
+        let time = Self::time_text(f.alarm_minutes);
+        self.text_center(
+            68,
+            core::str::from_utf8(&time).unwrap_or("07:00"),
+            2,
+            t.primary,
+        );
+        let labels = [
+            if f.alarm_enabled {
+                "Alarm on"
+            } else {
+                "Alarm off"
+            },
+            "Hour +",
+            "Minute +",
+            "Back",
+        ];
+        for (i, label) in labels.iter().enumerate() {
+            self.round_rect(
+                22,
+                103 + i as i32 * 39,
+                196,
+                34,
+                17,
+                if f.cursor as usize == i {
+                    t.primary_container
+                } else {
+                    t.surface_high
+                },
+            );
+            self.text_center(114 + i as i32 * 39, label, 1, t.on_surface);
         }
     }
 }

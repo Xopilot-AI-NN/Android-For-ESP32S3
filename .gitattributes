@@ -1,0 +1,3 @@
+src/material/fonts/*.bin binary
+src/material/fonts/*.ttf binary
+src/material/symbols/*.bin binary

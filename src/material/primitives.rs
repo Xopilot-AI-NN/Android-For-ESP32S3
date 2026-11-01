@@ -2,6 +2,111 @@
 use super::*;
 
 impl Surface {
+    pub(super) fn progress_ring(
+        &mut self,
+        cx: i32,
+        cy: i32,
+        radius: i32,
+        percent: u8,
+        active: u16,
+        inactive: u16,
+    ) {
+        const POINTS: [(i32, i32); 37] = [
+            (0, -1000),
+            (174, -985),
+            (342, -940),
+            (500, -866),
+            (643, -766),
+            (766, -643),
+            (866, -500),
+            (940, -342),
+            (985, -174),
+            (1000, 0),
+            (985, 174),
+            (940, 342),
+            (866, 500),
+            (766, 643),
+            (643, 766),
+            (500, 866),
+            (342, 940),
+            (174, 985),
+            (0, 1000),
+            (-174, 985),
+            (-342, 940),
+            (-500, 866),
+            (-643, 766),
+            (-766, 643),
+            (-866, 500),
+            (-940, 342),
+            (-985, 174),
+            (-1000, 0),
+            (-985, -174),
+            (-940, -342),
+            (-866, -500),
+            (-766, -643),
+            (-643, -766),
+            (-500, -866),
+            (-342, -940),
+            (-174, -985),
+            (0, -1000),
+        ];
+        for i in 0..36 {
+            let (x0, y0) = POINTS[i];
+            let (x1, y1) = POINTS[i + 1];
+            self.line(
+                cx + x0 * radius / 1000,
+                cy + y0 * radius / 1000,
+                cx + x1 * radius / 1000,
+                cy + y1 * radius / 1000,
+                3,
+                if i * 100 < usize::from(percent.min(100)) * 36 {
+                    active
+                } else {
+                    inactive
+                },
+            );
+        }
+    }
+
+    pub(super) fn scallop(&mut self, cx: i32, cy: i32, fill: u16, outline: u16) {
+        for (shrink, color) in [(0, outline), (3, fill)] {
+            self.circle(cx, cy, 34 - shrink, color);
+            for (x, y) in [
+                (0, -31),
+                (18, -25),
+                (30, -10),
+                (30, 10),
+                (18, 25),
+                (0, 31),
+                (-18, 25),
+                (-30, 10),
+                (-30, -10),
+                (-18, -25),
+            ] {
+                self.circle(
+                    cx + x * (100 - shrink * 3) / 100,
+                    cy + y * (100 - shrink * 3) / 100,
+                    12 - shrink,
+                    color,
+                );
+            }
+        }
+    }
+    pub(super) fn coverage_pixel(&mut self, x: i32, y: i32, color: u16, alpha: u8) {
+        if alpha == 0 || x < 0 || y < 0 || x >= WIDTH as i32 || y >= HEIGHT as i32 {
+            return;
+        }
+        let alpha = u32::from(alpha.min(15));
+        let bg = u32::from(self.pixels[y as usize * WIDTH + x as usize]);
+        let blend = |shift: u32, mask: u32| -> u16 {
+            (((((u32::from(color) >> shift) & mask) * alpha
+                + ((bg >> shift) & mask) * (15 - alpha)
+                + 7)
+                / 15)
+                << shift) as u16
+        };
+        self.pixel(x, y, blend(11, 31) | blend(5, 63) | blend(0, 31));
+    }
     pub(super) fn pixel(&mut self, x: i32, y: i32, c: u16) {
         if x >= 0 && y >= 0 && x < WIDTH as i32 && y < HEIGHT as i32 {
             self.pixels[y as usize * WIDTH + x as usize] = c;

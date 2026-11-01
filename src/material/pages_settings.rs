@@ -60,7 +60,16 @@ impl Surface {
     pub(super) fn unavailable_page(&mut self, title: &str, icon: &str, body: &str, t: Theme) {
         self.title(title, t);
         self.circle(120, 103, 37, t.surface);
-        self.text_center(88, icon, 3, t.primary);
+        self.symbol(
+            if icon == "S" {
+                Symbol::Sound
+            } else {
+                Symbol::Info
+            },
+            120,
+            103,
+            t.primary,
+        );
         self.text_center(157, body, 1, t.on_surface);
         self.text_center(180, "NOT PRESENT ON THIS BOARD", 1, t.on_surface_variant);
         self.round_rect(45, 217, 150, 38, 19, t.surface_high);

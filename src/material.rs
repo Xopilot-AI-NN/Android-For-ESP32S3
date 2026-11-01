@@ -2,7 +2,9 @@ extern crate alloc;
 
 use alloc::{vec, vec::Vec};
 
-use crate::font::glyph;
+#[path = "material/localization.rs"]
+mod localization;
+pub const DEFAULT_LOCALE: &str = localization::DEFAULT_LOCALE;
 
 pub const WIDTH: usize = 240;
 pub const HEIGHT: usize = 280;
@@ -41,6 +43,14 @@ pub struct MaterialFrame {
     pub wifi_password_preview_len: u8,
     pub wifi_editor_char: u8,
     pub wifi_link_state: u8,
+    /// Live HID state: off, advertising, connected, ready, confirmation, error.
+    pub bt_status: u8,
+    pub bt_pin: Option<u32>,
+    pub alarm_minutes: u16,
+    pub clock_alert: u8,
+    pub wifi_ip: Option<[u8; 4]>,
+    pub timer_editor: u8,
+    pub timer_duration_secs: u16,
 }
 
 impl MaterialFrame {
@@ -61,7 +71,7 @@ impl MaterialFrame {
         let adb = p.next()? == "1";
         let notes = p.next()?.parse::<u8>().ok()?.min(7);
         let time_minutes = p.next()?.parse::<u16>().ok()? % 1440;
-        let timer_secs = p.next()?.parse::<u16>().ok()?.min(300);
+        let timer_secs = p.next()?.parse::<u16>().ok()?.min(3600);
         let stopwatch_secs = p.next()?.parse::<u16>().ok()?.min(3599);
         let alarm_enabled = p.next()? == "1";
         let auto_time = p.next()? == "1";
@@ -100,6 +110,13 @@ impl MaterialFrame {
             wifi_password_preview_len: 0,
             wifi_editor_char: 0,
             wifi_link_state: 0,
+            bt_status: 0,
+            bt_pin: None,
+            alarm_minutes: 420,
+            clock_alert: 0,
+            wifi_ip: None,
+            timer_editor: 0,
+            timer_duration_secs: 300,
         })
     }
 
@@ -233,12 +250,12 @@ fn theme(index: u8) -> Theme {
             error: rgb565(255, 180, 171),
         },
         _ => Theme {
-            bg: rgb565(3, 9, 18),
+            bg: rgb565(0, 0, 0),
             surface: rgb565(27, 46, 62),
             surface_high: rgb565(54, 83, 109),
-            primary: rgb565(34, 223, 223),
+            primary: rgb565(166, 222, 239),
             on_primary: rgb565(4, 40, 50),
-            primary_container: rgb565(2, 129, 145),
+            primary_container: rgb565(32, 72, 85),
             on_primary_container: rgb565(245, 254, 254),
             on_surface: rgb565(243, 250, 255),
             on_surface_variant: rgb565(183, 204, 221),
@@ -297,17 +314,44 @@ impl Surface {
             28 => self.brightness_editor(frame, t),
             29 => self.fill_rect(0, 0, WIDTH as i32, HEIGHT as i32, rgb565(255, 255, 255)),
             30 => self.bluetooth_pairing(frame, t),
+            31 => self.alarm_editor(frame, t),
             _ => self.watchface(frame, t),
+        }
+        if frame.clock_alert != 0 {
+            self.round_rect(8, 90, 224, 108, 30, t.primary);
+            self.text_center(
+                113,
+                if frame.clock_alert == 2 {
+                    "Alarm"
+                } else {
+                    "Timer finished"
+                },
+                2,
+                t.on_primary,
+            );
+            self.text_center(157, "PRESS TO DISMISS", 1, t.on_primary);
         }
         Rect::FULL
     }
 }
 
+#[path = "material/components.rs"]
 mod components;
+#[path = "material/icons.rs"]
 mod icons;
+#[path = "material/pages_bluetooth.rs"]
 mod pages_bluetooth;
+#[path = "material/pages_main.rs"]
 mod pages_main;
+#[path = "material/pages_settings.rs"]
 mod pages_settings;
+#[path = "material/pages_wifi.rs"]
 mod pages_wifi;
+#[path = "material/primitives.rs"]
 mod primitives;
+#[path = "material/typography.rs"]
 mod typography;
+
+#[path = "material/symbols/mod.rs"]
+mod symbols;
+use symbols::Symbol;
