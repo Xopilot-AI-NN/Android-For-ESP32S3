@@ -32,12 +32,41 @@ mod encoder;
 #[path = "../../../src/font.rs"]
 mod font;
 pub use display::St7789Display;
+#[path = "../../../src/disk_probe.rs"]
+mod disk_probe;
 #[path = "../../../src/material.rs"]
 mod material;
+#[path = "../../../src/media.rs"]
+mod media;
 #[path = "../../../src/rtc.rs"]
 mod rtc;
 #[path = "../../../src/runtime.rs"]
 mod runtime;
+#[path = "../../../src/sd_bitbang.rs"]
+mod sd_bitbang;
+#[path = "../../../src/sd_init.rs"]
+mod sd_init;
+#[path = "../../../src/sd_spi.rs"]
+mod sd_spi;
+
+#[path = "../../../src/android_boot.rs"]
+mod android_boot;
+#[path = "../../../src/android_storage.rs"]
+mod android_storage;
+#[path = "../../../src/avb.rs"]
+mod avb;
+#[path = "../../../src/boot_control.rs"]
+mod boot_control;
+#[path = "../../../src/cpio.rs"]
+mod cpio;
+#[path = "../../../src/gpt.rs"]
+mod gpt;
+#[path = "../../../src/page_store.rs"]
+mod page_store;
+#[cfg(test)]
+mod image_boot;
+#[path = "../../../src/lp.rs"]
+mod lp;
 
 #[cfg(test)]
 mod tests {
@@ -274,6 +303,42 @@ mod tests {
         assert_eq!(frame(&mut os).security_view, 0);
     }
 
+    #[test]
+    fn clock_hub_routes_directly_and_watch_face_persists() {
+        time::set(4000);
+        let mut os = start();
+        os.replace_state(6 | (2 << 5)).unwrap();
+        os.dispatch(RuntimeEvent::Press).unwrap();
+        assert_eq!(os.state() & 31, 31);
+        os.dispatch(RuntimeEvent::Back).unwrap();
+        assert_eq!(os.state() & 31, 6);
+        os.replace_state(6).unwrap();
+        os.dispatch(RuntimeEvent::Press).unwrap();
+        assert_eq!(frame(&mut os).timer_editor, 1);
+        os.dispatch(RuntimeEvent::Back).unwrap();
+        assert_eq!(os.state() & 31, 6);
+        os.replace_state(6 | (1 << 5)).unwrap();
+        os.dispatch(RuntimeEvent::Press).unwrap();
+        assert_eq!(frame(&mut os).timer_editor, 3);
+        os.replace_state(14 | (3 << 5)).unwrap();
+        os.dispatch(RuntimeEvent::Press).unwrap();
+        assert_eq!(frame(&mut os).watch_face, 1);
+        let prefs = os.preference_config();
+        let mut restored = start();
+        restored.restore_preferences(&prefs);
+        assert_eq!(frame(&mut restored).watch_face, 1);
+    }
+    #[test]
+    fn power_menu_queues_actions_without_executing_hardware_in_runtime() {
+        time::set(5000);
+        let mut os = start();
+        os.dispatch(RuntimeEvent::Power).unwrap();
+        assert!(frame(&mut os).power_menu);
+        os.dispatch(RuntimeEvent::Rotate(1)).unwrap();
+        os.dispatch(RuntimeEvent::Press).unwrap();
+        assert_eq!(os.take_system_action(), Some(runtime::SystemAction::Reboot));
+        assert_eq!(os.take_system_action(), None);
+    }
     #[test]
     fn timer_presets_and_custom_duration() {
         time::set(1000);

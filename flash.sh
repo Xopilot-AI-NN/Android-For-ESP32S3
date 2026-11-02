@@ -18,6 +18,18 @@ DISPLAY_NAME="${AOSP_WEAR_DISPLAY:-${ZEPHYR_DISPLAY:-st7789}}"
 STORAGE_NAME="${AOSP_WEAR_STORAGE:-${ZEPHYR_STORAGE:-pc}}"
 RADIO_NAME="${AOSP_WEAR_RADIO:-${ZEPHYR_RADIO:-radio}}"
 
+# A positional storage mode takes precedence over environment defaults.
+BUILD_ONLY=0
+if [[ "${1:-}" == "pc" || "${1:-}" == "sd" ]]; then
+  STORAGE_NAME="$1"
+  shift
+fi
+if [[ "${1:-}" == "--build-only" ]]; then BUILD_ONLY=1; shift; fi
+if [[ "$#" != 0 ]]; then
+  echo "Usage: ./flash [pc|sd] [--build-only]" >&2
+  exit 2
+fi
+
 case "$DISPLAY_NAME" in
   ssd1306|st7789) ;;
   *) echo "AOSP_WEAR_DISPLAY must be ssd1306 or st7789" >&2; exit 2 ;;
@@ -46,6 +58,18 @@ if [[ "${AOSP_WEAR_DISPLAY_DIAGNOSTIC:-0}" == "1" ]]; then
   fi
   FEATURES+=",display-diagnostic"
 fi
+if [[ "${AOSP_WEAR_SD_SOFTWARE_SPI:-0}" == "1" ]]; then
+  if [[ "$STORAGE_NAME" != "sd" ]]; then
+    echo "AOSP_WEAR_SD_SOFTWARE_SPI requires ./flash sd" >&2; exit 2
+  fi
+  FEATURES+=",sd-software-spi"
+fi
+if [[ "${AOSP_WEAR_SD_CHECKED_STARTUP:-0}" == "1" ]]; then
+  if [[ "$STORAGE_NAME" != "sd" ]]; then
+    echo "AOSP_WEAR_SD_CHECKED_STARTUP requires ./flash sd" >&2; exit 2
+  fi
+  FEATURES+=",sd-checked-startup"
+fi
 FLAGS=(--no-default-features --features "$FEATURES")
 
 BOOT_VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
@@ -60,7 +84,7 @@ echo
 # Build the Android-like userspace first so the PC-block image always matches
 # the bootloader being flashed. Set ZEPHYR_SKIP_FIRMWARE_BUILD=1 only when
 # intentionally re-flashing an unchanged image.
-if [[ "$STORAGE_NAME" == "pc" && "${AOSP_WEAR_SKIP_FIRMWARE_BUILD:-${ZEPHYR_SKIP_FIRMWARE_BUILD:-0}}" != "1" ]]; then
+if [[ "${AOSP_WEAR_SKIP_FIRMWARE_BUILD:-${ZEPHYR_SKIP_FIRMWARE_BUILD:-0}}" != "1" ]]; then
   if [[ -x "$FIRMWARE_DIR/build.sh" ]]; then
     echo "== Building Firmware =="
     (cd "$FIRMWARE_DIR" && ./build.sh)
@@ -71,14 +95,14 @@ if [[ "$STORAGE_NAME" == "pc" && "${AOSP_WEAR_SKIP_FIRMWARE_BUILD:-${ZEPHYR_SKIP
 fi
 
 DEFAULT_FIRMWARE_IMAGE="$FIRMWARE_DIR/out/target/product/zero/aosp-wear-sd.img"
-IMAGE="${AOSP_WEAR_PC_IMAGE:-${ZEPHYR_PC_IMAGE:-$DEFAULT_FIRMWARE_IMAGE}}"
+IMAGE="${AOSP_WEAR_IMAGE:-${AOSP_WEAR_PC_IMAGE:-${ZEPHYR_PC_IMAGE:-$DEFAULT_FIRMWARE_IMAGE}}}"
 
-if [[ "$STORAGE_NAME" == "pc" && ! -f "$IMAGE" ]]; then
+if [[ ! -f "$IMAGE" ]]; then
   echo "Firmware image was not produced: $IMAGE" >&2
   exit 1
 fi
 
-if [[ "$STORAGE_NAME" == "pc" ]] && ! python3 -c 'import serial' >/dev/null 2>&1; then
+if [[ "$STORAGE_NAME" == "pc" && "$BUILD_ONLY" == 0 ]] && ! python3 -c 'import serial' >/dev/null 2>&1; then
   cat >&2 <<'MSG'
 pyserial is required for PC-block mode.
 On Arch Linux:
@@ -99,7 +123,21 @@ if [[ ! -f "$ELF" ]]; then
   exit 1
 fi
 
-if ! command -v espflash >/dev/null 2>&1; then
+if [[ "$BUILD_ONLY" == 1 ]]; then
+  echo "Build complete: $ELF"
+  echo "SD/PC disk image: $IMAGE"
+  exit 0
+fi
+if [[ "$STORAGE_NAME" == "sd" ]]; then
+  echo "SD mode: the Rust loader is flashed internally; userspace is loaded from microSD."
+  echo "Write $IMAGE to the chosen memory card before booting (see DELIVERY.md)."
+fi
+
+ESPFLASH_BIN="$(command -v espflash || true)"
+if [[ -z "$ESPFLASH_BIN" && -x "$HOME/.cargo/bin/espflash" ]]; then
+  ESPFLASH_BIN="$HOME/.cargo/bin/espflash"
+fi
+if [[ -z "$ESPFLASH_BIN" ]]; then
   echo "ERROR: espflash is not installed" >&2
   exit 1
 fi
@@ -108,9 +146,9 @@ echo
 echo "== Flashing ESP32-S3 =="
 
 if [[ "$STORAGE_NAME" == "pc" ]]; then
-  espflash flash --chip esp32s3 "$ELF"
+  "$ESPFLASH_BIN" flash --chip esp32s3 "$ELF"
 else
-  espflash flash --chip esp32s3 --monitor "$ELF"
+  "$ESPFLASH_BIN" flash --chip esp32s3 --monitor "$ELF"
   exit 0
 fi
 

@@ -89,7 +89,7 @@ pub(super) fn label(text: &str) -> &str {
         "Pair new device" => "Новое устройство",
         "Pair your phone to play" => "Подключите телефон",
         "Pairing failed / retry" => "Ошибка. Повторите",
-        "Phone connected" => "Телефон подключён",
+        "Phone connected" => "Устройство подключено",
         "Play / pause" => "Пуск / пауза",
         "Press Pair new device" => "Выберите новое устройство",
         "Purple" => "Фиолетовый",

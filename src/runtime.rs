@@ -10,6 +10,8 @@ use heapless::{String as HString, Vec as HVec};
 
 #[path = "runtime/clock.rs"]
 mod clock;
+#[path = "runtime/idle.rs"]
+mod idle;
 #[path = "runtime/security.rs"]
 mod security;
 use clock::{clock_action, clock_snapshot};
@@ -112,6 +114,16 @@ pub enum RuntimeEvent {
     Rotate(i32),
     Swipe(i32),
     Press,
+    Power,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum SystemAction {
+    Reboot = 1,
+    Fastboot = 2,
+    Recovery = 3,
+    PowerOff = 4,
 }
 
 #[derive(Clone, Debug)]
@@ -180,8 +192,16 @@ pub struct Runtime {
     crown_sensitivity: u8,
     crown_reverse: bool,
     high_contrast: bool,
-    last_input_secs: u64,
+    last_input_ms: u64,
     timeout_parent: u8,
+    transition_started_ms: u64,
+    watch_face: u8,
+    wallpaper_enabled: bool,
+    has_wallpaper: bool,
+    playback: Option<crate::media::Playback>,
+    power_menu: bool,
+    power_cursor: u8,
+    system_action: Option<SystemAction>,
 }
 
 #[cfg(feature = "rhai-runtime")]
@@ -291,8 +311,16 @@ impl Runtime {
             crown_sensitivity: 1,
             crown_reverse: false,
             high_contrast: false,
-            last_input_secs: Instant::now().duration_since_epoch().as_secs(),
+            last_input_ms: Instant::now().duration_since_epoch().as_millis() as u64,
             timeout_parent: 20,
+            transition_started_ms: 0,
+            watch_face: 0,
+            wallpaper_enabled: true,
+            has_wallpaper: false,
+            playback: None,
+            power_menu: false,
+            power_cursor: 0,
+            system_action: None,
         };
         let frame = runtime.render()?;
         Ok((runtime, frame))
@@ -367,8 +395,32 @@ impl Runtime {
                 .remaining(Instant::now().duration_since_epoch().as_secs());
             m.lock_timeout_secs = self.security.timeout;
             m.timeout_is_display = self.timeout_parent == 14;
-            m.display_sleep =
-                self.display_should_sleep(Instant::now().duration_since_epoch().as_secs());
+            let now_ms = Instant::now().duration_since_epoch().as_millis() as u64;
+            m.display_brightness = Some(self.idle_brightness(now_ms));
+            m.display_sleep = m.display_brightness == Some(0);
+            m.transition_alpha =
+                (now_ms.saturating_sub(self.transition_started_ms) * 255 / 180).min(255) as u8;
+            m.watch_face = self.watch_face;
+            m.wallpaper_enabled = self.wallpaper_enabled;
+            m.wallpaper_available = self.has_wallpaper;
+            m.stopwatch_running = clock::stopwatch_running();
+            m.power_menu = self.power_menu;
+            if self.power_menu {
+                m.cursor = self.power_cursor;
+            }
+            m.time_seconds = crate::rtc::local_seconds();
+            if let Some((day, month)) = crate::rtc::calendar() {
+                m.date_day = day;
+                m.date_month = month;
+            }
+            if matches!(self.bluetooth_status, 2 | 3) {
+                if let Some((playing, progress)) = self.playback.and_then(|p| p.progress(now_ms)) {
+                    m.media_known = true;
+                    m.media_playing = playing;
+                    m.media_progress = progress;
+                }
+            }
+            m.animation_phase = (now_ms % 1000 * 255 / 1000) as u8;
         }
         Ok(frame)
     }
@@ -376,28 +428,61 @@ impl Runtime {
     pub fn state(&self) -> i32 {
         self.state
     }
-    fn display_should_sleep(&self, now: u64) -> bool {
-        clock::alert() == 0
-            && self.bluetooth_pin.is_none()
-            && now.saturating_sub(self.last_input_secs) >= u64::from(self.security.timeout)
+    pub fn take_system_action(&mut self) -> Option<SystemAction> {
+        self.system_action.take()
     }
-
+    pub fn is_locked(&self) -> bool {
+        self.security.locked
+    }
+    pub fn request_system_action(&mut self, action: SystemAction) -> bool {
+        if self.is_locked() {
+            return false;
+        }
+        self.system_action = Some(action);
+        true
+    }
+    pub fn wallpaper_available(&mut self, available: bool) {
+        self.has_wallpaper = available;
+    }
+    fn idle_brightness(&self, now_ms: u64) -> u8 {
+        idle::level(
+            ((self.state >> 9) & 127) as u8,
+            now_ms.saturating_sub(self.last_input_ms),
+            self.security.timeout,
+            clock::alert() != 0 || self.bluetooth_pin.is_some() || (self.state & 31) == 29,
+        )
+    }
+    fn display_should_sleep(&self, now_ms: u64) -> bool {
+        self.idle_brightness(now_ms) == 0
+    }
     pub fn crown_sensitivity(&self) -> u8 {
         self.crown_sensitivity
     }
-    pub fn preference_config(&self) -> [u8; 4] {
+    pub fn preference_config(&self) -> [u8; 8] {
         [
-            1,
+            2,
             self.crown_sensitivity,
             u8::from(self.crown_reverse),
             u8::from(self.high_contrast),
+            self.watch_face,
+            u8::from(self.wallpaper_enabled),
+            0,
+            0,
         ]
     }
     pub fn restore_preferences(&mut self, raw: &[u8]) {
-        if raw.len() == 4 && raw[0] == 1 && raw[1] <= 2 && raw[2] <= 1 && raw[3] <= 1 {
+        if ((raw.len() == 4 && raw[0] == 1) || (raw.len() == 8 && raw[0] == 2))
+            && raw[1] <= 2
+            && raw[2] <= 1
+            && raw[3] <= 1
+        {
             self.crown_sensitivity = raw[1];
             self.crown_reverse = raw[2] != 0;
             self.high_contrast = raw[3] != 0;
+            if raw.len() == 8 {
+                self.watch_face = raw[4].min(2);
+                self.wallpaper_enabled = raw[5] != 0;
+            }
         }
     }
     pub fn security_saved(&mut self) {
@@ -437,9 +522,15 @@ impl Runtime {
         self.bluetooth_action.take()
     }
 
+    pub fn set_playback(&mut self, playback: crate::media::Playback) {
+        self.playback = Some(playback);
+    }
     pub fn set_bluetooth_status(&mut self, status: u8, pin: Option<u32>) -> bool {
         let changed = self.bluetooth_status != status || self.bluetooth_pin != pin;
         self.bluetooth_status = status;
+        if !matches!(status, 2 | 3) {
+            self.playback = None;
+        }
         self.bluetooth_pin = pin;
         changed
     }
@@ -530,13 +621,46 @@ impl Runtime {
     }
 
     pub fn dispatch(&mut self, event: RuntimeEvent) -> Result<RuntimeFrame, RuntimeError> {
-        let now = Instant::now().duration_since_epoch().as_secs();
+        let now_ms = Instant::now().duration_since_epoch().as_millis() as u64;
+        let now = now_ms / 1000;
+        if event == RuntimeEvent::Power {
+            self.power_menu = !self.power_menu;
+            self.power_cursor = 0;
+            self.last_input_ms = now_ms;
+            return self.render();
+        }
+        if self.power_menu {
+            self.last_input_ms = now_ms;
+            let count = if self.security.locked { 3 } else { 6 };
+            match event {
+                RuntimeEvent::Rotate(d) => {
+                    self.power_cursor = (i32::from(self.power_cursor) + d).rem_euclid(count) as u8
+                }
+                RuntimeEvent::Press => {
+                    self.system_action = match self.power_cursor {
+                        0 => Some(SystemAction::PowerOff),
+                        1 => Some(SystemAction::Reboot),
+                        3 if !self.security.locked => Some(SystemAction::Recovery),
+                        4 if !self.security.locked => Some(SystemAction::Fastboot),
+                        _ => None,
+                    };
+                    if self.power_cursor == 2 && !self.security.locked {
+                        self.state = (self.state & !0x1ff) | 1;
+                    }
+                    self.power_menu = false;
+                }
+                RuntimeEvent::Back | RuntimeEvent::Home => self.power_menu = false,
+                _ => {}
+            }
+            return self.render();
+        }
         if self.security_saved[5] != 0 || self.security.encode() == self.security_saved {
             self.security.tick(now);
         }
         if event != RuntimeEvent::Sync {
-            let asleep = self.display_should_sleep(now);
-            self.last_input_secs = now;
+            let asleep = self.display_should_sleep(now_ms);
+            self.last_input_ms = now_ms;
+            self.transition_started_ms = now_ms;
             self.security.activity(now);
             if asleep {
                 return self.render();
@@ -567,7 +691,7 @@ impl Runtime {
             match event {
                 RuntimeEvent::Rotate(d) => {
                     self.state =
-                        (self.state & !0x1e0) | ((i32::from(cursor) + d).rem_euclid(4) << 5)
+                        (self.state & !0x1e0) | ((i32::from(cursor) + d).rem_euclid(6) << 5)
                 }
                 RuntimeEvent::Press => match cursor {
                     0 => self.state = (self.state & !0x1ff) | 28,
@@ -580,6 +704,8 @@ impl Runtime {
                         self.security.begin(5);
                         self.state = (self.state & !0x1ff) | 20;
                     }
+                    3 => self.watch_face = (self.watch_face + 1) % 3,
+                    4 => self.wallpaper_enabled = !self.wallpaper_enabled,
                     _ => self.state = (self.state & !0x1ff) | 5 | (2 << 5),
                 },
                 RuntimeEvent::Back => self.state = (self.state & !0x1ff) | 5 | (2 << 5),
@@ -670,6 +796,43 @@ impl Runtime {
             clock_action(6);
             return self.render();
         }
+        if screen == 6 && event == RuntimeEvent::Press {
+            if cursor == 0 {
+                self.state = (self.state & !0x1ff) | 11;
+                self.timer_editor = 1;
+            } else if cursor == 1 {
+                self.state = (self.state & !0x1ff) | 11;
+                self.timer_editor = 3;
+            } else if cursor == 2 {
+                self.state = (self.state & !0x1ff) | 31;
+            } else {
+                self.state = (self.state & !0x1ff) | 2;
+            }
+            return self.render();
+        }
+        if screen == 11 && self.timer_editor == 3 {
+            match event {
+                RuntimeEvent::Rotate(d) => {
+                    self.state =
+                        (self.state & !0x1e0) | ((i32::from(cursor) + d).rem_euclid(3) << 5)
+                }
+                RuntimeEvent::Press => match cursor {
+                    0 => {
+                        clock_action(0);
+                    }
+                    1 => {
+                        clock_action(1);
+                    }
+                    _ => {
+                        self.state = (self.state & !0x1ff) | 6 | (1 << 5);
+                    }
+                },
+                RuntimeEvent::Back => self.state = (self.state & !0x1ff) | 6 | (1 << 5),
+                RuntimeEvent::Home => self.state = (self.state & !0x1ff) | 1,
+                _ => {}
+            }
+            return self.render();
+        }
         if screen == 11 && self.timer_editor != 0 {
             match event {
                 RuntimeEvent::Rotate(delta) if self.timer_editor == 2 => {
@@ -695,6 +858,9 @@ impl Runtime {
                 RuntimeEvent::Back => {
                     self.timer_editor = if self.timer_editor == 2 { 1 } else { 0 };
                     self.state &= !0x1e0;
+                    if self.timer_editor == 0 {
+                        self.state = (self.state & !0x1ff) | 6;
+                    }
                 }
                 RuntimeEvent::Home => {
                     self.state = (self.state & !0x1ff) | 1;
@@ -721,11 +887,11 @@ impl Runtime {
                     if cursor < 3 {
                         clock_action([3, 4, 5][cursor as usize]);
                     } else {
-                        self.state = (self.state & !0x1ff) | 11 | (2 << 5);
+                        self.state = (self.state & !0x1ff) | 6 | (2 << 5);
                     }
                 }
                 RuntimeEvent::Back => {
-                    self.state = (self.state & !0x1ff) | 11 | (2 << 5);
+                    self.state = (self.state & !0x1ff) | 6 | (2 << 5);
                 }
                 RuntimeEvent::Home => {
                     self.state = (self.state & !0x1ff) | 1;
@@ -765,6 +931,12 @@ impl Runtime {
             }
             return self.render();
         }
+        if screen == 27 && event == RuntimeEvent::Press {
+            if self.bluetooth_status == 3 {
+                self.bluetooth_action = Some(BluetoothUiAction::Media(0x00CF));
+            }
+            return self.render();
+        }
         if screen == 10 && event == RuntimeEvent::Press {
             if let Some(usage) = [0x00B6, 0x00CD, 0x00B5, 0x00EA, 0x00E9].get(cursor as usize) {
                 self.bluetooth_action = Some(BluetoothUiAction::Media(*usage));
@@ -783,6 +955,7 @@ impl Runtime {
             RuntimeEvent::Rotate(delta) => ("rotate", delta),
             RuntimeEvent::Swipe(direction) => ("swipe", direction),
             RuntimeEvent::Press => ("press", 0),
+            RuntimeEvent::Power => unreachable!(),
         };
         let options = CallFnOptions::new().eval_ast(false).rewind_scope(true);
         let new_state = self
@@ -810,6 +983,9 @@ impl Runtime {
                 && ((screen == 13 && cursor == 0) || (screen == 4 && cursor == 1)))
         {
             self.bluetooth_action = Some(BluetoothUiAction::Pair);
+        }
+        if old_screen == 9 && (new_state & 31) == 11 {
+            self.timer_editor = if ((new_state >> 5) & 15) == 1 { 3 } else { 1 };
         }
         if (new_state & 0x1f) as u8 == 23 && old_screen != 23 {
             self.wifi_ui.pending_scan = true;
@@ -1020,8 +1196,8 @@ impl Runtime {
     pub fn crown_sensitivity(&self) -> u8 {
         1
     }
-    pub fn preference_config(&self) -> [u8; 4] {
-        [1, 1, 0, 0]
+    pub fn preference_config(&self) -> [u8; 8] {
+        [2, 1, 0, 0, 0, 0, 0, 0]
     }
     pub fn restore_preferences(&mut self, _raw: &[u8]) {}
     pub fn security_saved(&mut self) {}
@@ -1034,6 +1210,16 @@ impl Runtime {
     pub fn state(&self) -> i32 {
         0
     }
+    pub fn take_system_action(&mut self) -> Option<SystemAction> {
+        None
+    }
+    pub fn is_locked(&self) -> bool {
+        false
+    }
+    pub fn request_system_action(&mut self, _action: SystemAction) -> bool {
+        false
+    }
+    pub fn wallpaper_available(&mut self, _available: bool) {}
     pub fn replace_state(&mut self, _state: i32) -> Result<RuntimeFrame, RuntimeError> {
         self.render()
     }
@@ -1048,6 +1234,7 @@ impl Runtime {
     pub fn take_bluetooth_action(&mut self) -> Option<BluetoothUiAction> {
         None
     }
+    pub fn set_playback(&mut self, _playback: crate::media::Playback) {}
     pub fn set_bluetooth_status(&mut self, _status: u8, _pin: Option<u32>) -> bool {
         false
     }

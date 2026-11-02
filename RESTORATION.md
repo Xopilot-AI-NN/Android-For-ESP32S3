@@ -1,5 +1,7 @@
 # Photo-based watch restoration
 
+Current delivery notes and SD commands: [DELIVERY.md](DELIVERY.md).
+
 The supplied [photographs](../images/) and subsequent Wear UI reference images
 guide the 240 × 280 ST7789V3 layout. This is an ESP32-S3 Rust/Rhai watch runtime;
 it does not run Google's Wear OS or its proprietary services. Google's
@@ -38,9 +40,9 @@ The firmware build properties and local getprop report the same default locale.
   The raw-HCI discovery implementation remains a separate, mutually exclusive
   build (`radio-services` without `ble-hid`).
 - Media: previous, play/pause, next, volume down/up dispatch HID Consumer
-  Control reports to an encrypted, subscribed host. Media metadata and
-  playback state are not supplied by HID; the UI shows connection readiness,
-  not fabricated song titles or a playback state.
+  Control reports to an encrypted, subscribed host. HID does not supply playback
+  state. An optional encrypted companion GATT service now supplies actual
+  pause/progress updates; see [protocol and limitations](DELIVERY.md).
 - Clock: working 5/10/15/30-minute timer presets and custom 1–60-minute duration
   editor with completion alert; pause/resume and reset
   stopwatch; daily alarm with hour/minute editor and dismissible alert.
@@ -52,7 +54,8 @@ The firmware build properties and local getprop report the same default locale.
   acquired IPv4 address. SNTP and manual time remain the wall-clock sources.
 - Physical crown input works in both PC-storage and SD modes. Button input
   has 25 ms debounce; release selects (<700 ms), goes Back (700–1799 ms), or
-  Home (≥1800 ms), measured against the monotonic counter.
+  Home (1800–3499 ms), or opens power controls (≥3500 ms), measured against
+  the monotonic counter.
 - Crown rotation uses ESP32-S3 PCNT quadrature counting with a hardware glitch
   filter, so SPI rendering no longer loses intermediate edges. Settings →
   Gestures provides low/normal/high sensitivity (4/2/2 edges per UI step) and
@@ -61,12 +64,10 @@ The firmware build properties and local getprop report the same default locale.
   most one step per loop and Fast at most two. Large movements drain smoothly;
   reversing cancels unrendered motion rather than replaying stale steps.
   Preferences persist in reserved page 71.
-- ST7789 BLK/GPIO6 uses LEDC hardware PWM at 80 kHz, 8-bit resolution. The
-  brightness editor changes the actual duty (5–100%). Flashlight temporarily
-  uses 100% and restores the selected brightness on exit. Media, timer, tiles
-  and watch face derive colors from the selected theme. Identical brightness
-  values no longer restart PWM on every frame. Actual panel flicker/camera
-  banding still needs an on-device check.
+- ST7789 BLK/GPIO6 now uses constant DC when on, with no software PWM.
+  RGB565 pixel scaling supplies intermediate brightness. This does not reduce
+  LED current or save backlight power while dimmed. Real screen-off drives
+  BLK low. Physical panel/power flicker remains subject to hardware checking.
 - MADCTL now selects BGR (`0x08`) for the user's panel: the reported coral/blue
   swap with unchanged purple indicates exchanged red and blue channels.
   RGB565 framebuffer values remain unchanged; conversion is in the controller.
@@ -74,8 +75,8 @@ The firmware build properties and local getprop report the same default locale.
   of staggered circles. Settings and the app list share one proportional edge
   scroll indicator; the misleading marker inside every selected card is gone.
 - Display → Screen sleep selects 30 seconds or 1–10 minutes (the same timeout
-  as Security → Auto-lock). Idle screen-off works without a PIN: backlight duty
-  is zero and DISPON is disabled. The first crown action wakes only; the new
+  as Security → Auto-lock). Idle screen-off works without a PIN: backlight GPIO
+  is low and DISPON is disabled. The first crown action wakes only; the new
   frame is transferred before the light comes on. Timer/alarm alerts wake the
   display. The ESP32 keeps running timers/radio/storage; this is screen sleep,
   not complete power-off or deep sleep.
@@ -93,8 +94,9 @@ The firmware build properties and local getprop report the same default locale.
   [HAL linker correction](ld/README.md) removes the spurious writable flag
   from the flash alignment reservation without suppressing warnings.
 
-Assistant/phone notification forwarding, audio, sensors and Google's apps are
-not implemented by this restoration. PIN is a local UI lock, not a hardware
+The assistant page can request the paired device's default voice assistant
+through HID Voice Command. Phone notification forwarding, audio, sensors and
+Google's apps are not implemented. PIN is a local UI lock, not a hardware
 anti-theft/activation lock: this development board does not have configured
 secure boot, flash encryption or protected internal credential storage. Removing
 or replacing the external disk, modifying its contents or reflashing can bypass
@@ -126,7 +128,7 @@ the phone model/OS and the new `bt-status` plus `BLE:` logs are needed to trace 
 - [Merged SD-mode flash image](out/watch-restored-sd-full.bin): 4 MiB image at
   **0x0**, containing the ESP-IDF second-stage bootloader, partition table and
   application. This is a new build, not a copy of the recovered flash dump.
-- [Fresh GPT userspace image](../Firmware/out/restored/aosp-wear-sd.img).
+- [Fresh GPT userspace image](../Firmware/out/restored-sd512/aosp-wear-sd.img).
   This image has fresh userdata; writing the whole image over an existing SD
   card replaces that card's data. The existing image and recovery dump were
   not modified. Existing cards need the updated Rhai framework as well as the

@@ -2,7 +2,11 @@ extern crate alloc;
 
 use alloc::{string::String, string::ToString};
 #[cfg(not(feature = "pc-block-boot"))]
-use embedded_hal::{delay::DelayNs, spi::SpiDevice};
+use embedded_hal::delay::DelayNs;
+#[cfg(all(not(feature = "pc-block-boot"), not(feature = "sd-checked-startup")))]
+use embedded_hal::spi::SpiDevice;
+#[cfg(all(not(feature = "pc-block-boot"), feature = "sd-checked-startup"))]
+use embedded_hal::{digital::OutputPin, spi::SpiBus};
 use embedded_sdmmc::BlockDevice;
 #[cfg(not(feature = "pc-block-boot"))]
 use embedded_sdmmc::SdCard;
@@ -19,6 +23,10 @@ use crate::{
 #[derive(Debug)]
 pub enum AndroidBootError {
     Card,
+    #[cfg(all(not(feature = "pc-block-boot"), feature = "sd-checked-startup"))]
+    SdInit(crate::sd_init::InitError),
+    #[cfg(all(not(feature = "pc-block-boot"), not(feature = "sd-checked-startup")))]
+    SdAcquire(embedded_sdmmc::SdCardError),
     Gpt(gpt::GptError),
     BootControl,
     MissingSlot,
@@ -33,6 +41,10 @@ impl core::fmt::Display for AndroidBootError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Card => f.write_str("card I/O error"),
+            #[cfg(all(not(feature = "pc-block-boot"), not(feature = "sd-checked-startup")))]
+            Self::SdAcquire(error) => write!(f, "SD acquisition: {error:?}"),
+            #[cfg(all(not(feature = "pc-block-boot"), feature = "sd-checked-startup"))]
+            Self::SdInit(error) => write!(f, "SD initialization: {error}"),
             Self::Gpt(e) => write!(f, "GPT error: {:?}", e),
             Self::BootControl => f.write_str("boot-control error"),
             Self::MissingSlot => f.write_str("no bootable slot"),
@@ -139,19 +151,39 @@ fn append_component(bundle: &mut String, marker: &str, text: &str) -> Result<(),
     Ok(())
 }
 
-#[cfg(not(feature = "pc-block-boot"))]
-pub fn load_system<SPI, DELAY, PostInit>(
+#[cfg(all(not(feature = "pc-block-boot"), feature = "sd-checked-startup"))]
+pub fn load_system<BUS, CS, DELAY, PostInit>(
+    spi: crate::sd_spi::SdSpiSession<BUS, CS, DELAY>,
+    delay: DELAY,
+    post_init: PostInit,
+) -> Result<BootSession<SdCard<crate::sd_spi::SdSpiSession<BUS, CS, DELAY>, DELAY>>, AndroidBootError>
+where
+    BUS: SpiBus<u8>,
+    CS: OutputPin,
+    DELAY: DelayNs,
+    PostInit: FnOnce(&SdCard<crate::sd_spi::SdSpiSession<BUS, CS, DELAY>, DELAY>),
+{
+    let card = crate::sd_init::open(spi, delay).map_err(AndroidBootError::SdInit)?;
+    post_init(&card);
+    load_block_device(card)
+}
+
+/// Original SD acquisition path from the pre-restoration firmware. Error detail
+/// is retained, but card protocol and CS behavior come from the original crates.
+#[cfg(all(not(feature = "pc-block-boot"), not(feature = "sd-checked-startup")))]
+pub fn load_system<SPI: SpiDevice<u8>, DELAY: DelayNs, PostInit: FnOnce(&SdCard<SPI, DELAY>)>(
     spi: SPI,
     delay: DELAY,
     post_init: PostInit,
-) -> Result<BootSession<SdCard<SPI, DELAY>>, AndroidBootError>
-where
-    SPI: SpiDevice<u8>,
-    DELAY: DelayNs,
-    PostInit: FnOnce(&SdCard<SPI, DELAY>),
-{
+) -> Result<BootSession<SdCard<SPI, DELAY>>, AndroidBootError> {
+    esp_println::println!("microSD: startup=original embedded-sdmmc 0.10 / CRC on");
     let card = SdCard::new(spi, delay);
-    card.num_bytes().map_err(|_| AndroidBootError::Card)?;
+    let bytes = card.num_bytes().map_err(AndroidBootError::SdAcquire)?;
+    esp_println::println!(
+        "microSD: initialized, {} MiB, {:?}",
+        bytes / (1024 * 1024),
+        card.get_card_type()
+    );
     post_init(&card);
     load_block_device(card)
 }
@@ -159,7 +191,10 @@ where
 /// Load the Android-like system from any synchronous 512-byte block device.
 pub fn load_block_device<D: BlockDevice>(card: D) -> Result<BootSession<D>, AndroidBootError> {
     card.num_blocks().map_err(|_| AndroidBootError::Card)?;
-    gpt::probe(&card).map_err(AndroidBootError::Gpt)?;
+    if let Err(error) = gpt::probe(&card) {
+        crate::disk_probe::report(&card);
+        return Err(AndroidBootError::Gpt(error));
+    }
     let misc = gpt::find_partition(&card, "misc").map_err(AndroidBootError::Gpt)?;
     let mut control =
         BootControl::load_or_init(&card, misc).map_err(|_| AndroidBootError::BootControl)?;
@@ -250,6 +285,10 @@ fn partition_name(prefix: &str, slot: Slot) -> String {
 
 fn should_mark_unbootable(error: &AndroidBootError) -> bool {
     match error {
+        #[cfg(all(not(feature = "pc-block-boot"), feature = "sd-checked-startup"))]
+        AndroidBootError::SdInit(_) => false,
+        #[cfg(all(not(feature = "pc-block-boot"), not(feature = "sd-checked-startup")))]
+        AndroidBootError::SdAcquire(_) => false,
         AndroidBootError::Avb(avb::AvbError::Io) => false,
         AndroidBootError::Avb(_) => true,
         AndroidBootError::BootImage(android_boot::BootImageError::Io) => false,

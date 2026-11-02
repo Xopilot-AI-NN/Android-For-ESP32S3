@@ -9,8 +9,6 @@ compile_error!("enable exactly one display backend: display-ssd1306 OR display-s
 #[cfg(not(any(feature = "display-ssd1306", feature = "display-st7789")))]
 compile_error!("enable a display backend: display-ssd1306 OR display-st7789");
 
-#[cfg(not(feature = "pc-block-boot"))]
-use embedded_hal_bus::spi::ExclusiveDevice;
 use embedded_sdmmc::BlockDevice;
 #[cfg(feature = "display-ssd1306")]
 use esp_hal::i2c::master::{Config as I2cConfig, I2c};
@@ -44,8 +42,9 @@ mod boot_control;
 mod config;
 mod cpio;
 mod desktop;
+mod device_commands;
+mod disk_probe;
 mod display;
-#[cfg(not(feature = "pc-block-boot"))]
 mod fastboot;
 mod font;
 #[cfg(feature = "display-ssd1306")]
@@ -54,6 +53,7 @@ mod gpt;
 mod input;
 mod lp;
 mod material;
+mod media;
 #[cfg(feature = "radio-services")]
 mod net;
 mod page_store;
@@ -61,10 +61,17 @@ mod page_store;
 mod radio;
 mod rtc;
 mod runtime;
+#[cfg(all(not(feature = "pc-block-boot"), feature = "sd-software-spi"))]
+mod sd_bitbang;
+#[cfg(all(not(feature = "pc-block-boot"), feature = "sd-checked-startup"))]
+mod sd_init;
+#[cfg(all(not(feature = "pc-block-boot"), feature = "sd-checked-startup"))]
+mod sd_spi;
 #[cfg(feature = "display-software-spi")]
 mod soft_spi;
 #[cfg(feature = "pc-block-boot")]
 mod usb_pc_block;
+mod wallpaper;
 
 use desktop::{DesktopEvent, WifiCredentials};
 #[cfg(not(feature = "pc-block-boot"))]
@@ -84,6 +91,7 @@ mod boot;
 #[cfg(not(feature = "pc-block-boot"))]
 mod boot_modes;
 mod persistence;
+mod power;
 #[cfg(feature = "radio-services")]
 mod radio_bridge;
 mod state_flow;

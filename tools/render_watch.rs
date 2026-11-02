@@ -13,6 +13,14 @@ fn main() {
     fs::create_dir_all(&out).unwrap();
     for (name, screen, cursor) in [
         ("watch", 1, 0),
+        ("analog",1,0),
+        ("complications",1,0),
+        ("power",1,0),
+        ("splash",1,0),
+        ("fastboot",1,0),
+        ("recovery",1,0),
+        ("display",14,3),
+        ("media-playing",10,1),
         ("quick", 4, 0),
         ("settings", 5, 0),
         ("connectivity", 7, 0),
@@ -65,8 +73,17 @@ fn main() {
         if screen == 30 {
             frame.bt_pin = Some(123456);
         }
+        frame.time_minutes = 23*60+29; frame.time_seconds=37;
+        frame.date_day=1;frame.date_month=11;
+        if name=="analog" {frame.watch_face=1;}
+        if name=="complications" {frame.watch_face=2;}
+        if name=="power" {frame.power_menu=true;}
+        if name=="media-playing" {frame.media_known=true;frame.media_playing=true;frame.media_progress=420;frame.animation_phase=100;}
         let mut surface = material::Surface::new();
-        surface.render(frame);
+        if name=="splash" {surface.boot_frame(255);}
+        else if name=="fastboot" {surface.boot_menu_frame(1,2);}
+        else if name=="recovery" {surface.boot_menu_frame(2,1);}
+        else {surface.render(frame);}
         let mut file = fs::File::create(format!("{out}/{name}.ppm")).unwrap();
         write!(file, "P6\n240 280\n255\n").unwrap();
         for &p in surface.pixels() {

@@ -18,7 +18,26 @@ pub(crate) fn run() -> ! {
         .with_cpu_clock(CpuClock::max())
         .with_psram(esp_hal::psram::PsramConfig::default());
     let p = esp_hal::init(hal_cfg);
-    println!("performance: ESP32-S3 CPU=240MHz (CpuClock::max); USB-PC/radio profile active");
+    let requested = crate::power::take();
+    if requested == Some(runtime::SystemAction::PowerOff) {
+        use esp_hal::gpio::RtcPinWithResistors;
+        let _dark = Output::new(p.GPIO6, Level::Low, OutputConfig::default());
+        p.GPIO13.rtcio_pullup(true);
+        p.GPIO13.rtcio_pulldown(false);
+        let source = esp_hal::rtc_cntl::sleep::Ext0WakeupSource::new(
+            p.GPIO13,
+            esp_hal::rtc_cntl::sleep::WakeupLevel::Low,
+        );
+        esp_hal::rtc_cntl::Rtc::new(p.LPWR).sleep_deep(&[&source]);
+    }
+    println!(
+        "performance: ESP32-S3 CPU=240MHz (CpuClock::max); storage={}",
+        if cfg!(feature = "pc-block-boot") {
+            "usb-pc-block"
+        } else {
+            "sd-spi"
+        }
+    );
 
     let (_, psram_size) = esp_hal::psram::psram_raw_parts(&p.PSRAM);
     println!("PSRAM detected: {} bytes", psram_size);
@@ -67,7 +86,7 @@ pub(crate) fn run() -> ! {
     );
 
     #[cfg(feature = "display-ssd1306")]
-    let physical_display = {
+    let mut physical_display = {
         let i2c = I2c::new(
             p.I2C0,
             I2cConfig::default().with_frequency(Rate::from_khz(400)),
@@ -79,37 +98,13 @@ pub(crate) fn run() -> ! {
     };
 
     #[cfg(feature = "display-st7789")]
-    let mut backlight_ledc = esp_hal::ledc::Ledc::new(p.LEDC);
-    #[cfg(feature = "display-st7789")]
-    let backlight_timer = {
-        use esp_hal::ledc::timer::TimerIFace;
-        backlight_ledc.set_global_slow_clock(esp_hal::ledc::LSGlobalClkSource::APBClk);
-        let mut timer =
-            backlight_ledc.timer::<esp_hal::ledc::LowSpeed>(esp_hal::ledc::timer::Number::Timer0);
-        timer
-            .configure(esp_hal::ledc::timer::config::Config {
-                duty: esp_hal::ledc::timer::config::Duty::Duty8Bit,
-                clock_source: esp_hal::ledc::timer::LSClockSource::APBClk,
-                frequency: Rate::from_khz(80),
-            })
-            .expect("backlight PWM timer");
-        timer
-    };
-    #[cfg(feature = "display-st7789")]
-    let pwm_backlight = {
-        use esp_hal::ledc::channel::ChannelIFace;
-        let mut channel = backlight_ledc.channel(esp_hal::ledc::channel::Number::Channel0, p.GPIO6);
-        channel
-            .configure(esp_hal::ledc::channel::config::Config {
-                timer: &backlight_timer,
-                duty_pct: 0,
-                drive_mode: esp_hal::gpio::DriveMode::PushPull,
-            })
-            .expect("backlight PWM channel");
-        crate::backlight::PwmBacklight::new(channel)
-    };
+    let dc_backlight = crate::backlight::DcBacklight::new(Output::new(
+        p.GPIO6,
+        Level::Low,
+        OutputConfig::default(),
+    ));
     #[cfg(all(feature = "display-st7789", not(feature = "display-software-spi")))]
-    let physical_display = {
+    let mut physical_display = {
         let spi = Spi::new(
             p.SPI3,
             SpiConfig::default()
@@ -122,13 +117,13 @@ pub(crate) fn run() -> ! {
         let cs = Output::new(p.GPIO5, Level::High, OutputConfig::default());
         let dc = Output::new(p.GPIO4, Level::Low, OutputConfig::default());
         let rst = Output::new(p.GPIO3, Level::High, OutputConfig::default());
-        let bl = pwm_backlight;
+        let bl = dc_backlight;
         let mut init_delay = delay;
         St7789Display::new(spi, cs, dc, rst, bl, &mut init_delay).expect("ST7789V3 init failed")
     };
 
     #[cfg(all(feature = "display-st7789", feature = "display-software-spi"))]
-    let physical_display = {
+    let mut physical_display = {
         // GPIO1 = SCL/SCK, GPIO2 = SDA/MOSI, GPIO3 = RES/RST,
         // GPIO4 = DC, GPIO5 = CS, GPIO6 = BLK (active high).
         // This deliberately does NOT use SPI3 or the GPIO matrix.
@@ -140,11 +135,21 @@ pub(crate) fn run() -> ! {
         let cs = Output::new(p.GPIO5, Level::High, OutputConfig::default());
         let dc = Output::new(p.GPIO4, Level::Low, OutputConfig::default());
         let rst = Output::new(p.GPIO3, Level::High, OutputConfig::default());
-        let bl = pwm_backlight;
+        let bl = dc_backlight;
         let mut init_delay = delay;
         St7789Display::new(spi, cs, dc, rst, bl, &mut init_delay)
             .expect("ST7789V3 software SPI init failed")
     };
+
+    let mut keys = BootKeys::new(p.PCNT, p.GPIO11, p.GPIO12, p.GPIO13);
+    if requested == Some(runtime::SystemAction::Fastboot) {
+        let usb = UsbSerialJtag::new(p.USB_DEVICE);
+        let (rx, tx) = usb.split();
+        fastboot::run(rx, tx, &mut physical_display, &mut keys, &delay);
+    }
+    if requested == Some(runtime::SystemAction::Recovery) {
+        crate::power::recovery_board(&mut physical_display, &mut keys, &delay);
+    }
 
     #[cfg(feature = "pc-block-boot")]
     {
@@ -227,6 +232,10 @@ pub(crate) fn run() -> ! {
         println!("heap after Rhai startup:\n{}", esp_alloc::HEAP.stats());
         let pager = page_store::PageStore::open(session.block_device()).ok();
         restore_watch_config(&mut os, pager.as_ref(), session.block_device());
+        if let Some(pixels) = wallpaper::load(session.block_device()) {
+            display.set_wallpaper(pixels);
+            os.wallpaper_available(true);
+        }
         let mut pager_used: u32 = 0;
         if let Some(p) = pager {
             println!(
@@ -303,8 +312,7 @@ pub(crate) fn run() -> ! {
         // From this point the PC server may forward viewer commands. The
         // viewer talks to the block-server bridge and never reopens ttyACM0.
         session.block_device().viewer_interactive();
-        let mut ui_refresh_ticks: u8 = 0;
-        let mut keys = BootKeys::new(p.PCNT, p.GPIO11, p.GPIO12, p.GPIO13);
+        let mut next_ui_refresh_ms: u64 = 0;
 
         loop {
             keys.set_sensitivity(os.crown_sensitivity());
@@ -346,25 +354,23 @@ pub(crate) fn run() -> ! {
                     // PC-block mode keeps storage ownership, so these screens
                     // are informational instead of destructive reboots.
                     DesktopEvent::Fastboot => {
-                        session.block_device().viewer_status(
-                            "FASTBOOT",
-                            "PC BLOCK ACTIVE",
-                            "REBOOT MODE TODO",
-                            "NO RESET",
-                        );
-                        None
+                        crate::power::request(runtime::SystemAction::Fastboot)
                     }
                     DesktopEvent::Recovery => {
-                        session.block_device().viewer_status(
-                            "RECOVERY",
-                            "PC BLOCK ACTIVE",
-                            "REBOOT MODE TODO",
-                            "NO RESET",
-                        );
-                        None
+                        crate::power::request(runtime::SystemAction::Recovery)
                     }
                     DesktopEvent::Power => Some(runtime::RuntimeEvent::Press),
                     DesktopEvent::Normal => Some(runtime::RuntimeEvent::Home),
+                    DesktopEvent::AdbCommand(cmd) => {
+                        let out = device_commands::execute(
+                            cmd.as_str(),
+                            &mut os,
+                            &mut display,
+                            session.block_device(),
+                        );
+                        session.block_device().viewer_adb_output("shell", &out);
+                        None
+                    }
                     DesktopEvent::AdbGetProp => {
                         session
                             .block_device()
@@ -598,9 +604,11 @@ pub(crate) fn run() -> ! {
                     }
                 }
             }
-            ui_refresh_ticks = ui_refresh_ticks.wrapping_add(1);
-            if ui_refresh_ticks >= 50 {
-                ui_refresh_ticks = 0;
+            let ui_now = esp_hal::time::Instant::now()
+                .duration_since_epoch()
+                .as_millis();
+            if ui_now >= next_ui_refresh_ms {
+                next_ui_refresh_ms = ui_now + 100;
                 {
                     // Tick clocks and alerts even while Settings or pairing is foreground.
                     if let Ok(mut frame) = os.render() {
@@ -677,6 +685,9 @@ pub(crate) fn run() -> ! {
                     println!("time: software RTC settings updated");
                 }
             }
+            if let Some(action) = os.take_system_action() {
+                crate::power::request(action);
+            }
             delay.delay_millis(20);
         }
     }
@@ -693,8 +704,6 @@ pub(crate) fn run() -> ! {
         let mut display = DesktopMirror::new(physical_display, usb_tx, DesktopSurface::St7789);
         #[cfg(feature = "display-ssd1306")]
         let mut display = DesktopMirror::new(physical_display, usb_tx, DesktopSurface::Ssd1306);
-
-        let mut keys = BootKeys::new(p.PCNT, p.GPIO11, p.GPIO12, p.GPIO13);
 
         let _ = display.boot_logo();
         delay.delay_millis(config::BOOT_SPLASH_MS);
@@ -717,6 +726,7 @@ pub(crate) fn run() -> ! {
 
         // SD requires >=74 clocks at <=400 kHz with CS deasserted before CMD0.
         let mut cs = Output::new(p.GPIO10, Level::High, OutputConfig::default());
+        #[cfg(not(feature = "sd-software-spi"))]
         let mut spi = Spi::new(
             p.SPI2,
             SpiConfig::default()
@@ -728,6 +738,32 @@ pub(crate) fn run() -> ! {
         .with_mosi(p.GPIO9)
         .with_miso(p.GPIO7);
 
+        #[cfg(feature = "sd-software-spi")]
+        let mut spi = sd_bitbang::SdBitBang::new(
+            Output::new(p.GPIO8, Level::Low, OutputConfig::default()),
+            Output::new(p.GPIO9, Level::High, OutputConfig::default()),
+            esp_hal::gpio::Input::new(
+                p.GPIO7,
+                esp_hal::gpio::InputConfig::default().with_pull(esp_hal::gpio::Pull::Up),
+            ),
+            delay,
+        )
+        .expect("SD GPIO config");
+        #[cfg(feature = "sd-software-spi")]
+        use embedded_hal::spi::SpiBus as _;
+        println!(
+            "microSD: backend={} startup={} kHz",
+            if cfg!(feature = "sd-software-spi") {
+                "gpio-mode0"
+            } else {
+                "SPI2"
+            },
+            if cfg!(feature = "sd-software-spi") {
+                100
+            } else {
+                config::SD_INIT_KHZ
+            }
+        );
         let _ = cs.set_high();
         if let Err(err) = spi.write(&[0xFF; 10]) {
             // 80 idle clocks, CS high.
@@ -735,13 +771,29 @@ pub(crate) fn run() -> ! {
             let _ = display.error("SD SPI ERROR", "CHECK GPIO7-10");
             enter_fastboot(display, desktop_input, &mut keys, &delay);
         }
-        println!("microSD: SPI2 MISO=7 SCK=8 MOSI=9 CS=10");
-        let device = ExclusiveDevice::new(spi, cs, delay).expect("SD CS pin");
+        println!("microSD: MISO=7 SCK=8 MOSI=9 CS=10");
+        // SPI2 belongs only to SD; keep command and response in one CS session.
+        #[cfg(feature = "sd-checked-startup")]
+        let device = sd_spi::SdSpiSession::new(spi, cs, delay);
+        #[cfg(not(feature = "sd-checked-startup"))]
+        let device =
+            embedded_hal_bus::spi::ExclusiveDevice::new(spi, cs, delay).expect("SD CS pin");
+        println!(
+            "microSD: transport={}",
+            if cfg!(feature = "sd-checked-startup") {
+                "checked session"
+            } else {
+                "original ExclusiveDevice"
+            }
+        );
 
         let _ = display.boot_progress("LOADING", 2);
         let mut session = match android_storage::load_system(device, delay, |card| {
-            // embedded-sdmmc initializes the card while still at <=400 kHz. Once
-            // initialization has completed, re-clock the SPI bus for image/GPT I/O.
+            #[cfg(feature = "sd-software-spi")]
+            let _ = card;
+            // Checked startup and the first CSD read use the slow clock. Only
+            // a successfully initialized hardware bus is accelerated for GPT I/O.
+            #[cfg(not(feature = "sd-software-spi"))]
             card.spi(|sd_device| {
                 let fast = SpiConfig::default()
                     .with_frequency(Rate::from_mhz(config::SD_DATA_MHZ))
@@ -756,8 +808,19 @@ pub(crate) fn run() -> ! {
         }) {
             Ok(session) => session,
             Err(err) => {
-                println!("android boot error: {:?}", err);
-                let _ = display.error("NO SYSTEM", "USB FASTBOOT");
+                println!("android boot error: {}", err);
+                let title = match &err {
+                    #[cfg(feature = "sd-checked-startup")]
+                    android_storage::AndroidBootError::SdInit(_) => "SD INIT FAILED",
+                    #[cfg(not(feature = "sd-checked-startup"))]
+                    android_storage::AndroidBootError::SdAcquire(_) => "SD INIT FAILED",
+                    android_storage::AndroidBootError::Card => "SD BLOCK ERROR",
+                    android_storage::AndroidBootError::Gpt(_) => "SD GPT ERROR",
+                    _ => "NO SYSTEM",
+                };
+                let mut detail = heapless::String::<96>::new();
+                let _ = core::fmt::write(&mut detail, format_args!("{err}"));
+                let _ = display.error(title, detail.as_str());
                 enter_fastboot(display, desktop_input, &mut keys, &delay);
             }
         };
@@ -800,6 +863,10 @@ pub(crate) fn run() -> ! {
         println!("heap after Rhai startup:\n{}", esp_alloc::HEAP.stats());
         let pager = page_store::PageStore::open(session.block_device()).ok();
         restore_watch_config(&mut os, pager.as_ref(), session.block_device());
+        if let Some(pixels) = wallpaper::load(session.block_device()) {
+            display.set_wallpaper(pixels);
+            os.wallpaper_available(true);
+        }
         let mut pager_used: u32 = 0;
         if let Some(p) = pager {
             println!(
@@ -872,7 +939,7 @@ pub(crate) fn run() -> ! {
         }
         let _ = display.runtime(&first_frame);
 
-        let mut ui_refresh_ticks: u8 = 0;
+        let mut next_ui_refresh_ms: u64 = 0;
         loop {
             keys.set_sensitivity(os.crown_sensitivity());
             let rotation = keys.poll_rotation();
@@ -930,6 +997,16 @@ pub(crate) fn run() -> ! {
                     }
                     DesktopEvent::Power => Some(runtime::RuntimeEvent::Press),
                     DesktopEvent::Normal => Some(runtime::RuntimeEvent::Home),
+                    DesktopEvent::AdbCommand(cmd) => {
+                        let out = device_commands::execute(
+                            cmd.as_str(),
+                            &mut os,
+                            &mut display,
+                            session.block_device(),
+                        );
+                        display.adb_output("shell", &out);
+                        None
+                    }
                     DesktopEvent::AdbGetProp
                     | DesktopEvent::AdbServices
                     | DesktopEvent::AdbPackages
@@ -1038,9 +1115,11 @@ pub(crate) fn run() -> ! {
                     }
                 }
             }
-            ui_refresh_ticks = ui_refresh_ticks.wrapping_add(1);
-            if ui_refresh_ticks >= 50 {
-                ui_refresh_ticks = 0;
+            let ui_now = esp_hal::time::Instant::now()
+                .duration_since_epoch()
+                .as_millis();
+            if ui_now >= next_ui_refresh_ms {
+                next_ui_refresh_ms = ui_now + 100;
                 {
                     // Tick clocks and alerts even while Settings or pairing is foreground.
                     if let Ok(mut frame) = os.render() {
@@ -1114,6 +1193,9 @@ pub(crate) fn run() -> ! {
                     persisted_rtc_config = rtc_config;
                     println!("time: software RTC settings updated");
                 }
+            }
+            if let Some(action) = os.take_system_action() {
+                crate::power::request(action);
             }
             delay.delay_millis(20);
         }

@@ -8,8 +8,8 @@ config = (ROOT / "src" / "config.rs").read_text()
 display = (ROOT / "src" / "display.rs").read_text()
 
 try:
-    tft = boot.split('    #[cfg(all(feature = "display-st7789", not(feature = "display-software-spi")))]\n    let physical_display = {', 1)[1].split('    };', 1)[0]
-    sd = boot.split('// SD requires >=74 clocks', 1)[1].split('let device = ExclusiveDevice::new', 1)[0]
+    tft = boot.split('    #[cfg(all(feature = "display-st7789", not(feature = "display-software-spi")))]\n    let mut physical_display = {', 1)[1].split('    };', 1)[0]
+    sd = boot.split('// SD requires >=74 clocks', 1)[1].split('let device = sd_spi::SdSpiSession::new', 1)[0]
 except IndexError as e:
     raise SystemExit('FAIL: expected TFT/SD initialization block not found') from e
 
@@ -20,12 +20,11 @@ checks = {
     'TFT RST GPIO3': 'Output::new(p.GPIO3, Level::High' in tft,
     'TFT DC GPIO4': 'Output::new(p.GPIO4, Level::Low' in tft,
     'TFT CS GPIO5': 'Output::new(p.GPIO5, Level::High' in tft,
-    'TFT BLK GPIO6 PWM': (
-        'Channel0, p.GPIO6' in boot
-        and 'crate::backlight::PwmBacklight::new(channel)' in boot
-        and 'let bl = pwm_backlight;' in tft
-        and 'frequency: Rate::from_khz(80)' in boot
-        and 'Duty::Duty8Bit' in boot
+    'TFT BLK GPIO6 constant DC': (
+        'crate::backlight::DcBacklight::new(Output::new(' in boot
+        and 'p.GPIO6' in boot
+        and 'let bl = dc_backlight;' in tft
+        and 'backlight_ledc' not in boot
     ),
     'TFT panel BGR order': 'pub const TFT_MADCTL: u8 = 0x08;' in config,
     'Encoder hardware PCNT': 'BootKeys::new(p.PCNT, p.GPIO11, p.GPIO12, p.GPIO13)' in boot,
@@ -34,7 +33,7 @@ checks = {
     'SD SCK GPIO8': '.with_sck(p.GPIO8)' in sd,
     'SD MOSI GPIO9': '.with_mosi(p.GPIO9)' in sd,
     'SD CS GPIO10': 'Output::new(p.GPIO10, Level::High' in sd,
-    'SD initial 400 kHz': 'pub const SD_INIT_KHZ: u32 = 400;' in config,
+    'SD original 400 kHz, checked 100 kHz': 'if cfg!(feature = "sd-checked-startup")' in config and '400' in config,
     'SD 80 idle clocks': 'spi.write(&[0xFF; 10])' in sd,
     'Backlight after first clear': display.index('s.clear(BLACK)?;') < display.index('s.bl.set_high().map_err'),
 }

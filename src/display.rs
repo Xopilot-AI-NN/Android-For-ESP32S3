@@ -3,12 +3,30 @@ pub enum DisplayError {
     Bus,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RenderStats {
+    pub drawn: u32,
+    pub skipped: u32,
+    pub last_us: u64,
+    pub max_us: u64,
+    pub last_pixels: u32,
+}
 use crate::runtime::RuntimeFrame;
 pub trait Backlight: embedded_hal::digital::OutputPin {
     fn set_brightness(&mut self, percent: u8) -> Result<(), Self::Error>;
+    fn software_dimming(&self) -> bool {
+        false
+    }
 }
 
 pub trait BootDisplay {
+    fn render_stats(&self) -> RenderStats {
+        RenderStats::default()
+    }
+    fn set_wallpaper(&mut self, _pixels: alloc::vec::Vec<u16>) {}
+    fn snapshot_rgb565(&self) -> Option<&[u16]> {
+        None
+    }
     fn boot_logo(&mut self) -> Result<(), DisplayError>;
     fn boot_progress(&mut self, label: &str, phase: u8) -> Result<(), DisplayError>;
     fn status(&mut self, title: &str, l1: &str, l2: &str, l3: &str) -> Result<(), DisplayError>;
@@ -21,9 +39,15 @@ pub trait BootDisplay {
             }
         }
     }
-    #[cfg(not(feature = "pc-block-boot"))]
     fn fastboot(&mut self) -> Result<(), DisplayError> {
         self.status("FASTBOOT MODE", "USB: READY", "PWR: REBOOT", "CMD: HELP")
+    }
+    fn boot_menu(&mut self, kind: u8, _cursor: u8) -> Result<(), DisplayError> {
+        if kind == 1 {
+            self.fastboot()
+        } else {
+            self.status("RECOVERY", "REBOOT", "FASTBOOT", "POWER OFF")
+        }
     }
     fn error(&mut self, code: &str, detail: &str) -> Result<(), DisplayError>;
 }
@@ -148,18 +172,20 @@ mod tft {
     use crate::{
         config,
         font::glyph,
-        material::{Rect, Surface},
+        material::{MaterialFrame, Rect, Surface},
         runtime::RuntimeFrame,
     };
+    use alloc::{vec, vec::Vec};
     use embedded_hal::{delay::DelayNs, digital::OutputPin, spi::SpiBus};
 
     const W: i32 = 240;
     const H: i32 = 280;
     const BLACK: u16 = 0x0000;
     const WHITE: u16 = 0xFFFF;
+    #[cfg(feature = "display-diagnostic")]
     const BLUE: u16 = 0x249F;
+    #[cfg(feature = "display-diagnostic")]
     const GREEN: u16 = 0x3E08;
-    const YELLOW: u16 = 0xFEC0;
     const RED: u16 = 0xF986;
     const DIM: u16 = 0x7BEF;
 
@@ -171,6 +197,10 @@ mod tft {
         bl: BL,
         material_surface: Surface,
         awake: bool,
+        displayed: Vec<u16>,
+        frame_valid: bool,
+        last_scene: Option<MaterialFrame>,
+        stats: super::RenderStats,
     }
 
     impl<SPI, CS, DC, RST, BL> St7789Display<SPI, CS, DC, RST, BL>
@@ -204,6 +234,10 @@ mod tft {
                 bl,
                 material_surface: Surface::new(),
                 awake: true,
+                displayed: vec![0; 240 * 280],
+                frame_valid: false,
+                last_scene: None,
+                stats: super::RenderStats::default(),
             };
             s.cmd(0x01, &[])?; // SWRESET
             delay.delay_ms(120);
@@ -339,6 +373,7 @@ mod tft {
         }
 
         fn clear(&mut self, color: u16) -> Result<(), DisplayError> {
+            self.frame_valid = false;
             self.fill_rect(0, 0, W, H, color)
         }
 
@@ -352,22 +387,27 @@ mod tft {
             }
             self.set_window(x0, y0, x1, y1)?;
             let pixels = self.material_surface.pixels();
-            let mut buf = [0u8; 256];
+            // Carry the buffer across row boundaries: full chunks match SPI FIFO
+            // sizing and avoid two short writes for every 240-pixel row.
+            let mut buf = [0u8; 1024];
+            let mut used = 0;
             for y in y0..=y1 {
                 let row = &pixels[y as usize * W as usize + x0 as usize
                     ..y as usize * W as usize + x1 as usize + 1];
-                let mut pos = 0;
-                while pos < row.len() {
-                    let count = (row.len() - pos).min(buf.len() / 2);
-                    for (i, &px) in row[pos..pos + count].iter().enumerate() {
-                        buf[i * 2] = (px >> 8) as u8;
-                        buf[i * 2 + 1] = px as u8;
+                for &px in row {
+                    buf[used] = (px >> 8) as u8;
+                    buf[used + 1] = px as u8;
+                    used += 2;
+                    if used == buf.len() {
+                        self.spi.write(&buf).map_err(|_| DisplayError::Bus)?;
+                        used = 0;
                     }
-                    self.spi
-                        .write(&buf[..count * 2])
-                        .map_err(|_| DisplayError::Bus)?;
-                    pos += count;
                 }
+            }
+            if used != 0 {
+                self.spi
+                    .write(&buf[..used])
+                    .map_err(|_| DisplayError::Bus)?;
             }
             self.spi.flush().map_err(|_| DisplayError::Bus)?;
             self.cs.set_high().map_err(|_| DisplayError::Bus)
@@ -432,33 +472,6 @@ mod tft {
             let x = (W - Self::text_width(text, scale)) / 2;
             self.text(x, y, text, scale, color)
         }
-
-        fn mark(&mut self) -> Result<(), DisplayError> {
-            // Four-color AOSP development mark; deliberately uses no Google/Wear OS asset.
-            self.fill_rect(91, 62, 29, 10, BLUE)?;
-            self.fill_rect(120, 62, 29, 10, RED)?;
-            self.fill_rect(91, 72, 29, 10, GREEN)?;
-            self.fill_rect(120, 72, 29, 10, YELLOW)?;
-            self.text_center(91, "A", 6, WHITE)
-        }
-
-        fn spinner(&mut self, phase: u8) -> Result<(), DisplayError> {
-            const P: [(i32, i32); 8] = [
-                (120, 214),
-                (136, 208),
-                (142, 192),
-                (136, 176),
-                (120, 170),
-                (104, 176),
-                (98, 192),
-                (104, 208),
-            ];
-            for (i, &(x, y)) in P.iter().enumerate() {
-                let c = if i == phase as usize % 8 { WHITE } else { DIM };
-                self.fill_rect(x - 3, y - 3, 7, 7, c)?;
-            }
-            Ok(())
-        }
     }
 
     impl<SPI, CS, DC, RST, BL> BootDisplay for St7789Display<SPI, CS, DC, RST, BL>
@@ -469,17 +482,37 @@ mod tft {
         RST: OutputPin,
         BL: Backlight,
     {
+        fn render_stats(&self) -> super::RenderStats {
+            self.stats
+        }
+        fn set_wallpaper(&mut self, pixels: Vec<u16>) {
+            self.material_surface.set_wallpaper(pixels);
+            self.frame_valid = false;
+        }
+        fn snapshot_rgb565(&self) -> Option<&[u16]> {
+            if self.frame_valid {
+                Some(&self.displayed)
+            } else {
+                None
+            }
+        }
         fn boot_logo(&mut self) -> Result<(), DisplayError> {
-            self.clear(BLACK)?;
-            self.mark()?;
-            self.text_center(151, "ANDROID 17", 2, WHITE)?;
-            self.text_center(178, "AOSP WEAR OS", 2, DIM)
+            self.frame_valid = false;
+            for phase in 1..=12 {
+                self.material_surface.boot_frame((phase * 255 / 12) as u8);
+                self.flush_material_rect(Rect::FULL)?;
+            }
+            Ok(())
         }
         fn boot_progress(&mut self, label: &str, phase: u8) -> Result<(), DisplayError> {
-            self.clear(BLACK)?;
-            self.mark()?;
-            self.text_center(145, label, 2, WHITE)?;
-            self.spinner(phase)
+            self.frame_valid = false;
+            self.material_surface.boot_progress_frame(label, phase);
+            self.flush_material_rect(Rect::FULL)
+        }
+        fn boot_menu(&mut self, kind: u8, cursor: u8) -> Result<(), DisplayError> {
+            self.frame_valid = false;
+            self.material_surface.boot_menu_frame(kind, cursor);
+            self.flush_material_rect(Rect::FULL)
         }
         fn status(
             &mut self,
@@ -509,16 +542,53 @@ mod tft {
                     if !self.awake {
                         self.cmd(0x29, &[])?;
                         self.awake = true;
+                        self.frame_valid = false;
                     }
-                    let dirty = self.material_surface.render(*scene);
-                    self.flush_material_rect(dirty)?;
+                    let key = scene.visual_key();
+                    if self.frame_valid
+                        && scene.transition_alpha == 255
+                        && self.last_scene == Some(key)
+                    {
+                        self.stats.skipped = self.stats.skipped.saturating_add(1);
+                        return Ok(());
+                    }
+                    let began = esp_hal::time::Instant::now()
+                        .duration_since_epoch()
+                        .as_micros() as u64;
+                    self.material_surface.render(*scene);
+                    let brightness = scene
+                        .display_brightness
+                        .unwrap_or(scene.brightness)
+                        .clamp(5, 100);
+                    if self.bl.software_dimming() {
+                        self.material_surface.scale_pixels(brightness);
+                    }
+                    if self.frame_valid && scene.screen != 0 && scene.security_view == 0 {
+                        self.material_surface
+                            .blend_from(&self.displayed, scene.transition_alpha.max(64));
+                    }
+                    let dirty = if self.frame_valid {
+                        self.material_surface.changes_from(&self.displayed)
+                    } else {
+                        Some(Rect::FULL)
+                    };
+                    self.stats.last_pixels = dirty.map(|r| (r.w * r.h) as u32).unwrap_or(0);
+                    if let Some(dirty) = dirty {
+                        self.flush_material_rect(dirty)?;
+                        self.displayed
+                            .copy_from_slice(self.material_surface.pixels());
+                        self.frame_valid = true;
+                    }
+                    self.last_scene = Some(key);
+                    self.stats.drawn = self.stats.drawn.saturating_add(1);
+                    self.stats.last_us = (esp_hal::time::Instant::now()
+                        .duration_since_epoch()
+                        .as_micros() as u64)
+                        .saturating_sub(began);
+                    self.stats.max_us = self.stats.max_us.max(self.stats.last_us);
                     // On wake, show the PIN frame before enabling the backlight.
                     self.bl
-                        .set_brightness(if scene.screen == 29 {
-                            100
-                        } else {
-                            scene.brightness.clamp(5, 100)
-                        })
+                        .set_brightness(if scene.screen == 29 { 100 } else { brightness })
                         .map_err(|_| DisplayError::Bus)
                 }
                 RuntimeFrame::Legacy(f) => self.status(&f.title, &f.line1, &f.line2, &f.line3),
@@ -545,6 +615,8 @@ mod tft {
             cs_high: bool,
             dc_high: bool,
             bytes: usize,
+            writes: usize,
+            ram: Vec<u8>,
             brightness: u8,
             command: u8,
             madctl: u8,
@@ -561,10 +633,17 @@ mod tft {
                 let mut wire = self.0.borrow_mut();
                 assert!(!wire.cs_high, "writing with CS deasserted");
                 wire.bytes += bytes.len();
+                wire.writes += 1;
                 if !wire.dc_high {
                     wire.command = bytes[0];
+                    if wire.command == 0x2c {
+                        wire.ram.clear();
+                    }
                 } else if wire.command == 0x36 {
                     wire.madctl = bytes[0];
+                }
+                if wire.dc_high && wire.command == 0x2c {
+                    wire.ram.extend_from_slice(bytes);
                 }
                 // Model esp-hal: the final transfer remains active on return.
                 wire.busy = true;
@@ -621,6 +700,64 @@ mod tft {
         struct NoDelay;
         impl DelayNs for NoDelay {
             fn delay_ns(&mut self, _: u32) {}
+        }
+
+        #[test]
+        fn static_frames_skip_rasterization_and_cropped_transfers_keep_row_order() {
+            let wire = Rc::new(RefCell::new(Wire::default()));
+            let pin = |kind| Pin {
+                wire: wire.clone(),
+                kind,
+            };
+            let mut display = St7789Display::new(
+                Bus(wire.clone()),
+                pin(0),
+                pin(1),
+                pin(2),
+                pin(3),
+                &mut NoDelay,
+            )
+            .unwrap();
+            let mut frame =
+                crate::material::MaterialFrame::parse("M3|5|0|70|0|0|0|0|1|1|0|0|600|0|0|0|1|1|3")
+                    .unwrap();
+            let before = wire.borrow().writes;
+            display.runtime(&RuntimeFrame::Material(frame)).unwrap();
+            assert!(
+                wire.borrow().writes - before < 180,
+                "full frame should use batched SPI writes"
+            );
+            let drawn = display.stats.drawn;
+            let calls = wire.borrow().writes;
+            frame.animation_phase = 120;
+            frame.time_seconds = 37;
+            display.runtime(&RuntimeFrame::Material(frame)).unwrap();
+            assert_eq!(display.stats.drawn, drawn);
+            assert_eq!(display.stats.skipped, 1);
+            assert_eq!(wire.borrow().writes, calls);
+            let rect = Rect {
+                x: 7,
+                y: 8,
+                w: 200,
+                h: 4,
+            };
+            let expected: Vec<u8> = (8..12)
+                .flat_map(|y| {
+                    display.material_surface.pixels()[y * 240 + 7..y * 240 + 207]
+                        .iter()
+                        .flat_map(|p| p.to_be_bytes())
+                        .collect::<Vec<_>>()
+                })
+                .collect();
+            display.flush_material_rect(rect).unwrap();
+            assert_eq!(
+                wire.borrow().ram,
+                expected,
+                "cropped rows and partial chunks must retain RGB565 byte order"
+            );
+            frame.brightness = 25;
+            display.runtime(&RuntimeFrame::Material(frame)).unwrap();
+            assert_eq!(display.stats.drawn, drawn + 1);
         }
 
         #[test]
