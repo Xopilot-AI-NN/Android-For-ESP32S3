@@ -272,6 +272,7 @@ impl<'d> Link<'d> {
 pub struct UsbPcBlockDevice<'d> {
     link: RefCell<Link<'d>>,
     blocks: RefCell<Option<u32>>,
+    viewer: RefCell<crate::viewer_stream::ViewerStream>,
 }
 
 impl<'d> UsbPcBlockDevice<'d> {
@@ -295,6 +296,7 @@ impl<'d> UsbPcBlockDevice<'d> {
                 pending_tail: 0,
             }),
             blocks: RefCell::new(None),
+            viewer: RefCell::new(crate::viewer_stream::ViewerStream::default()),
         }
     }
 
@@ -351,6 +353,12 @@ impl<'d> UsbPcBlockDevice<'d> {
     }
 
     pub fn viewer_runtime(&self, frame: &RuntimeFrame) {
+        let now = esp_hal::time::Instant::now()
+            .duration_since_epoch()
+            .as_millis();
+        if !self.viewer.borrow().active(now) {
+            return;
+        }
         match frame {
             RuntimeFrame::Legacy(f) => self.viewer_status(&f.title, &f.line1, &f.line2, &f.line3),
             RuntimeFrame::Material(f) => {
@@ -388,7 +396,9 @@ impl<'d> UsbPcBlockDevice<'d> {
                     let _ = write!(b, "{:02x}", byte);
                 }
                 let _ = write!(b, "\r\n");
-                let _ = self.link.borrow_mut().send(b.as_bytes());
+                if self.viewer.borrow_mut().changed(b.as_bytes()) {
+                    let _ = self.link.borrow_mut().send(b.as_bytes());
+                }
             }
         }
     }
@@ -421,7 +431,16 @@ impl<'d> UsbPcBlockDevice<'d> {
     }
 
     pub fn poll_desktop_event(&self) -> Option<DesktopEvent> {
-        self.link.borrow_mut().poll_event_nonblocking()
+        let event = self.link.borrow_mut().poll_event_nonblocking();
+        if matches!(event, Some(DesktopEvent::Sync | DesktopEvent::Ping)) {
+            self.viewer.borrow_mut().touch(
+                esp_hal::time::Instant::now()
+                    .duration_since_epoch()
+                    .as_millis(),
+                matches!(event, Some(DesktopEvent::Sync)),
+            );
+        }
+        event
     }
 
     fn capacity(&self) -> Result<u32, PcBlockError> {

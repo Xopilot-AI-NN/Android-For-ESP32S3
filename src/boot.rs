@@ -608,7 +608,7 @@ pub(crate) fn run() -> ! {
                 .duration_since_epoch()
                 .as_millis();
             if ui_now >= next_ui_refresh_ms {
-                next_ui_refresh_ms = ui_now + 100;
+                next_ui_refresh_ms = os.next_background_refresh_ms(ui_now);
                 {
                     // Tick clocks and alerts even while Settings or pairing is foreground.
                     if let Ok(mut frame) = os.render() {
@@ -688,7 +688,7 @@ pub(crate) fn run() -> ! {
             if let Some(action) = os.take_system_action() {
                 crate::power::request(action);
             }
-            delay.delay_millis(20);
+            background::wait(&delay);
         }
     }
 
@@ -980,6 +980,7 @@ pub(crate) fn run() -> ! {
                 let runtime_event = match event {
                     DesktopEvent::Sync => {
                         display.hello();
+                        display.viewer_sync();
                         Some(runtime::RuntimeEvent::Sync)
                     }
                     DesktopEvent::Ping => {
@@ -1121,7 +1122,7 @@ pub(crate) fn run() -> ! {
                 .duration_since_epoch()
                 .as_millis();
             if ui_now >= next_ui_refresh_ms {
-                next_ui_refresh_ms = ui_now + 100;
+                next_ui_refresh_ms = os.next_background_refresh_ms(ui_now);
                 {
                     // Tick clocks and alerts even while Settings or pairing is foreground.
                     if let Ok(mut frame) = os.render() {
@@ -1199,7 +1200,7 @@ pub(crate) fn run() -> ! {
             if let Some(action) = os.take_system_action() {
                 crate::power::request(action);
             }
-            delay.delay_millis(20);
+            background::wait(&delay);
         }
     }
 }

@@ -10,6 +10,9 @@ pub struct RenderStats {
     pub last_us: u64,
     pub max_us: u64,
     pub last_pixels: u32,
+    pub raster_us: u64,
+    pub compose_us: u64,
+    pub transfer_us: u64,
 }
 use crate::runtime::RuntimeFrame;
 pub trait Backlight: embedded_hal::digital::OutputPin {
@@ -553,6 +556,9 @@ mod tft {
                         .duration_since_epoch()
                         .as_micros() as u64;
                     self.material_surface.render(*scene);
+                    let raster_end = esp_hal::time::Instant::now()
+                        .duration_since_epoch()
+                        .as_micros() as u64;
                     let brightness = scene
                         .display_brightness
                         .unwrap_or(scene.brightness)
@@ -570,6 +576,9 @@ mod tft {
                         Some(Rect::FULL)
                     };
                     self.stats.last_pixels = dirty.map(|r| (r.w * r.h) as u32).unwrap_or(0);
+                    let compose_end = esp_hal::time::Instant::now()
+                        .duration_since_epoch()
+                        .as_micros() as u64;
                     if let Some(dirty) = dirty {
                         self.flush_material_rect(dirty)?;
                         self.displayed
@@ -583,6 +592,12 @@ mod tft {
                         .as_micros() as u64)
                         .saturating_sub(began);
                     self.stats.max_us = self.stats.max_us.max(self.stats.last_us);
+                    self.stats.raster_us = raster_end.saturating_sub(began);
+                    self.stats.compose_us = compose_end.saturating_sub(raster_end);
+                    self.stats.transfer_us = self
+                        .stats
+                        .last_us
+                        .saturating_sub(compose_end.saturating_sub(began));
                     // On wake, show the PIN frame before enabling the backlight.
                     self.bl
                         .set_brightness(if scene.screen == 29 { 100 } else { brightness })

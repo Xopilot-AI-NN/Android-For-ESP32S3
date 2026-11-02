@@ -4,6 +4,8 @@
 extern crate alloc;
 #[path = "../../../src/desktop_tx.rs"]
 mod desktop_tx;
+#[path = "../../../src/viewer_stream.rs"]
+mod viewer_stream;
 extern crate self as esp_hal;
 extern crate self as esp_println;
 pub use std::println;
@@ -104,6 +106,32 @@ mod tests {
             panic!("not Material");
         };
         f
+    }
+    #[test]
+    fn cached_scene_skips_vm_work_but_live_timer_and_rtc_keep_advancing() {
+        time::set(100);
+        let mut os = start();
+        os.replace_state(11).unwrap();
+        os.dispatch(RuntimeEvent::Press).unwrap();
+        os.dispatch(RuntimeEvent::Press).unwrap();
+        os.replace_state(5 | (70 << 9)).unwrap();
+        let calls = os.script_stats().calls;
+        let before = frame(&mut os);
+        for _ in 0..50 { os.render().unwrap(); }
+        assert_eq!(os.script_stats().calls, calls);
+        assert!(os.script_stats().cache_hits >= 50);
+        let remaining = frame(&mut os).timer_secs;
+        time::set(102);
+        let after = frame(&mut os);
+        assert_eq!(after.timer_secs, remaining - 2);
+        assert_ne!(after.time_seconds, before.time_seconds);
+        assert_eq!(os.script_stats().calls, calls);
+        os.dispatch(RuntimeEvent::Rotate(1)).unwrap();
+        assert_eq!(os.script_stats().calls, calls + 1);
+        time::set(500);
+        assert_eq!(frame(&mut os).clock_alert, 1);
+        os.dispatch(RuntimeEvent::Press).unwrap();
+        assert_eq!(frame(&mut os).clock_alert, 0);
     }
     #[test]
     fn reduced_motion_keeps_crown_steps_and_page_changes_immediate() {

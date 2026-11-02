@@ -331,8 +331,7 @@ pub struct DesktopMirror<'d, D> {
     tx: UsbSerialJtagTx<'d, Blocking>,
     surface: DesktopSurface,
     pending: tx_queue::PacketQueue,
-    last_runtime: heapless::String<256>,
-    last_runtime_ms: u64,
+    stream: crate::viewer_stream::ViewerStream,
 }
 
 #[cfg(not(feature = "pc-block-boot"))]
@@ -343,15 +342,13 @@ impl<'d, D> DesktopMirror<'d, D> {
             tx,
             surface,
             pending: tx_queue::PacketQueue::new(),
-            last_runtime: heapless::String::new(),
-            last_runtime_ms: 0,
+            stream: crate::viewer_stream::ViewerStream::default(),
         };
         this.hello();
         this
     }
 
     pub fn hello(&mut self) {
-        self.last_runtime.clear();
         match self.surface {
             #[cfg(feature = "display-st7789")]
             DesktopSurface::St7789 => self.send_parts(&[
@@ -377,7 +374,21 @@ impl<'d, D> DesktopMirror<'d, D> {
     }
 
     pub fn pong(&mut self) {
+        self.stream.touch(
+            esp_hal::time::Instant::now()
+                .duration_since_epoch()
+                .as_millis(),
+            false,
+        );
         self.send_parts(&["@ZWUI", "PONG", "5"]);
+    }
+    pub fn viewer_sync(&mut self) {
+        self.stream.touch(
+            esp_hal::time::Instant::now()
+                .duration_since_epoch()
+                .as_millis(),
+            true,
+        );
     }
 
     pub fn into_parts(self) -> (D, UsbSerialJtagTx<'d, Blocking>) {
@@ -445,6 +456,13 @@ impl<D: BootDisplay> BootDisplay for DesktopMirror<'_, D> {
 
     fn runtime(&mut self, frame: &RuntimeFrame) -> Result<(), DisplayError> {
         let result = self.inner.runtime(frame);
+        if !self.stream.active(
+            esp_hal::time::Instant::now()
+                .duration_since_epoch()
+                .as_millis(),
+        ) {
+            return result;
+        }
         match frame {
             RuntimeFrame::Legacy(f) => {
                 self.send_parts(&["@ZWUI", "STATUS", &f.title, &f.line1, &f.line2, &f.line3])
@@ -485,17 +503,9 @@ impl<D: BootDisplay> BootDisplay for DesktopMirror<'_, D> {
                 for &byte in &f.wifi_ap_ssid[..f.wifi_ap_ssid_len as usize] {
                     let _ = core::fmt::write(&mut line, format_args!("{:02x}", byte));
                 }
-                // State changes are immediate; static pages need only a 1 Hz
-                // heartbeat so a monitor is not flooded with duplicate lines.
-                let now = esp_hal::time::Instant::now()
-                    .duration_since_epoch()
-                    .as_millis();
-                if line != self.last_runtime || now.saturating_sub(self.last_runtime_ms) >= 1000 {
+                if self.stream.changed(line.as_bytes()) {
                     self.pump();
-                    if self.pending.enqueue(&[line.as_str()]) {
-                        self.last_runtime = line;
-                        self.last_runtime_ms = now;
-                    }
+                    self.pending.enqueue(&[line.as_str()]);
                 }
                 self.pump();
             }

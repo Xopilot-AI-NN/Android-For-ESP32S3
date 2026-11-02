@@ -29,6 +29,15 @@ pub(crate) fn dispatch_with_pager<D: BlockDevice>(
     let new_state = os.state();
     let new_screen = (new_state & 0x1f) as u32;
     if new_screen != old_screen {
+        // Log meaningful navigation, not every redraw or crown sample.
+        esp_println::println!(
+            "I ({}) ActivityTaskManager: screen {} -> {}",
+            esp_hal::time::Instant::now()
+                .duration_since_epoch()
+                .as_millis(),
+            old_screen,
+            new_screen,
+        );
         if let Some(pager) = pager {
             // Only evict an Activity when it actually leaves the foreground.
             // Crown movement inside one screen must not turn the SD/USB flash

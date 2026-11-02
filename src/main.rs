@@ -32,6 +32,7 @@ mod adb;
 mod android_boot;
 mod android_storage;
 mod avb;
+mod background;
 #[cfg(feature = "display-st7789")]
 mod backlight;
 #[cfg(feature = "ble-hid")]
@@ -71,6 +72,7 @@ mod sd_spi;
 mod soft_spi;
 #[cfg(feature = "pc-block-boot")]
 mod usb_pc_block;
+mod viewer_stream;
 mod wallpaper;
 
 use desktop::{DesktopEvent, WifiCredentials};

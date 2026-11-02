@@ -20,8 +20,9 @@ pub fn execute<D: BlockDevice, B: BootDisplay>(
         "display" => {
             let _ = write!(
                 out,
-                "state={} renderer={:?}",
+                "state={} script={:?} renderer={:?}",
                 os.state(),
+                os.script_stats(),
                 display.render_stats()
             );
         }

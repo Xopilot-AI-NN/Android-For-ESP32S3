@@ -12,9 +12,12 @@ use heapless::{String as HString, Vec as HVec};
 mod clock;
 #[path = "runtime/idle.rs"]
 mod idle;
+#[path = "runtime/scene_cache.rs"]
+mod scene_cache;
 #[path = "runtime/security.rs"]
 mod security;
 use clock::{clock_action, clock_snapshot};
+pub use scene_cache::ScriptStats;
 
 use crate::material::MaterialFrame;
 
@@ -173,6 +176,7 @@ impl RuntimeFrame {
 
 #[cfg(feature = "rhai-runtime")]
 pub struct Runtime {
+    scene_cache: scene_cache::SceneCache,
     engine: Engine,
     scope: Scope<'static>,
     ast: AST,
@@ -294,6 +298,7 @@ impl Runtime {
         }
 
         let mut runtime = Self {
+            scene_cache: scene_cache::SceneCache::default(),
             engine,
             scope,
             ast,
@@ -355,23 +360,20 @@ impl Runtime {
         } else {
             self.flashlight_since_secs = None;
         }
-        let options = CallFnOptions::new().eval_ast(false).rewind_scope(true);
-        let raw = self
-            .engine
-            .call_fn_with_options::<ImmutableString>(
-                options,
-                &mut self.scope,
-                &self.ast,
-                "render",
-                (self.state,),
-            )
-            .map_err(|err| {
-                println!("rhai render error: {:?}", err);
-                RuntimeError::Script
-            })?;
-        let mut frame = RuntimeFrame::parse(raw.as_str())?;
+        let mut frame =
+            self.scene_cache
+                .render(&self.engine, &mut self.scope, &self.ast, self.state)?;
         self.enrich_wifi_frame(&mut frame);
         if let RuntimeFrame::Material(m) = &mut frame {
+            // The cached ABI scene describes state, never frozen clock data.
+            let (timer, stopwatch, alarm) = clock_snapshot();
+            m.time_minutes = crate::rtc::local_minutes() as u16;
+            m.timer_secs = timer as u16;
+            m.stopwatch_secs = stopwatch as u16;
+            m.alarm_enabled = alarm != 0;
+            m.auto_time = crate::rtc::automatic();
+            m.time_valid = crate::rtc::valid();
+            m.timezone_hours = crate::rtc::timezone_hours();
             m.bt_status = self.bluetooth_status;
             m.bt_pin = self.bluetooth_pin;
             m.alarm_minutes = clock::alarm_minutes();
@@ -427,6 +429,12 @@ impl Runtime {
 
     pub fn state(&self) -> i32 {
         self.state
+    }
+    pub fn script_stats(&self) -> ScriptStats {
+        self.scene_cache.stats
+    }
+    pub fn next_background_refresh_ms(&self, now_ms: u64) -> u64 {
+        idle::next_refresh(now_ms, self.last_input_ms, self.security.timeout)
     }
     pub fn take_system_action(&mut self) -> Option<SystemAction> {
         self.system_action.take()
@@ -1185,6 +1193,12 @@ impl Runtime {
                 line3: "".to_string(),
             }),
         ))
+    }
+    pub fn script_stats(&self) -> ScriptStats {
+        ScriptStats::default()
+    }
+    pub fn next_background_refresh_ms(&self, now_ms: u64) -> u64 {
+        now_ms.saturating_add(1000)
     }
     pub fn render(&mut self) -> Result<RuntimeFrame, RuntimeError> {
         Self::start(String::new()).map(|v| v.1)
