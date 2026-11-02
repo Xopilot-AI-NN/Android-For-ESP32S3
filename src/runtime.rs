@@ -779,6 +779,12 @@ impl Runtime {
                     self.state = (self.state & !0x1e0)
                         | ((i32::from(cursor) + delta.rem_euclid(count)).rem_euclid(count) << 5);
                 }
+                RuntimeEvent::Swipe(direction @ (-1 | 1)) => {
+                    let step = if screen == 26 { 3 } else { 1 };
+                    let next = (i32::from(cursor) - direction * step)
+                        .clamp(0, i32::from(crate::apps::COUNT));
+                    self.state = (self.state & !0x1e0) | (next << 5);
+                }
                 RuntimeEvent::Press if cursor == crate::apps::COUNT => {
                     self.launcher_grid = screen == 2;
                     self.state = (self.state & !0x1ff) | if self.launcher_grid { 26 } else { 2 };

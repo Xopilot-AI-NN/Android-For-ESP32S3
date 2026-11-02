@@ -105,7 +105,11 @@ impl Surface {
     pub(super) fn launcher(&mut self, f: MaterialFrame, t: Theme) {
         let count = crate::apps::COUNT as usize;
         let cur = usize::from(f.cursor).min(count);
-        let page = cur.min(count - 1) / 6;
+        // Follow the focused row vertically instead of replacing six-icon pages.
+        let rows = count.div_ceil(3);
+        let first_row = (cur.min(count - 1) / 3)
+            .saturating_sub(1)
+            .min(rows.saturating_sub(2));
         let positions = [
             (50, 75),
             (120, 75),
@@ -115,7 +119,7 @@ impl Surface {
             (190, 151),
         ];
         for (cell, (x, y)) in positions.into_iter().enumerate() {
-            let i = page * 6 + cell;
+            let i = first_row * 3 + cell;
             if i >= count {
                 break;
             }
@@ -142,14 +146,7 @@ impl Surface {
             1,
             t.on_surface,
         );
-        for p in 0..count.div_ceil(6) {
-            self.circle(
-                115 + p as i32 * 10,
-                222,
-                2,
-                if p == page { t.primary } else { t.outline },
-            );
-        }
+        self.scroll_indicator(cur as u8, crate::apps::COUNT + 1, t);
         self.round_rect(
             55,
             237,
