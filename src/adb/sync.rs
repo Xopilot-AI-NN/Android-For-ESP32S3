@@ -1,12 +1,13 @@
 //! Bounded ADB SYNC v1: wallpaper uploads and read-only built-in PNG files.
 use crate::wallpaper;
-use alloc::vec::Vec;
+use alloc::{sync::Arc, vec::Vec};
 const MAX_FILE: usize = 320 * 1024;
 pub struct Receiver {
     input: Vec<u8>,
     file: Vec<u8>,
     pub output: Vec<u8>,
-    download: Option<(&'static [u8], usize)>,
+    download: Option<(Arc<Vec<u8>>, usize)>,
+    requested: Option<u8>,
     sending: bool,
     waiting: bool,
     pub finished: bool,
@@ -18,6 +19,7 @@ impl Receiver {
             file: Vec::new(),
             output: Vec::new(),
             download: None,
+            requested: None,
             sending: false,
             waiting: false,
             finished: false,
@@ -25,6 +27,7 @@ impl Receiver {
     }
     fn fail(&mut self, reason: &str) {
         self.download = None;
+        self.requested = None;
         self.sending = false;
         self.waiting = false;
         self.output.clear();
@@ -38,9 +41,18 @@ impl Receiver {
         if self.finished {
             return;
         }
+        if let Some(index) = self.requested {
+            if let Some(bytes) = wallpaper::builtin_png(index) {
+                self.download = Some((bytes, 0));
+                self.requested = None;
+            } else if crate::ui_resources::failed(index) {
+                self.fail("system wallpaper unavailable; update system image");
+                return;
+            }
+        }
         // ACK-paced reads keep at most 520 bytes queued, even for large PNGs.
         if self.output.is_empty() {
-            if let Some((bytes, offset)) = self.download {
+            if let Some((bytes, offset)) = self.download.take() {
                 if offset == bytes.len() {
                     self.output.extend_from_slice(b"DONE\0\0\0\0");
                     self.download = None;
@@ -132,8 +144,7 @@ impl Receiver {
                         self.output.extend_from_slice(b"DENT");
                         self.output.extend_from_slice(&0o100444_u32.to_le_bytes());
                         self.output.extend_from_slice(
-                            &(wallpaper::builtin_png(index).map_or(0, |v| v.len()) as u32)
-                                .to_le_bytes(),
+                            &(wallpaper::builtin_len(index).unwrap_or(0) as u32).to_le_bytes(),
                         );
                         self.output.extend_from_slice(&0_u32.to_le_bytes());
                         self.output
@@ -150,7 +161,8 @@ impl Receiver {
                     }
                     self.output.extend_from_slice(b"STAT");
                     let bytes =
-                        wallpaper::builtin_file(core::str::from_utf8(payload).unwrap_or(""));
+                        wallpaper::builtin_file_index(core::str::from_utf8(payload).unwrap_or(""))
+                            .and_then(wallpaper::builtin_len);
                     let dir = core::str::from_utf8(payload)
                         .unwrap_or("")
                         .trim_end_matches('/')
@@ -166,25 +178,25 @@ impl Receiver {
                         .to_le_bytes(),
                     );
                     self.output
-                        .extend_from_slice(&(bytes.map_or(0, |v| v.len()) as u32).to_le_bytes());
+                        .extend_from_slice(&(bytes.unwrap_or(0) as u32).to_le_bytes());
                     self.output.extend_from_slice(&0_u32.to_le_bytes());
                 }
                 b"RECV" => {
-                    if self.sending || self.download.is_some() {
+                    if self.sending || self.download.is_some() || self.requested.is_some() {
                         self.fail("another transfer is active");
                         return;
                     }
-                    if let Some(bytes) =
-                        wallpaper::builtin_file(core::str::from_utf8(payload).unwrap_or(""))
+                    if let Some(index) =
+                        wallpaper::builtin_file_index(core::str::from_utf8(payload).unwrap_or(""))
                     {
-                        self.download = Some((bytes, 0));
+                        self.requested = Some(index);
                     } else {
                         self.fail("read-only files: /sdcard/Wallpapers/1.png through 16.png");
                         return;
                     }
                 }
                 b"SEND" => {
-                    if self.download.is_some() {
+                    if self.download.is_some() || self.requested.is_some() {
                         self.fail("download in progress");
                         return;
                     }
@@ -193,7 +205,7 @@ impl Receiver {
                         .rsplit_once(',')
                         .map(|(path, _)| path)
                         .unwrap_or(value);
-                    if wallpaper::builtin_file(path).is_some() {
+                    if wallpaper::builtin_file_index(path).is_some() {
                         self.fail("built-in wallpaper is read-only; upload current.png");
                         return;
                     }

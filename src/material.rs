@@ -12,6 +12,7 @@ pub const HEIGHT: usize = 280;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MaterialFrame {
     pub app: crate::apps::View,
+    pub resource_revision: u32,
     pub device_name: [u8; 32],
     pub device_name_len: u8,
     pub name_editing: bool,
@@ -126,6 +127,7 @@ impl MaterialFrame {
             name_editing: false,
             keyboard: crate::text_input::KeyboardView::default(),
             keyboard_error: 0,
+            resource_revision: 0,
             app: crate::apps::View::default(),
             name_draft: [0; 32],
             name_draft_len: 0,
@@ -403,7 +405,9 @@ impl Surface {
                 } else {
                     crate::wallpaper::builtin(frame.wallpaper_index)
                 };
-                self.selected_wallpaper = frame.wallpaper_index;
+                if self.wallpaper.is_some() {
+                    self.selected_wallpaper = frame.wallpaper_index;
+                }
             }
             if let Some(wallpaper) = self.wallpaper.as_ref() {
                 self.pixels.copy_from_slice(wallpaper);

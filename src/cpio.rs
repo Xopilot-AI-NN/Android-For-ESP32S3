@@ -35,6 +35,20 @@ pub fn extract_file<D: BlockDevice>(
     wanted: &str,
     max_bytes: usize,
 ) -> Result<Vec<u8>, CpioError> {
+    let (offset, size) = locate_file(dev, super_part, logical, wanted, max_bytes)?;
+    let mut out = alloc::vec![0; size];
+    read(dev, super_part, logical, offset, &mut out)?;
+    Ok(out)
+}
+
+/// Locate a payload without copying it; image resources are fetched on demand.
+pub fn locate_file<D: BlockDevice>(
+    dev: &D,
+    super_part: Partition,
+    logical: LogicalPartition,
+    wanted: &str,
+    max_bytes: usize,
+) -> Result<(u64, usize), CpioError> {
     let mut cursor = 0u64;
     while cursor + 110 <= logical.size_bytes() {
         let mut header = [0u8; 110];
@@ -78,10 +92,7 @@ pub fn extract_file<D: BlockDevice>(
             if file_size as usize > max_bytes {
                 return Err(CpioError::TooLarge);
             }
-            let mut out = Vec::new();
-            out.resize(file_size as usize, 0);
-            read(dev, super_part, logical, data_offset, &mut out)?;
-            return Ok(out);
+            return Ok((data_offset, file_size as usize));
         }
         cursor = align_up(data_offset + file_size, 4);
     }

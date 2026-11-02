@@ -360,6 +360,7 @@ impl Runtime {
             let name = crate::device_name::snapshot();
             m.device_name_len = name.len() as u8;
             m.device_name[..name.len()].copy_from_slice(name.as_bytes());
+            m.resource_revision = crate::ui_resources::revision();
             m.app = self.native_app.view();
             if m.app.id == crate::apps::DIAGNOSTICS {
                 m.app.uptime = Instant::now().duration_since_epoch().as_secs();

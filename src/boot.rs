@@ -197,6 +197,10 @@ pub(crate) fn run() -> ! {
         let _ = display.boot_progress("MOUNTING SUPER", 4);
         session.block_device().viewer_progress("MOUNTING SUPER", 4);
 
+        match crate::ui_resources::mount(session.block_device(), session.image.slot) {
+            Ok(()) => println!("Resources: system icons mounted; wallpapers load on demand"),
+            Err(reason) => println!("Resources: {} (boot/recovery remain available)", reason),
+        }
         let bundle = match session.load_userspace_bundle() {
             Ok(bundle) => bundle,
             Err(err) => {
@@ -839,6 +843,10 @@ pub(crate) fn run() -> ! {
         );
         let _ = display.boot_progress("MOUNTING SUPER", 4);
 
+        match crate::ui_resources::mount(session.block_device(), session.image.slot) {
+            Ok(()) => println!("Resources: system icons mounted; wallpapers load on demand"),
+            Err(reason) => println!("Resources: {} (boot/recovery remain available)", reason),
+        }
         let bundle = match session.load_userspace_bundle() {
             Ok(bundle) => bundle,
             Err(err) => {

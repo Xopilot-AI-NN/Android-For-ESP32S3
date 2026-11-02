@@ -1,67 +1,19 @@
-//! Default wallpapers supplied in Firmware/walp. Index zero selects the uploaded image.
-pub const IMAGES: &[(&str, &[u8])] = &[
-    (
-        "Зелёные слои",
-        include_bytes!("../../../Firmware/walp/01_green_layers_240x280.png"),
-    ),
-    (
-        "Фиолетовый закат",
-        include_bytes!("../../../Firmware/walp/03_purple_sunset_240x280.png"),
-    ),
-    (
-        "Аврора",
-        include_bytes!("../../../Firmware/walp/04_aurora_lake_240x280.png"),
-    ),
-    (
-        "Космос",
-        include_bytes!("../../../Firmware/walp/07_cosmic_spheres_240x280.png"),
-    ),
-    (
-        "Земля",
-        include_bytes!("../../../Firmware/walp/11_earth_from_space_240x280.png"),
-    ),
-    (
-        "Луна",
-        include_bytes!("../../../Firmware/walp/12_moon_detail_240x280.png"),
-    ),
-    (
-        "Дюны",
-        include_bytes!("../../../Firmware/walp/16_desert_dunes_240x280.png"),
-    ),
-    (
-        "Горы",
-        include_bytes!("../../../Firmware/walp/19_snowy_peaks_240x280.png"),
-    ),
-    (
-        "Орбита",
-        include_bytes!("../../../Firmware/walp/20_purple_orbit_240x280.png"),
-    ),
-    (
-        "Янтарь",
-        include_bytes!("../../../Firmware/walp/amber_material_240x280.png"),
-    ),
-    (
-        "Синий",
-        include_bytes!("../../../Firmware/walp/blue_material_240x280.png"),
-    ),
-    (
-        "Зелёный",
-        include_bytes!("../../../Firmware/walp/green_material_240x280.png"),
-    ),
-    (
-        "Розовый",
-        include_bytes!("../../../Firmware/walp/rose_material_240x280.png"),
-    ),
-    (
-        "Закат",
-        include_bytes!("../../../Firmware/walp/sunset_material_240x280.png"),
-    ),
-    (
-        "Бирюзовый",
-        include_bytes!("../../../Firmware/walp/teal_material_240x280.png"),
-    ),
-    (
-        "Фиолетовый",
-        include_bytes!("../../../Firmware/walp/violet_material_240x280.png"),
-    ),
+//! Display labels only. PNG payloads live in the system resource package.
+pub const NAMES: &[&str] = &[
+    "Зелёные слои",
+    "Фиолетовый закат",
+    "Аврора",
+    "Космос",
+    "Земля",
+    "Луна",
+    "Дюны",
+    "Горы",
+    "Орбита",
+    "Янтарь",
+    "Синий",
+    "Зелёный",
+    "Розовый",
+    "Закат",
+    "Бирюзовый",
+    "Фиолетовый",
 ];

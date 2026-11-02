@@ -8,35 +8,37 @@ const PIXELS: usize = 240 * 280;
 mod builtins;
 #[path = "wallpapers/png.rs"]
 mod png;
-/// Read-only virtual files exported over ADB; no image decoding or heap copy.
-pub fn builtin_png(index: u8) -> Option<&'static [u8]> {
-    if index == 0 {
-        return None;
-    }
-    builtins::IMAGES.get(usize::from(index - 1)).map(|v| v.1)
+/// Virtual file names address read-only system assets, not loader flash.
+pub fn builtin_png(index: u8) -> Option<alloc::sync::Arc<Vec<u8>>> {
+    crate::ui_resources::wallpaper(index)
 }
-pub fn builtin_file(path: &str) -> Option<&'static [u8]> {
+pub fn builtin_file_index(path: &str) -> Option<u8> {
     let number = path
         .strip_prefix("/sdcard/Wallpapers/")?
-        .strip_suffix(".png")?;
-    builtin_png(number.parse::<u8>().ok()?)
+        .strip_suffix(".png")?
+        .parse::<u8>()
+        .ok()?;
+    (1..=builtin_count()).contains(&number).then_some(number)
+}
+pub fn builtin_len(index: u8) -> Option<usize> {
+    crate::ui_resources::wallpaper_len(index)
 }
 pub fn builtin_count() -> u8 {
-    builtins::IMAGES.len() as u8
+    builtins::NAMES.len() as u8
 }
 pub fn name(index: u8) -> &'static str {
     if index == 0 {
         "Загруженные"
     } else {
-        builtins::IMAGES
+        builtins::NAMES
             .get(usize::from(index - 1))
-            .map(|v| v.0)
+            .copied()
             .unwrap_or("Обои")
     }
 }
 pub fn builtin(index: u8) -> Option<Vec<u16>> {
-    let (_, bytes) = builtins::IMAGES.get(usize::from(index.saturating_sub(1)))?;
-    png::decode(bytes).ok()
+    let bytes = builtin_png(index)?;
+    png::decode(&bytes).ok()
 }
 pub fn load<D: BlockDevice>(dev: &D) -> Option<Vec<u16>> {
     let part = gpt::find_partition(dev, "userdata").ok()?;

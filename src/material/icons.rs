@@ -4,8 +4,9 @@ use super::*;
 impl Surface {
     /// Tint Google's checked-in SVG coverage directly into the RGB565 surface.
     pub(super) fn symbol(&mut self, symbol: Symbol, cx: i32, cy: i32, color: u16) {
-        use super::symbols::{ATLAS, SIZE};
-        self.symbol_mask(symbol, cx, cy, color, ATLAS, SIZE);
+        if let Some(atlas) = crate::ui_resources::icons(false) {
+            self.symbol_mask(symbol, cx, cy, color, &atlas, super::symbols::SIZE);
+        }
     }
 
     fn symbol_mask(
@@ -122,14 +123,9 @@ impl Surface {
             10 => Symbol::Flashlight,
             _ => Symbol::Grid,
         };
-        self.symbol_mask(
-            symbol,
-            cx,
-            cy,
-            c,
-            super::symbols::LAUNCHER_ATLAS,
-            super::symbols::LAUNCHER_SIZE,
-        );
+        if let Some(atlas) = crate::ui_resources::icons(true) {
+            self.symbol_mask(symbol, cx, cy, c, &atlas, super::symbols::LAUNCHER_SIZE);
+        }
     }
 
     pub(super) fn app_accent(icon: u8) -> u16 {

@@ -7,6 +7,11 @@ pub(crate) fn apply_wallpaper_upload<D: BlockDevice, B: BootDisplay>(
     display: &mut B,
     os: &mut runtime::Runtime,
 ) {
+    if crate::ui_resources::service(dev) {
+        if let Ok(frame) = os.render() {
+            let _ = display.runtime(&frame);
+        }
+    }
     if os.diagnostics_active() {
         crate::apps::storage::sample(dev, display.render_stats().last_us);
     }
