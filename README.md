@@ -66,9 +66,9 @@ when advertising restarts; a connected peer may cache its previous name.
 
 ## Watch utilities and device diagnostics
 
-The launcher has 30 px Material icons and 11 entries. Native utilities add a
+The launcher has 30 px Material icons and 12 entries. Native utilities add a
 calculator, a built-in wallpaper browser, Wi-Fi/ADB transfer instructions,
-device diagnostics and a flashlight shortcut. The file browser covers the
+device diagnostics, memory/swap controls and a flashlight shortcut. The file browser covers the
 built-in PNG assets; it is not a general FAT/ext4 filesystem browser or Android
 Quick Share implementation. The three-column grid scrolls vertically by rows instead of horizontal pages.
 
@@ -181,3 +181,21 @@ The first command is read-only. The second backs up affected GPT/MBR sectors,
 then grows userdata and relocates backup GPT. This is a metadata backup, not a
 full data backup. Rewriting the full installation image afterwards resets the
 partition layout. The helper does not format or resize a filesystem.
+
+## Adjustable ZPager backing
+
+Open **Настройки → Система → Память и swap** for total backing sizes
+32/64/128/256/512 MiB. Selection is persisted, applied after reboot and limited
+by the available supported raw userdata range. The base 32 MiB GPT swap and
+existing persistent slots keep their addresses; additional pages use a reserved
+userdata region starting at 8 MiB. This is not Linux/MMU swap or extra RAM.
+Existing Activity consumers still use their original low page numbers; larger
+backing does not automatically page out the Rust/Rhai heap or improve speed.
+The 512 MiB image supports at most 256 MiB backing; 512 MiB backing requires
+userdata of at least 504 MiB (grow it on the card first). No FAT/ext4 swapfile
+allocation is implemented. Shrinking the active limit retains the previous raw
+reservation; it does not reclaim userdata for a future filesystem.
+
+```sh
+adb shell dumpsys swap
+```
