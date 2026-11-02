@@ -941,6 +941,8 @@ pub(crate) fn run() -> ! {
 
         let mut next_ui_refresh_ms: u64 = 0;
         loop {
+            #[cfg(not(feature = "pc-block-boot"))]
+            display.pump();
             keys.set_sensitivity(os.crown_sensitivity());
             let rotation = keys.poll_rotation();
             if rotation != 0 {

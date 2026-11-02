@@ -16,6 +16,10 @@ const EVENT_QUEUE_CAP: usize = 8;
 #[cfg(not(feature = "pc-block-boot"))]
 const CONTROL_LINE_CAP: usize = 256;
 
+#[cfg(not(feature = "pc-block-boot"))]
+#[path = "desktop_tx.rs"]
+mod tx_queue;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WifiCredentials {
     ssid: [u8; 32],
@@ -326,17 +330,28 @@ pub struct DesktopMirror<'d, D> {
     inner: D,
     tx: UsbSerialJtagTx<'d, Blocking>,
     surface: DesktopSurface,
+    pending: tx_queue::PacketQueue,
+    last_runtime: heapless::String<256>,
+    last_runtime_ms: u64,
 }
 
 #[cfg(not(feature = "pc-block-boot"))]
 impl<'d, D> DesktopMirror<'d, D> {
     pub fn new(inner: D, tx: UsbSerialJtagTx<'d, Blocking>, surface: DesktopSurface) -> Self {
-        let mut this = Self { inner, tx, surface };
+        let mut this = Self {
+            inner,
+            tx,
+            surface,
+            pending: tx_queue::PacketQueue::new(),
+            last_runtime: heapless::String::new(),
+            last_runtime_ms: 0,
+        };
         this.hello();
         this
     }
 
     pub fn hello(&mut self) {
+        self.last_runtime.clear();
         match self.surface {
             #[cfg(feature = "display-st7789")]
             DesktopSurface::St7789 => self.send_parts(&[
@@ -373,22 +388,16 @@ impl<'d, D> DesktopMirror<'d, D> {
         self.send_parts(&["@ZADB", "OUT", topic, text]);
     }
     fn send_parts(&mut self, parts: &[&str]) {
-        for (idx, part) in parts.iter().enumerate() {
-            if idx != 0 {
-                self.send_bytes(b"|");
-            }
-            self.send_bytes(part.as_bytes());
-        }
-        self.send_bytes(b"\r\n");
-        let _ = self.tx.flush_tx_nb();
+        self.pump();
+        self.pending.enqueue(parts);
+        self.pump();
     }
 
-    fn send_bytes(&mut self, bytes: &[u8]) {
-        for &b in bytes {
-            // Drop bytes when the hardware FIFO/host is unavailable. The PC
-            // can reconnect at any time and issue SYNC; boot never waits for it.
-            let _ = self.tx.write_byte_nb(b);
-        }
+    /// Continue a partially sent line between frames, without waiting for USB.
+    pub fn pump(&mut self) {
+        self.pending
+            .pump(|byte| self.tx.write_byte_nb(byte).is_ok());
+        let _ = self.tx.flush_tx_nb();
     }
 }
 
@@ -476,7 +485,19 @@ impl<D: BootDisplay> BootDisplay for DesktopMirror<'_, D> {
                 for &byte in &f.wifi_ap_ssid[..f.wifi_ap_ssid_len as usize] {
                     let _ = core::fmt::write(&mut line, format_args!("{:02x}", byte));
                 }
-                self.send_parts(&[line.as_str()]);
+                // State changes are immediate; static pages need only a 1 Hz
+                // heartbeat so a monitor is not flooded with duplicate lines.
+                let now = esp_hal::time::Instant::now()
+                    .duration_since_epoch()
+                    .as_millis();
+                if line != self.last_runtime || now.saturating_sub(self.last_runtime_ms) >= 1000 {
+                    self.pump();
+                    if self.pending.enqueue(&[line.as_str()]) {
+                        self.last_runtime = line;
+                        self.last_runtime_ms = now;
+                    }
+                }
+                self.pump();
             }
         }
         result
