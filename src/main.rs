@@ -74,6 +74,7 @@ mod sd_init;
 mod sd_spi;
 #[cfg(feature = "display-software-spi")]
 mod soft_spi;
+mod swap_config;
 mod ui_resources;
 #[cfg(feature = "pc-block-boot")]
 mod usb_pc_block;

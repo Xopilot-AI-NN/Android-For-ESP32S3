@@ -27,10 +27,21 @@ pub enum PageStoreError {
 pub struct PageStore {
     part: Partition,
     slots: u32,
+    base_slots: u32,
+    extra: Option<Partition>,
 }
 
 impl PageStore {
     pub fn open<D: BlockDevice>(dev: &D) -> Result<Self, PageStoreError> {
+        let mut store = Self::open_base(dev)?;
+        if let Some((part, slots)) = crate::swap_config::restore(dev, &store) {
+            store.extra = Some(part);
+            store.slots += slots;
+        }
+        Ok(store)
+    }
+
+    pub(crate) fn open_base<D: BlockDevice>(dev: &D) -> Result<Self, PageStoreError> {
         let part = gpt::find_partition(dev, "swap").map_err(PageStoreError::Gpt)?;
         let pages = part.size_bytes() / PAGE_SIZE as u64;
         if pages < 2 || pages - 1 > u32::MAX as u64 {
@@ -39,7 +50,17 @@ impl PageStore {
         Ok(Self {
             part,
             slots: (pages - 1) as u32,
+            base_slots: (pages - 1) as u32,
+            extra: None,
         })
+    }
+
+    pub fn base_mib(&self) -> u16 {
+        (self.part.size_bytes() / 1048576) as u16
+    }
+    pub fn backing_mib(&self) -> u16 {
+        self.base_mib()
+            + (((self.slots - self.base_slots) as u64 * PAGE_SIZE as u64) / 1048576) as u16
     }
 
     pub fn slots(&self) -> u32 {
@@ -73,8 +94,8 @@ impl PageStore {
         // Slot spacing and record format stay unchanged. A four-byte cursor
         // record needs one sector, not an entire 4 KiB transfer over USB/SD.
         let used = (HEADER_SIZE + payload.len()).div_ceil(gpt::SECTOR_SIZE) * gpt::SECTOR_SIZE;
-        gpt::write_partition(dev, self.part, self.slot_offset(slot), &page[..used])
-            .map_err(PageStoreError::Gpt)
+        let (part, offset) = self.slot_location(slot);
+        gpt::write_partition(dev, part, offset, &page[..used]).map_err(PageStoreError::Gpt)
     }
 
     pub fn read<D: BlockDevice>(
@@ -88,13 +109,9 @@ impl PageStore {
             return Err(PageStoreError::BadSlot);
         }
         let mut page = [0u8; PAGE_SIZE];
-        gpt::read_partition(
-            dev,
-            self.part,
-            self.slot_offset(slot),
-            &mut page[..gpt::SECTOR_SIZE],
-        )
-        .map_err(PageStoreError::Gpt)?;
+        let (part, offset) = self.slot_location(slot);
+        gpt::read_partition(dev, part, offset, &mut page[..gpt::SECTOR_SIZE])
+            .map_err(PageStoreError::Gpt)?;
         if page[0..4] != MAGIC {
             return Err(PageStoreError::Empty);
         }
@@ -111,8 +128,8 @@ impl PageStore {
         if used > gpt::SECTOR_SIZE {
             gpt::read_partition(
                 dev,
-                self.part,
-                self.slot_offset(slot) + gpt::SECTOR_SIZE as u64,
+                part,
+                offset + gpt::SECTOR_SIZE as u64,
                 &mut page[gpt::SECTOR_SIZE..used],
             )
             .map_err(PageStoreError::Gpt)?;
@@ -148,6 +165,19 @@ impl PageStore {
             return Err(PageStoreError::Corrupt);
         }
         Ok(i32::from_le_bytes(out))
+    }
+
+    fn slot_location(&self, slot: u32) -> (Partition, u64) {
+        if slot >= self.base_slots {
+            if let Some(part) = self.extra {
+                return (
+                    part,
+                    crate::swap_config::EXTRA_OFFSET
+                        + u64::from(slot - self.base_slots) * PAGE_SIZE as u64,
+                );
+            }
+        }
+        (self.part, self.slot_offset(slot))
     }
 
     fn slot_offset(&self, slot: u32) -> u64 {
