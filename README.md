@@ -64,11 +64,36 @@ the editable friendly name is separate and saved on the card. The crown editor
 is in **Настройки → Система → Имя устройства**. BLE advertisements refresh
 when advertising restarts; a connected peer may cache its previous name.
 
+## Watch utilities and device diagnostics
+
+The launcher has 30 px Material icons and 11 entries. Native utilities add a
+calculator, a built-in wallpaper browser, Wi-Fi/ADB transfer instructions,
+device diagnostics and a flashlight shortcut. The file browser covers the
+built-in PNG assets; it is not a general FAT/ext4 filesystem browser or Android
+Quick Share implementation. Grid pages contain up to six apps.
+
+Open **Настройки → Система → Диагностика** for live heap/internal-memory,
+uptime, Wi-Fi/BLE state, last render timings and cached storage capacities.
+Temperature/current/battery measurements are unavailable until their drivers
+or measurement hardware are added. Useful ordinary ADB commands:
+
+```sh
+adb shell dumpsys meminfo
+adb shell dumpsys hardware
+adb pull /sdcard/Wallpapers/1.png ./watch-wallpaper.png
+```
+
+Built-in PNGs 1.png through 16.png are read-only and stream in ACK-paced 512-byte
+chunks. Display settings now persist wallpaper brightness and the analog second
+hand switch. Hidden timer/stopwatch ticks no longer invalidate static pages.
+For scope, limitations, power-measurement guidance and loader-only update
+commands, see [delivery notes](Bootloader/DELIVERY.md).
+
 ## Wallpapers, launcher and AOD
 
 Sixteen defaults from `Firmware/walp` are built into the loader. Select them in
-**Настройки → Экран → Выбор обоев**. The watch face now displays them at 85%
-before the user's overall brightness is applied.
+**Настройки → Экран → Выбор обоев**. Wallpaper brightness defaults to 85%
+and is configurable independently of the overall display brightness.
 
 To upload a custom image with ordinary ADB:
 
