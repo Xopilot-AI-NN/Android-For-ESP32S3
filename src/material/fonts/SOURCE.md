@@ -7,7 +7,7 @@ See the included [Apache 2.0 license](LICENSE) for terms and attribution.
 
 `Roboto-Regular.ttf` and `Roboto-Light.ttf` are the local source assets. `tools/build_ui_font.cjs`
 rasterizes printable ASCII plus the Russian Cyrillic alphabet (including Ё/ё)
-at 11 and 16 px, and clock digits at 64 px, into four-bit antialiased coverage
+at 14, 18 and 36 px, and clock digits at 64 px, into four-bit antialiased coverage
 atlases, with proportional glyph advances. Firmware builds include those
 atlases directly; the watch needs no font service, network or TTF parser.
 This replaces the previous Noto Sans UI atlases. The large watch-clock numerals
@@ -20,3 +20,7 @@ To rebuild from the checked-in font:
 ```sh
 node tools/build_ui_font.cjs
 ```
+
+The UI atlas now includes 166 glyphs: ASCII, Russian Cyrillic, degree, middle
+dot, ellipsis, em dash and minus. The 36 px atlas is rasterized directly from
+Roboto Regular rather than magnifying an 18 px bitmap.

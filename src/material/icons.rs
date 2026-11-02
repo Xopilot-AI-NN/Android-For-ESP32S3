@@ -18,6 +18,18 @@ impl Surface {
         atlas: &[u8],
         size: usize,
     ) {
+        // New app symbols are appended; older system packs retain valid IDs.
+        let symbol = if (symbol as usize + 1) * size * size > atlas.len() * 2 {
+            match symbol {
+                Symbol::Weather => Symbol::Sun,
+                Symbol::World => Symbol::Clock,
+                Symbol::Breathing => Symbol::Person,
+                Symbol::Memory => Symbol::Developer,
+                _ => return,
+            }
+        } else {
+            symbol
+        };
         let base = symbol as usize * size * size;
         for row in 0..size {
             for col in 0..size {
@@ -121,7 +133,10 @@ impl Surface {
             8 => Symbol::Share,
             9 => Symbol::Diagnostics,
             10 => Symbol::Flashlight,
-            11 => Symbol::Developer,
+            11 => Symbol::Memory,
+            12 => Symbol::Weather,
+            13 => Symbol::World,
+            14 => Symbol::Breathing,
             _ => Symbol::Grid,
         };
         if let Some(atlas) = crate::ui_resources::icons(true) {
@@ -142,6 +157,10 @@ impl Surface {
             8 => rgb565(133, 216, 246),
             9 => rgb565(255, 184, 180),
             10 => rgb565(255, 239, 167),
+            11 => rgb565(174, 203, 255),
+            12 => rgb565(255, 214, 125),
+            13 => rgb565(163, 212, 255),
+            14 => rgb565(192, 171, 243),
             _ => rgb565(50, 59, 54),
         }
     }

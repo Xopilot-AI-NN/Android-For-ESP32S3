@@ -48,6 +48,9 @@ static CACHE: Mutex<RefCell<Cache>> = Mutex::new(RefCell::new(Cache {
     failed: None,
 }));
 static REVISION: AtomicU32 = AtomicU32::new(0);
+pub fn pending() -> bool {
+    critical_section::with(|cs| CACHE.borrow_ref(cs).pending.is_some())
+}
 pub fn revision() -> u32 {
     REVISION.load(Ordering::Acquire)
 }
@@ -133,7 +136,9 @@ pub fn mount<D: BlockDevice>(dev: &D, slot: crate::boot_control::Slot) -> Result
             return Err("resource outside package");
         }
     }
-    if entries[0].size != 31 * 24 * 24 / 2 || entries[1].size != 31 * 30 * 30 / 2 {
+    if ![31, 35].into_iter().any(|count| {
+        entries[0].size == count * 24 * 24 / 2 && entries[1].size == count * 30 * 30 / 2
+    }) {
         return Err("incompatible icon atlas");
     }
     let location = Location {

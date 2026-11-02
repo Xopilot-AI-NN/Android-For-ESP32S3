@@ -1,19 +1,27 @@
 //! typography Material surface implementation.
 use super::*;
 
-const BODY: &[u8; 42504] = include_bytes!("fonts/body.bin");
-const LABEL: &[u8; 42504] = include_bytes!("fonts/label.bin");
-const BODY_WIDTHS: &[u8; 161] = include_bytes!("fonts/body-widths.bin");
-const LABEL_WIDTHS: &[u8; 161] = include_bytes!("fonts/label-widths.bin");
+const BODY: &[u8; 43824] = include_bytes!("fonts/body.bin");
+const LABEL: &[u8; 43824] = include_bytes!("fonts/label.bin");
+const BODY_WIDTHS: &[u8; 166] = include_bytes!("fonts/body-widths.bin");
+const DISPLAY: &[u8; 175296] = include_bytes!("fonts/display.bin");
+const DISPLAY_WIDTHS: &[u8; 166] = include_bytes!("fonts/display-widths.bin");
+const LABEL_WIDTHS: &[u8; 166] = include_bytes!("fonts/label-widths.bin");
 
 impl Surface {
     pub(super) fn glyph(&mut self, x: i32, y: i32, ch: char, scale: i32, c: u16) {
         let index = Self::font_index(ch);
-        let atlas = if scale <= 1 { BODY } else { LABEL };
-        let zoom = (scale - 1).max(1);
-        for row in 0..24 {
-            for col in 0..22 {
-                let offset = index * 528 + row * 22 + col;
+        let (atlas, width, height, zoom, baseline): (&[u8], usize, usize, i32, i32) = if scale == 3
+        {
+            (DISPLAY, 44, 48, 1, 10)
+        } else if scale <= 1 {
+            (BODY, 22, 24, 1, 4)
+        } else {
+            (LABEL, 22, 24, (scale - 1).max(1), 5)
+        };
+        for row in 0..height {
+            for col in 0..width {
+                let offset = index * width * height + row * width + col;
                 let packed = atlas[offset / 2];
                 let alpha = if offset % 2 == 0 {
                     packed >> 4
@@ -24,7 +32,7 @@ impl Surface {
                     for dx in 0..zoom {
                         self.coverage_pixel(
                             x + col as i32 * zoom + dx,
-                            y + (row as i32 - if scale <= 1 { 4 } else { 5 }) * zoom + dy,
+                            y + (row as i32 - baseline) * zoom + dy,
                             c,
                             alpha,
                         );
@@ -107,12 +115,54 @@ impl Surface {
             if end < remaining.len() && word_end != 0 {
                 end = word_end;
             }
-            self.text_raw(x, y + line * 15, remaining[..end].trim_end(), 1, color);
+            self.text_raw(x, y + line * 19, remaining[..end].trim_end(), 1, color);
             remaining = remaining[end..].trim_start();
             if remaining.is_empty() {
                 return;
             }
         }
+    }
+
+    pub(super) fn text_fitted_raw(
+        &mut self,
+        x: i32,
+        y: i32,
+        text: &str,
+        scale: i32,
+        width: i32,
+        color: u16,
+    ) {
+        let value = text;
+        let full: i32 = value.chars().map(|c| Self::character_width(c, scale)).sum();
+        if full <= width {
+            self.text_raw(x, y, value, scale, color);
+            return;
+        }
+        let suffix = Self::character_width('…', scale);
+        let mut used = 0;
+        let mut end = 0;
+        for (offset, ch) in value.char_indices() {
+            let advance = Self::character_width(ch, scale);
+            if used + advance + suffix > width {
+                break;
+            }
+            used += advance;
+            end = offset + ch.len_utf8();
+        }
+        self.text_raw(x, y, &value[..end], scale, color);
+        self.glyph(x + used, y, '…', scale, color);
+    }
+
+    pub(super) fn text_fitted(
+        &mut self,
+        x: i32,
+        y: i32,
+        text: &str,
+        scale: i32,
+        width: i32,
+        color: u16,
+    ) {
+        self.text_fitted_raw(x, y, localization::label(text), scale, width, color);
     }
 
     pub(super) fn text_width(text: &str, scale: i32) -> i32 {
@@ -128,12 +178,20 @@ impl Surface {
             0x410..=0x44f => 95 + ch as usize - 0x410,
             0x401 => 159,
             0x451 => 160,
+            0xb0 => 161,
+            0xb7 => 162,
+            0x2026 => 163,
+            0x2014 => 164,
+            0x2212 => 165,
             _ => (b'?' - 32) as usize,
         }
     }
 
     fn character_width(ch: char, scale: i32) -> i32 {
         let index = Self::font_index(ch);
+        if scale == 3 {
+            return i32::from(DISPLAY_WIDTHS[index]);
+        }
         i32::from(if scale <= 1 {
             BODY_WIDTHS[index]
         } else {
@@ -142,21 +200,23 @@ impl Surface {
     }
 
     pub(super) fn text_center_raw(&mut self, y: i32, text: &str, scale: i32, c: u16) {
+        let mut scale = scale;
         let width: i32 = text
             .chars()
             .map(|ch| Self::character_width(ch, scale))
             .sum();
-        self.text_raw((WIDTH as i32 - width) / 2, y, text, scale, c);
+        if width > 224 && scale > 1 {
+            scale = 1;
+        }
+        let width: i32 = text
+            .chars()
+            .map(|ch| Self::character_width(ch, scale))
+            .sum();
+        self.text_fitted_raw(((WIDTH as i32 - width) / 2).max(8), y, text, scale, 224, c);
     }
 
     pub(super) fn text_center(&mut self, y: i32, text: &str, scale: i32, c: u16) {
-        self.text(
-            (WIDTH as i32 - Self::text_width(text, scale)) / 2,
-            y,
-            text,
-            scale,
-            c,
-        );
+        self.text_center_raw(y, localization::label(text), scale, c);
     }
 
     pub(super) fn text_center_x(&mut self, cx: i32, y: i32, text: &str, scale: i32, c: u16) {

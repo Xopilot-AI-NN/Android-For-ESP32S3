@@ -33,6 +33,10 @@ pub(super) enum Symbol {
     Folder,
     Share,
     Diagnostics,
+    Weather,
+    World,
+    Breathing,
+    Memory,
 }
 pub(super) const SIZE: usize = 24;
 pub(super) const LAUNCHER_SIZE: usize = 30;

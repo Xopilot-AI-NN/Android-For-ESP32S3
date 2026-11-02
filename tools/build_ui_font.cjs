@@ -8,11 +8,12 @@ fs.mkdirSync(output, {recursive: true});
 const uiChars = [
     ...Array.from({length: 95}, (_, i) => String.fromCharCode(i + 32)),
     ...Array.from({length: 64}, (_, i) => String.fromCharCode(i + 0x410)),
-    'Ё', 'ё',
+    'Ё', 'ё', '°', '·', '…', '—', '−',
 ];
 for (const [name, size, cellW, cellH, chars, font] of [
-    ['body', 11, 22, 24, uiChars, 'Roboto-Regular.ttf'],
-    ['label', 16, 22, 24, uiChars, 'Roboto-Regular.ttf'],
+    ['body', 14, 22, 24, uiChars, 'Roboto-Regular.ttf'],
+    ['label', 18, 22, 24, uiChars, 'Roboto-Regular.ttf'],
+    ['display', 36, 44, 48, uiChars, 'Roboto-Regular.ttf'],
     ['clock', 64, 48, 84, Array.from('0123456789:'), 'Roboto-Light.ttf'],
 ]) {
     const data = [], widths = [];

@@ -39,7 +39,7 @@ impl Surface {
         self.text_center(
             22,
             title,
-            if title.len() > 19 { 1 } else { 2 },
+            if title.chars().count() > 19 { 1 } else { 2 },
             t.on_surface,
         );
     }
@@ -51,7 +51,7 @@ impl Surface {
         self.text_center(
             29,
             title,
-            if title.len() > 19 { 1 } else { 2 },
+            if title.chars().count() > 19 { 1 } else { 2 },
             t.on_surface,
         );
     }
@@ -69,7 +69,7 @@ impl Surface {
         let bg = Self::focus_fill(t.surface_high, selected);
         let fg = t.on_surface;
         self.round_rect(x, y, w, h, 7, bg);
-        self.text_center_x(x + w / 2, y + (h - 7) / 2, label, 1, fg);
+        self.text_center_x(x + w / 2, y + (h - 14) / 2, label, 1, fg);
     }
 
     pub(super) fn wear_row(&mut self, y: i32, label: &str, selected: bool, t: Theme) {
@@ -91,9 +91,19 @@ impl Surface {
             t.on_surface
         };
         if scale == 1 && Self::text_width(label, 1) > w - 72 {
-            self.text_wrapped(x + 57, y + h / 2 - 12, label, w - 72, color);
+            self.text_wrapped(x + 57, y + h / 2 - 18, label, w - 72, color);
         } else {
-            self.text(x + 57, y + (h - 7 * scale) / 2, label, scale, color);
+            self.text(
+                x + 57,
+                y + (h - if scale <= 1 {
+                    14
+                } else {
+                    18 * (scale - 1).max(1)
+                }) / 2,
+                label,
+                scale,
+                color,
+            );
         }
     }
 
@@ -116,16 +126,25 @@ impl Surface {
             x + 28,
             y + h / 2,
             18,
-            if selected { t.primary } else { t.surface },
+            Self::focus_fill(Self::app_accent(icon), selected),
         );
-        self.app_icon(
-            icon,
-            x + 28,
-            y + h / 2,
-            if selected { t.on_primary } else { t.primary },
+        self.app_icon(icon, x + 28, y + h / 2, rgb565(8, 20, 17));
+        let scale = if Self::text_width(label, 2) > w - 72 {
+            1
+        } else {
+            2
+        };
+        self.text(
+            x + 58,
+            y + (h - if scale <= 1 {
+                14
+            } else {
+                18 * (scale - 1).max(1)
+            }) / 2,
+            label,
+            scale,
+            t.on_surface,
         );
-        let scale = if label.len() > 12 { 1 } else { 2 };
-        self.text(x + 58, y + (h - 7 * scale) / 2, label, scale, t.on_surface);
     }
 
     pub(super) fn toggle(&mut self, x: i32, y: i32, on: bool, t: Theme) {
@@ -196,11 +215,12 @@ impl Surface {
             if active { t.on_primary } else { t.primary },
         );
         self.text(x + 53, y + 10, title, 1, t.on_surface);
-        self.text(
+        self.text_fitted(
             x + 53,
             y + 31,
             value,
             1,
+            142,
             if active {
                 t.on_primary_container
             } else {
