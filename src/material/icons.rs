@@ -5,19 +5,35 @@ impl Surface {
     /// Tint Google's checked-in SVG coverage directly into the RGB565 surface.
     pub(super) fn symbol(&mut self, symbol: Symbol, cx: i32, cy: i32, color: u16) {
         use super::symbols::{ATLAS, SIZE};
-        let base = symbol as usize * SIZE * SIZE;
-        for row in 0..SIZE {
-            for col in 0..SIZE {
-                let offset = base + row * SIZE + col;
-                let packed = ATLAS[offset / 2];
+        self.symbol_mask(symbol, cx, cy, color, ATLAS, SIZE);
+    }
+
+    fn symbol_mask(
+        &mut self,
+        symbol: Symbol,
+        cx: i32,
+        cy: i32,
+        color: u16,
+        atlas: &[u8],
+        size: usize,
+    ) {
+        let base = symbol as usize * size * size;
+        for row in 0..size {
+            for col in 0..size {
+                let offset = base + row * size + col;
+                let packed = atlas[offset / 2];
                 let alpha = u32::from(if offset % 2 == 0 {
                     packed >> 4
                 } else {
                     packed & 15
                 });
-                let x = cx - SIZE as i32 / 2 + col as i32;
-                let y = cy - SIZE as i32 / 2 + row as i32;
+                let x = cx - size as i32 / 2 + col as i32;
+                let y = cy - size as i32 / 2 + row as i32;
                 if alpha == 0 || x < 0 || y < 0 || x >= WIDTH as i32 || y >= HEIGHT as i32 {
+                    continue;
+                }
+                if alpha == 15 {
+                    self.pixel(x, y, color);
                     continue;
                 }
                 let bg = u32::from(self.pixels[y as usize * WIDTH + x as usize]);
@@ -72,16 +88,8 @@ impl Surface {
         self.symbol(Symbol::Info, cx, cy, c);
     }
 
-    pub(super) fn icon_grid(&mut self, cx: i32, cy: i32, c: u16) {
-        self.symbol(Symbol::Grid, cx, cy, c);
-    }
-
     pub(super) fn icon_assistant(&mut self, cx: i32, cy: i32, c: u16) {
         self.symbol(Symbol::Assistant, cx, cy, c);
-    }
-
-    pub(super) fn icon_connectivity(&mut self, cx: i32, cy: i32, c: u16) {
-        self.symbol(Symbol::Connectivity, cx, cy, c);
     }
 
     pub(super) fn icon_back(&mut self, cx: i32, cy: i32, c: u16) {
@@ -100,15 +108,28 @@ impl Surface {
         self.symbol(Symbol::Person, cx, cy, c);
     }
     pub(super) fn app_icon(&mut self, icon: u8, cx: i32, cy: i32, c: u16) {
-        match icon {
-            0 => self.icon_clock(cx, cy, c),
-            1 => self.icon_media(cx, cy, c),
-            2 => self.icon_settings(cx, cy, c),
-            3 => self.icon_connectivity(cx, cy, c),
-            4 => self.icon_info(cx, cy, c),
-            5 => self.icon_assistant(cx, cy, c),
-            _ => self.icon_grid(cx, cy, c),
-        }
+        let symbol = match icon {
+            0 => Symbol::Clock,
+            1 => Symbol::Play,
+            2 => Symbol::Settings,
+            3 => Symbol::Connectivity,
+            4 => Symbol::Info,
+            5 => Symbol::Assistant,
+            6 => Symbol::Calculator,
+            7 => Symbol::Folder,
+            8 => Symbol::Share,
+            9 => Symbol::Diagnostics,
+            10 => Symbol::Flashlight,
+            _ => Symbol::Grid,
+        };
+        self.symbol_mask(
+            symbol,
+            cx,
+            cy,
+            c,
+            super::symbols::LAUNCHER_ATLAS,
+            super::symbols::LAUNCHER_SIZE,
+        );
     }
 
     pub(super) fn app_accent(icon: u8) -> u16 {
@@ -119,6 +140,11 @@ impl Surface {
             3 => rgb565(102, 221, 205), // connectivity teal
             4 => rgb565(218, 190, 255), // system lavender
             5 => rgb565(126, 225, 165), // assistant green
+            6 => rgb565(196, 224, 156),
+            7 => rgb565(255, 218, 143),
+            8 => rgb565(133, 216, 246),
+            9 => rgb565(255, 184, 180),
+            10 => rgb565(255, 239, 167),
             _ => rgb565(50, 59, 54),
         }
     }

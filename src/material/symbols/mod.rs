@@ -29,6 +29,12 @@ pub(super) enum Symbol {
     Timer,
     Alarm,
     Devices,
+    Calculator,
+    Folder,
+    Share,
+    Diagnostics,
 }
 pub(super) const SIZE: usize = 24;
-pub(super) const ATLAS: &[u8; 7776] = include_bytes!("atlas.bin");
+pub(super) const ATLAS: &[u8; 8928] = include_bytes!("atlas.bin");
+pub(super) const LAUNCHER_SIZE: usize = 30;
+pub(super) const LAUNCHER_ATLAS: &[u8] = include_bytes!("launcher.bin");

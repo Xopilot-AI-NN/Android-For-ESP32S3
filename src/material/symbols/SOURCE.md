@@ -8,9 +8,10 @@ at commit `10ecc14790612ca8fd164e3f4ffe9c16fc50d5b7`.
 
 Copyright Google LLC. Distributed under the [Apache 2.0 license](LICENSE).
 The SVG paths are unchanged. The build tool rasterizes them with antialiasing
-into 24 × 24 four-bit coverage masks; the firmware tints these with its theme.
-All 27 masks together occupy 7,776 bytes of flash and require no font or SVG
-parser on the ESP32. Circles, cards, sliders and clock numerals are separate
+into 24 × 24 four-bit coverage masks and separate 30 × 30 launcher masks;
+the firmware tints these with its theme. The 31 system masks occupy 8,928 bytes;
+the larger launcher atlas occupies 13,950 bytes. No font or SVG parser is
+needed on the ESP32. Circles, cards, sliders and clock numerals are separate
 layout elements, not replacements for Material icon paths.
 
 Rebuild locally with ImageMagick and Node:
