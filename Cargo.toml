@@ -64,6 +64,11 @@ heapless = { version = "=0.9.3", default-features = false }
 [profile.dev]
 opt-level = "s"
 
+# Keep the esp-hal 1.0 / esp-radio 0.17 ABI while backporting the upstream
+# Xtensa context-restore fix missing from esp-rtos 0.2.0.
+[patch.crates-io]
+esp-rtos = { path = "vendor/esp-rtos" }
+
 [profile.release]
 codegen-units = 1
 debug = 1
