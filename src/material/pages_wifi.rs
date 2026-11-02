@@ -6,16 +6,12 @@ impl Surface {
         self.photo_header(f, "Wi-Fi", t);
         let active = f.cursor == 0;
         self.round_rect(
-            if active { 10 } else { 17 },
+            17,
             65,
-            if active { 220 } else { 206 },
+            206,
             61,
             30,
-            if active {
-                t.primary_container
-            } else {
-                t.surface_high
-            },
+            Self::focus_fill(t.surface_high, active),
         );
         self.icon_wifi(
             42,

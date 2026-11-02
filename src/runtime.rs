@@ -22,7 +22,7 @@ pub use scene_cache::ScriptStats;
 use crate::material::MaterialFrame;
 
 #[cfg(feature = "rhai-runtime")]
-use esp_println::println;
+use crate::watch_println as println;
 #[cfg(feature = "rhai-runtime")]
 use rhai::{AST, CallFnOptions, Engine, ImmutableString, Scope};
 
@@ -176,6 +176,7 @@ impl RuntimeFrame {
 
 #[cfg(feature = "rhai-runtime")]
 pub struct Runtime {
+    name_editor: crate::device_name::Editor,
     scene_cache: scene_cache::SceneCache,
     engine: Engine,
     scope: Scope<'static>,
@@ -199,6 +200,9 @@ pub struct Runtime {
     last_input_ms: u64,
     timeout_parent: u8,
     watch_face: u8,
+    launcher_grid: bool,
+    aod_enabled: bool,
+    wallpaper_index: u8,
     wallpaper_enabled: bool,
     has_wallpaper: bool,
     playback: Option<crate::media::Playback>,
@@ -298,6 +302,7 @@ impl Runtime {
         }
 
         let mut runtime = Self {
+            name_editor: crate::device_name::Editor::default(),
             scene_cache: scene_cache::SceneCache::default(),
             engine,
             scope,
@@ -318,8 +323,11 @@ impl Runtime {
             last_input_ms: Instant::now().duration_since_epoch().as_millis() as u64,
             timeout_parent: 20,
             watch_face: 0,
+            launcher_grid: false,
+            aod_enabled: false,
+            wallpaper_index: 1,
             wallpaper_enabled: true,
-            has_wallpaper: false,
+            has_wallpaper: true,
             playback: None,
             power_menu: false,
             power_cursor: 0,
@@ -330,11 +338,15 @@ impl Runtime {
     }
 
     pub fn render(&mut self) -> Result<RuntimeFrame, RuntimeError> {
+        if matches!(self.state & 31, 2 | 26) {
+            self.state = (self.state & !31) | if self.launcher_grid { 26 } else { 2 };
+        }
         if self.security_saved[5] != 0 || self.security.encode() == self.security_saved {
             self.security
                 .tick(Instant::now().duration_since_epoch().as_secs());
         }
         if self.security.locked {
+            self.name_editor.active = false;
             self.state &= !0x1ff;
         }
         if self.security.has_pin {
@@ -365,6 +377,14 @@ impl Runtime {
                 .render(&self.engine, &mut self.scope, &self.ast, self.state)?;
         self.enrich_wifi_frame(&mut frame);
         if let RuntimeFrame::Material(m) = &mut frame {
+            let name = crate::device_name::snapshot();
+            m.device_name_len = name.len() as u8;
+            m.device_name[..name.len()].copy_from_slice(name.as_bytes());
+            m.name_editing = self.name_editor.active;
+            m.name_key = self.name_editor.key;
+            m.name_draft_len = self.name_editor.draft.len() as u8;
+            m.name_draft[..self.name_editor.draft.len()]
+                .copy_from_slice(self.name_editor.draft.as_bytes());
             // The cached ABI scene describes state, never frozen clock data.
             let (timer, stopwatch, alarm) = clock_snapshot();
             m.time_minutes = crate::rtc::local_minutes() as u16;
@@ -398,6 +418,13 @@ impl Runtime {
             let now_ms = Instant::now().duration_since_epoch().as_millis() as u64;
             m.display_brightness = Some(self.idle_brightness(now_ms));
             m.display_sleep = m.display_brightness == Some(0);
+            m.aod_enabled = self.aod_enabled;
+            m.aod = self.aod_enabled && m.display_sleep;
+            if m.aod {
+                m.display_sleep = false;
+                m.display_brightness = Some(5);
+            }
+            m.wallpaper_index = self.wallpaper_index;
             // Prefer immediate updates on this MCU over full-screen fades.
             m.transition_alpha = 255;
             m.watch_face = self.watch_face;
@@ -450,7 +477,12 @@ impl Runtime {
         true
     }
     pub fn wallpaper_available(&mut self, available: bool) {
-        self.has_wallpaper = available;
+        self.has_wallpaper = available || crate::wallpaper::builtin_count() != 0;
+    }
+    pub fn use_uploaded_wallpaper(&mut self) {
+        self.wallpaper_index = 0;
+        self.wallpaper_enabled = true;
+        self.has_wallpaper = true;
     }
     fn idle_brightness(&self, now_ms: u64) -> u8 {
         idle::level(
@@ -466,20 +498,26 @@ impl Runtime {
     pub fn crown_sensitivity(&self) -> u8 {
         self.crown_sensitivity
     }
-    pub fn preference_config(&self) -> [u8; 8] {
+    pub fn preference_config(&self) -> [u8; 12] {
         [
-            2,
+            3,
             self.crown_sensitivity,
             u8::from(self.crown_reverse),
             u8::from(self.high_contrast),
             self.watch_face,
             u8::from(self.wallpaper_enabled),
+            u8::from(self.launcher_grid),
+            u8::from(self.aod_enabled),
+            self.wallpaper_index,
+            0,
             0,
             0,
         ]
     }
     pub fn restore_preferences(&mut self, raw: &[u8]) {
-        if ((raw.len() == 4 && raw[0] == 1) || (raw.len() == 8 && raw[0] == 2))
+        if ((raw.len() == 4 && raw[0] == 1)
+            || (raw.len() == 8 && raw[0] == 2)
+            || (raw.len() == 12 && raw[0] == 3))
             && raw[1] <= 2
             && raw[2] <= 1
             && raw[3] <= 1
@@ -487,9 +525,14 @@ impl Runtime {
             self.crown_sensitivity = raw[1];
             self.crown_reverse = raw[2] != 0;
             self.high_contrast = raw[3] != 0;
-            if raw.len() == 8 {
+            if raw.len() >= 8 {
                 self.watch_face = raw[4].min(2);
                 self.wallpaper_enabled = raw[5] != 0;
+            }
+            if raw.len() == 12 {
+                self.launcher_grid = raw[6] != 0;
+                self.aod_enabled = raw[7] != 0;
+                self.wallpaper_index = raw[8].min(crate::wallpaper::builtin_count());
             }
         }
     }
@@ -694,11 +737,49 @@ impl Runtime {
         let screen = (self.state & 0x1f) as u8;
         let was_bt_enabled = self.state & (1 << 22) != 0;
         let cursor = ((self.state >> 5) & 15) as u8;
+        if matches!(screen, 2 | 26) && cursor == 6 && event == RuntimeEvent::Press {
+            self.launcher_grid = screen == 2;
+            self.state = (self.state & !0x1ff) | if self.launcher_grid { 26 } else { 2 };
+            return self.render();
+        }
+        if self.name_editor.active {
+            match event {
+                RuntimeEvent::Rotate(delta) => self.name_editor.rotate(delta),
+                RuntimeEvent::Press => self.name_editor.press(),
+                RuntimeEvent::Back | RuntimeEvent::Home => {
+                    self.name_editor.active = false;
+                    if event == RuntimeEvent::Home {
+                        self.state = (self.state & !0x1ff) | 1;
+                    }
+                }
+                _ => {}
+            }
+            return self.render();
+        }
+        if screen == 15 {
+            match event {
+                RuntimeEvent::Rotate(delta) => {
+                    self.state =
+                        (self.state & !0x1e0) | ((i32::from(cursor) + delta).rem_euclid(5) << 5)
+                }
+                RuntimeEvent::Press => match cursor {
+                    0 => self.state = (self.state & !0x1ff) | 16,
+                    1 => self.state = (self.state & !0x1ff) | 8,
+                    2 => self.state = (self.state & !0x1ff) | 22,
+                    3 => self.name_editor.begin(),
+                    _ => self.state = (self.state & !0x1ff) | 5 | (7 << 5),
+                },
+                RuntimeEvent::Back => self.state = (self.state & !0x1ff) | 5 | (7 << 5),
+                RuntimeEvent::Home => self.state = (self.state & !0x1ff) | 1,
+                _ => {}
+            }
+            return self.render();
+        }
         if screen == 14 {
             match event {
                 RuntimeEvent::Rotate(d) => {
                     self.state =
-                        (self.state & !0x1e0) | ((i32::from(cursor) + d).rem_euclid(6) << 5)
+                        (self.state & !0x1e0) | ((i32::from(cursor) + d).rem_euclid(8) << 5)
                 }
                 RuntimeEvent::Press => match cursor {
                     0 => self.state = (self.state & !0x1ff) | 28,
@@ -713,6 +794,12 @@ impl Runtime {
                     }
                     3 => self.watch_face = (self.watch_face + 1) % 3,
                     4 => self.wallpaper_enabled = !self.wallpaper_enabled,
+                    5 => {
+                        self.wallpaper_index =
+                            (self.wallpaper_index + 1) % (crate::wallpaper::builtin_count() + 1);
+                        self.wallpaper_enabled = true;
+                    }
+                    6 => self.aod_enabled = !self.aod_enabled,
                     _ => self.state = (self.state & !0x1ff) | 5 | (2 << 5),
                 },
                 RuntimeEvent::Back => self.state = (self.state & !0x1ff) | 5 | (2 << 5),
@@ -1209,8 +1296,8 @@ impl Runtime {
     pub fn crown_sensitivity(&self) -> u8 {
         1
     }
-    pub fn preference_config(&self) -> [u8; 8] {
-        [2, 1, 0, 0, 0, 0, 0, 0]
+    pub fn preference_config(&self) -> [u8; 12] {
+        [3, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0]
     }
     pub fn restore_preferences(&mut self, _raw: &[u8]) {}
     pub fn security_saved(&mut self) {}
@@ -1233,6 +1320,7 @@ impl Runtime {
         false
     }
     pub fn wallpaper_available(&mut self, _available: bool) {}
+    pub fn use_uploaded_wallpaper(&mut self) {}
     pub fn replace_state(&mut self, _state: i32) -> Result<RuntimeFrame, RuntimeError> {
         self.render()
     }

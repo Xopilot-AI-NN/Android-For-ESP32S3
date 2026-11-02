@@ -7,10 +7,10 @@
 
 extern crate alloc;
 
+use crate::watch_println as println;
 use alloc::vec;
 use core::fmt::Write;
 use esp_hal::time::Instant as HalInstant;
-use esp_println::println;
 use esp_radio::wifi::WifiDevice;
 use heapless::{String as HString, Vec as HVec};
 use smoltcp::{
@@ -32,7 +32,7 @@ const ADB_VERSION: u32 = 0x0100_0001;
 const ADB_MAX_DATA: u32 = ADB_MAX_PAYLOAD as u32;
 const WADB_PORT: u16 = 5555;
 const ADB_CLOSE_GRACE_MS: u64 = 1_200;
-static DHCP_HOSTNAME: &[u8] = b"android-aosp-wear";
+static DHCP_HOSTNAME: &[u8] = crate::device_info::HOSTNAME.as_bytes();
 static DHCP_OPTIONS: [DhcpOption<'static>; 1] = [DhcpOption {
     kind: 12,
     data: DHCP_HOSTNAME,
@@ -81,9 +81,9 @@ pub enum WebRemoteEvent {
     Swipe(i8),
 }
 
-struct AdbMessage {
+struct AdbMessage<'a> {
     header: Header,
-    payload: HVec<u8, ADB_MAX_PAYLOAD>,
+    payload: &'a [u8],
 }
 
 struct AdbRx {
@@ -111,7 +111,7 @@ impl AdbRx {
         self.payload_len = 0;
     }
 
-    fn push(&mut self, byte: u8) -> Option<AdbMessage> {
+    fn push(&mut self, byte: u8) -> Option<AdbMessage<'_>> {
         if self.header.is_none() {
             self.header_raw[self.header_len] = byte;
             self.header_len += 1;
@@ -134,7 +134,7 @@ impl AdbRx {
                 self.reset();
                 return Some(AdbMessage {
                     header,
-                    payload: HVec::new(),
+                    payload: &[],
                 });
             }
             self.header = Some(header);
@@ -148,16 +148,18 @@ impl AdbRx {
             return None;
         }
 
-        let mut payload = HVec::new();
-        let _ = payload.extend_from_slice(&self.payload[..self.payload_len]);
+        let len = self.payload_len;
         // ADB protocol 0x01000001 (advertised by this device) deliberately
         // skips payload checksums. Modern adb therefore sends data_check=0.
         // Keep accepting the legacy checksum too for older hosts.
         let valid =
-            header.data_check == 0 || adb::checksum(payload.as_slice()) == header.data_check;
+            header.data_check == 0 || adb::checksum(&self.payload[..len]) == header.data_check;
         self.reset();
         if valid {
-            Some(AdbMessage { header, payload })
+            Some(AdbMessage {
+                header,
+                payload: &self.payload[..len],
+            })
         } else {
             println!("adbd: packet checksum mismatch");
             None
@@ -170,6 +172,8 @@ enum AdbStreamMode {
     Closed,
     OneShot,
     Interactive,
+    Logcat,
+    Sync,
 }
 
 struct AdbStream {
@@ -180,10 +184,14 @@ struct AdbStream {
     close_after_okay: bool,
     close_deadline_ms: u64,
     input: HString<256>,
+    output: alloc::boxed::Box<HString<2048>>,
+    output_pos: usize,
+    logcat: Option<adb::logcat::Session>,
+    sync: Option<adb::sync::Receiver>,
 }
 
 impl AdbStream {
-    const fn new() -> Self {
+    fn new() -> Self {
         Self {
             host_id: 0,
             device_id: 0,
@@ -192,6 +200,10 @@ impl AdbStream {
             close_after_okay: false,
             close_deadline_ms: 0,
             input: HString::new(),
+            output: alloc::boxed::Box::new(HString::new()),
+            output_pos: 0,
+            logcat: None,
+            sync: None,
         }
     }
 
@@ -203,6 +215,10 @@ impl AdbStream {
         self.close_after_okay = false;
         self.close_deadline_ms = 0;
         self.input.clear();
+        self.output.clear();
+        self.output_pos = 0;
+        self.logcat = None;
+        self.sync = None;
     }
 
     fn open(&mut self, host_id: u32, device_id: u32, mode: AdbStreamMode) {
@@ -688,12 +704,13 @@ impl NetworkService {
         }
 
         let mut incoming = [0u8; 512];
-        while socket.can_recv() {
+        // One RX batch per OS iteration keeps a busy ADB host from starving UI.
+        if socket.can_recv() {
             let Ok(n) = socket.recv_slice(&mut incoming) else {
-                break;
+                return;
             };
             if n == 0 {
-                break;
+                return;
             }
             for &byte in &incoming[..n] {
                 if let Some(message) = self.adb_rx.push(byte) {
@@ -706,6 +723,8 @@ impl NetworkService {
                 }
             }
         }
+
+        service_stream(socket, &mut self.adb_stream);
 
         // A well-behaved adb host ACKs WRTE before we close a one-shot shell.
         // If an older/newer host fails to do that, don't leave the shell stream
@@ -774,7 +793,7 @@ fn send_packet(
     let needed = 24usize.saturating_add(payload.len());
     let free = socket.send_capacity().saturating_sub(socket.send_queue());
     if free < needed {
-        println!("adbd: tx queue full (need={} free={})", needed, free);
+        // Normal TCP backpressure: retry later without producing log feedback.
         return false;
     }
 
@@ -806,159 +825,6 @@ fn next_local_id(next: &mut u32) -> u32 {
     id
 }
 
-fn handle_adb(
-    socket: &mut tcp::Socket<'_>,
-    message: AdbMessage,
-    stream: &mut AdbStream,
-    next_id: &mut u32,
-) {
-    match message.header.command {
-        A_CNXN => {
-            let banner = b"device::ro.product.name=aosp_wear;ro.product.model=AOSP Wear OS;ro.product.device=aosp_wear;ro.product.manufacturer=AOSP;features=;\0";
-            let _ = send_packet(socket, A_CNXN, ADB_VERSION, ADB_MAX_DATA, banner);
-        }
-        A_OPEN => {
-            let host_id = message.header.arg0;
-            let payload = message.payload.as_slice();
-            let end = payload
-                .iter()
-                .position(|&b| b == 0)
-                .unwrap_or(payload.len());
-            let service = core::str::from_utf8(&payload[..end]).unwrap_or("");
-
-            if !(service.starts_with("shell:") || service == "shell") {
-                println!("adbd: unsupported service {}", service);
-                let _ = send_packet(socket, A_CLSE, 0, host_id, &[]);
-                return;
-            }
-
-            if stream.mode != AdbStreamMode::Closed {
-                let _ = send_packet(socket, A_CLSE, stream.device_id, stream.host_id, &[]);
-                stream.clear();
-            }
-
-            let device_id = next_local_id(next_id);
-            let command = service.strip_prefix("shell:").unwrap_or("").trim();
-            let mode = if command.is_empty() {
-                AdbStreamMode::Interactive
-            } else {
-                AdbStreamMode::OneShot
-            };
-            stream.open(host_id, device_id, mode);
-
-            if !send_packet(socket, A_OKAY, device_id, host_id, &[]) {
-                stream.clear();
-                return;
-            }
-
-            if mode == AdbStreamMode::Interactive {
-                println!("adbd: interactive shell opened");
-                let greeting = b"AOSP Wear OS - Android 17 QPR1 userdebug\r\naosp-wear:/ $ ";
-                if send_packet(socket, A_WRTE, device_id, host_id, greeting) {
-                    stream.waiting_for_okay = true;
-                }
-                return;
-            }
-
-            println!("adbd: shell {}", command);
-            let mut out = HString::<1536>::new();
-            adb::shell_command(command, &mut out);
-            if out.is_empty() {
-                let _ = send_packet(socket, A_CLSE, device_id, host_id, &[]);
-                stream.clear();
-            } else if send_packet(socket, A_WRTE, device_id, host_id, out.as_bytes()) {
-                stream.waiting_for_okay = true;
-                stream.close_after_okay = true;
-                stream.close_deadline_ms = now_ms() + ADB_CLOSE_GRACE_MS;
-            } else {
-                let _ = send_packet(socket, A_CLSE, device_id, host_id, &[]);
-                stream.clear();
-            }
-        }
-        A_WRTE => {
-            let host_id = message.header.arg0;
-            let device_id = message.header.arg1;
-            if !stream.matches(host_id, device_id) {
-                let _ = send_packet(socket, A_CLSE, 0, host_id, &[]);
-                return;
-            }
-
-            // ACK host input first. The ADB stream protocol requires one OKAY
-            // for every WRTE before that sender may write again.
-            let _ = send_packet(socket, A_OKAY, device_id, host_id, &[]);
-
-            if stream.mode != AdbStreamMode::Interactive {
-                return;
-            }
-
-            let mut execute = false;
-            let mut logout = false;
-            for &b in message.payload.iter() {
-                match b {
-                    b'\r' => {}
-                    b'\n' => execute = true,
-                    0x04 => {
-                        execute = true;
-                        logout = true;
-                    }
-                    0x08 | 0x7f => {
-                        let _ = stream.input.pop();
-                    }
-                    0x20..=0x7e => {
-                        let _ = stream.input.push(b as char);
-                    }
-                    _ => {}
-                }
-            }
-            if !execute {
-                return;
-            }
-
-            let command = stream.input.clone();
-            stream.input.clear();
-            let cmd = command.trim();
-            if cmd == "exit" {
-                logout = true;
-            }
-
-            let mut out = HString::<1536>::new();
-            if !logout {
-                adb::shell_command(cmd, &mut out);
-                let _ = out.push_str("aosp-wear:/ $ ");
-            } else {
-                let _ = out.push_str("logout\r\n");
-            }
-
-            if send_packet(socket, A_WRTE, device_id, host_id, out.as_bytes()) {
-                stream.waiting_for_okay = true;
-                if logout {
-                    stream.close_after_okay = true;
-                    stream.close_deadline_ms = now_ms() + ADB_CLOSE_GRACE_MS;
-                    stream.mode = AdbStreamMode::OneShot;
-                }
-            }
-        }
-        A_OKAY => {
-            let host_id = message.header.arg0;
-            let device_id = message.header.arg1;
-            if stream.matches(host_id, device_id) {
-                stream.waiting_for_okay = false;
-                if stream.close_after_okay {
-                    let _ = send_packet(socket, A_CLSE, device_id, host_id, &[]);
-                    stream.clear();
-                }
-            }
-        }
-        A_CLSE => {
-            // protocol.txt: the recipient MUST NOT reply to CLOSE.  Older code
-            // echoed CLSE back and could leave modern adb clients waiting on a
-            // stream that should already have been gone.
-            let host_id = message.header.arg0;
-            let device_id = message.header.arg1;
-            if stream.matches(host_id, device_id) || device_id == 0 {
-                stream.clear();
-            }
-        }
-        _ => {}
-    }
-}
+#[path = "net/adb_transport.rs"]
+mod adb_transport;
+use adb_transport::{handle_adb, service_stream};

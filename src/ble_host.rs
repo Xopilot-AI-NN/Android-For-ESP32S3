@@ -135,7 +135,7 @@ impl BleHost {
         }
         let after = self.state.borrow().status;
         if before != after {
-            esp_println::println!("BLE: HID state {} -> {}", before, after);
+            crate::watch_println!("BLE: HID state {} -> {}", before, after);
         }
     }
     pub fn set_enabled(&mut self, value: bool) {
@@ -235,8 +235,9 @@ async fn run(connector: BleConnector<'static>, mut address: [u8; 6], shared: Rc<
         mut runner,
         ..
     } = stack.build();
+    let gap_name = crate::device_name::snapshot();
     let Ok(server) = Server::new_with_config(GapConfig::Peripheral(PeripheralConfig {
-        name: "AOSP Wear",
+        name: &gap_name,
         appearance: &appearance::human_interface_device::GENERIC_HUMAN_INTERFACE_DEVICE,
     })) else {
         shared.borrow_mut().status = 5;
@@ -259,12 +260,22 @@ async fn run(connector: BleConnector<'static>, mut address: [u8; 6], shared: Rc<
                 continue;
             }
             shared.borrow_mut().status = 7;
+            let name_revision = crate::device_name::revision();
+            let name = crate::device_name::snapshot();
+            let mut name_len = name.len().min(22);
+            while !name.is_char_boundary(name_len) {
+                name_len -= 1;
+            }
             let mut adv = [0; 31];
             let Ok(len) = AdStructure::encode_slice(
                 &[
                     AdStructure::Flags(LE_GENERAL_DISCOVERABLE | BR_EDR_NOT_SUPPORTED),
                     AdStructure::ServiceUuids16(&[0x1812u16.to_le_bytes()]),
-                    AdStructure::CompleteLocalName(b"AOSP Wear"),
+                    if name_len == name.len() {
+                        AdStructure::CompleteLocalName(&name.as_bytes()[..name_len])
+                    } else {
+                        AdStructure::ShortenedLocalName(&name.as_bytes()[..name_len])
+                    },
                 ],
                 &mut adv,
             ) else {
@@ -283,25 +294,25 @@ async fn run(connector: BleConnector<'static>, mut address: [u8; 6], shared: Rc<
             {
                 Either::First(Ok(advertiser)) => advertiser,
                 Either::First(Err(error)) => {
-                    esp_println::println!("BLE: advertising start failed: {:?}", error);
+                    crate::watch_println!("BLE: advertising start failed: {:?}", error);
                     shared.borrow_mut().status = 5;
                     Timer::after_millis(1000).await;
                     continue;
                 }
                 Either::Second(_) => {
-                    esp_println::println!("BLE: advertising startup timed out; reboot required");
+                    crate::watch_println!("BLE: advertising startup timed out; reboot required");
                     shared.borrow_mut().status = 5;
                     return;
                 }
             };
             let pairing = now_ms() < shared.borrow().pair_until;
             shared.borrow_mut().status = if pairing { 6 } else { 1 };
-            esp_println::println!("BLE: advertising ready as AOSP Wear");
+            crate::watch_println!("BLE: advertising ready as {}", name);
             let idle = async {
                 loop {
                     Timer::after_millis(50).await;
                     let mut s = shared.borrow_mut();
-                    if !s.enabled || s.forget {
+                    if !s.enabled || s.forget || crate::device_name::revision() != name_revision {
                         return;
                     }
                     s.status = if now_ms() < s.pair_until { 6 } else { 1 };
@@ -340,7 +351,7 @@ async fn run(connector: BleConnector<'static>, mut address: [u8; 6], shared: Rc<
                 continue;
             }
             if let Err(err) = conn.raw().request_security() {
-                esp_println::println!("BLE: security request failed: {:?}", err);
+                crate::watch_println!("BLE: security request failed: {:?}", err);
                 conn.raw().disconnect();
                 continue;
             }
@@ -370,7 +381,7 @@ async fn run(connector: BleConnector<'static>, mut address: [u8; 6], shared: Rc<
                                 // Merely putting the LTK into State.bonds breaks reconnects
                                 // within the same boot, causing AUTHENTICATION_FAILURE.
                                 if let Err(err) = stack.add_bond_information(bond.clone()) {
-                                    esp_println::println!(
+                                    crate::watch_println!(
                                         "BLE: active bond install failed: {:?}",
                                         err
                                     );
@@ -394,7 +405,7 @@ async fn run(connector: BleConnector<'static>, mut address: [u8; 6], shared: Rc<
                             }
                         }
                         GattConnectionEvent::PairingFailed(reason) => {
-                            esp_println::println!("BLE: pairing failed: {:?}", reason);
+                            crate::watch_println!("BLE: pairing failed: {:?}", reason);
                             let mut s = shared.borrow_mut();
                             s.status = 5;
                             s.pin = None;
@@ -505,7 +516,7 @@ async fn run(connector: BleConnector<'static>, mut address: [u8; 6], shared: Rc<
                             Timer::after_millis(35).await;
                             let up = server.hid.report.notify(&conn, &[0, 0]).await;
                             if down.is_err() || up.is_err() {
-                                esp_println::println!(
+                                crate::watch_println!(
                                     "BLE: HID notify failed; dropping connection"
                                 );
                                 shared.borrow_mut().status = 5;
@@ -529,7 +540,7 @@ async fn run(connector: BleConnector<'static>, mut address: [u8; 6], shared: Rc<
     let _ = select(
         async {
             if let Err(e) = runner.run().await {
-                esp_println::println!("BLE host stopped: {:?}", e);
+                crate::watch_println!("BLE host stopped: {:?}", e);
                 shared.borrow_mut().status = 5;
             }
         },

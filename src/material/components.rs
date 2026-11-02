@@ -2,6 +2,14 @@
 use super::*;
 
 impl Surface {
+    pub(super) fn focus_fill(color: u16, selected: bool) -> u16 {
+        if !selected {
+            return color;
+        }
+        (((color >> 11) * 3 / 5) << 11)
+            | ((((color >> 5) & 63) * 3 / 5) << 5)
+            | ((color & 31) * 3 / 5)
+    }
     pub(super) fn status_strip(&mut self, f: MaterialFrame, t: Theme) {
         // System-facing status only. Development transports (USB/ADB) are not
         // exposed on normal Wear surfaces.
@@ -58,33 +66,20 @@ impl Surface {
         selected: bool,
         t: Theme,
     ) {
-        let bg = if selected { t.primary } else { t.surface_high };
-        let fg = if selected { t.on_primary } else { t.on_surface };
+        let bg = Self::focus_fill(t.surface_high, selected);
+        let fg = t.on_surface;
         self.round_rect(x, y, w, h, 7, bg);
         self.text_center_x(x + w / 2, y + (h - 7) / 2, label, 1, fg);
     }
 
     pub(super) fn wear_row(&mut self, y: i32, label: &str, selected: bool, t: Theme) {
         // Wide, muted slate pills from the lost firmware photos.
-        let (x, w, h) = if selected {
-            (10, 220, 59)
-        } else {
-            (19, 202, 55)
-        };
-        let bg = if selected {
-            t.primary_container
-        } else {
-            t.surface_high
-        };
+        let (x, w, h) = (19, 202, 55);
+        let bg = Self::focus_fill(t.surface_high, selected);
         self.round_rect(x, y, w, h, 27, bg);
         let cy = y + h / 2;
-        self.circle(x + 28, cy, 18, if selected { t.primary } else { t.surface });
-        self.row_icon(
-            label,
-            x + 28,
-            cy,
-            if selected { t.on_primary } else { t.primary },
-        );
+        self.circle(x + 28, cy, 18, t.surface);
+        self.row_icon(label, x + 28, cy, t.primary);
         let scale = if Self::text_width(label, 2) <= w - 72 {
             2
         } else {
@@ -115,23 +110,8 @@ impl Surface {
     }
 
     pub(super) fn app_row(&mut self, y: i32, label: &str, selected: bool, icon: u8, t: Theme) {
-        let (x, w, h) = if selected {
-            (10, 220, 58)
-        } else {
-            (19, 202, 54)
-        };
-        self.round_rect(
-            x,
-            y,
-            w,
-            h,
-            26,
-            if selected {
-                t.primary_container
-            } else {
-                t.surface_high
-            },
-        );
+        let (x, w, h) = (19, 202, 54);
+        self.round_rect(x, y, w, h, 26, Self::focus_fill(t.surface_high, selected));
         self.circle(
             x + 28,
             y + h / 2,
@@ -182,17 +162,10 @@ impl Surface {
         selected: bool,
         t: Theme,
     ) {
-        let (w, h) = if selected { (110, 58) } else { (104, 54) };
-        let bg = if on { t.primary } else { t.surface_high };
+        let (w, h) = (104, 54);
+        let bg = Self::focus_fill(if on { t.primary } else { t.surface_high }, selected);
         let fg = if on { t.on_primary } else { t.on_surface };
-        self.round_rect(
-            cx - w / 2,
-            cy - h / 2,
-            w,
-            h,
-            if selected { 18 } else { 27 },
-            bg,
-        );
+        self.round_rect(cx - w / 2, cy - h / 2, w, h, 27, bg);
         match label {
             "Wi-Fi" => self.icon_wifi(cx, cy - 7, fg),
             "Bluetooth" => self.icon_bt(cx, cy - 7, fg),
@@ -203,27 +176,13 @@ impl Surface {
             _ => {}
         }
         self.text_center_x(cx, cy + 13, label, 1, fg);
-        if selected {
-            self.round_rect(cx - 9, cy + 26, 18, 2, 1, t.primary);
-        }
     }
 
     pub(super) fn info_card(&mut self, y: i32, title: &str, value: &str, active: bool, t: Theme) {
-        let x = if active { 10 } else { 18 };
-        let w = if active { 220 } else { 204 };
+        let x = 18;
+        let w = 204;
         let h = 57;
-        self.round_rect(
-            x,
-            y,
-            w,
-            h,
-            h / 2,
-            if active {
-                t.primary_container
-            } else {
-                t.surface_high
-            },
-        );
+        self.round_rect(x, y, w, h, h / 2, Self::focus_fill(t.surface_high, active));
         self.circle(
             x + 27,
             y + h / 2,

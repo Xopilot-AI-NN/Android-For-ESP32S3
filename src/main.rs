@@ -9,6 +9,7 @@ compile_error!("enable exactly one display backend: display-ssd1306 OR display-s
 #[cfg(not(any(feature = "display-ssd1306", feature = "display-st7789")))]
 compile_error!("enable a display backend: display-ssd1306 OR display-st7789");
 
+use crate::watch_println as println;
 use embedded_sdmmc::BlockDevice;
 #[cfg(feature = "display-ssd1306")]
 use esp_hal::i2c::master::{Config as I2cConfig, I2c};
@@ -26,7 +27,6 @@ use esp_hal::{
 };
 #[cfg(feature = "radio-services")]
 use esp_hal::{ram, timer::timg::TimerGroup};
-use esp_println::println;
 
 mod adb;
 mod android_boot;
@@ -44,6 +44,8 @@ mod config;
 mod cpio;
 mod desktop;
 mod device_commands;
+pub mod device_info;
+mod device_name;
 mod disk_probe;
 mod display;
 mod fastboot;
@@ -52,6 +54,7 @@ mod font;
 mod framebuffer;
 mod gpt;
 mod input;
+mod logging;
 mod lp;
 mod material;
 mod media;

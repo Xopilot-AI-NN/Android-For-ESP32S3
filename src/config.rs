@@ -4,10 +4,10 @@
 //! `main.rs`; numeric `PIN_*` constants cannot configure esp-hal pins and can
 //! easily drift out of sync with the actual wiring.
 
-pub const PRODUCT: &str = "AOSP Wear OS";
-pub const DEVICE: &str = "aosp_wear";
-pub const MANUFACTURER: &str = "AOSP";
-pub const MODEL: &str = "ESP32-S3-Zero-N4R2";
+pub use crate::device_info::{
+    BOARD as MODEL, PRODUCT_DEVICE as DEVICE, PRODUCT_MANUFACTURER as MANUFACTURER,
+    PRODUCT_MODEL as PRODUCT,
+};
 pub const BOOTLOADER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 // SSD1306 / I2C: SDA=GPIO5, SCL=GPIO6.

@@ -4,6 +4,27 @@ use alloc::{vec, vec::Vec};
 use embedded_sdmmc::BlockDevice;
 pub const SCREENSHOT_OFFSET: u64 = 1024 * 1024;
 const PIXELS: usize = 240 * 280;
+#[path = "wallpapers/builtins.rs"]
+mod builtins;
+#[path = "wallpapers/png.rs"]
+mod png;
+pub fn builtin_count() -> u8 {
+    builtins::IMAGES.len() as u8
+}
+pub fn name(index: u8) -> &'static str {
+    if index == 0 {
+        "Загруженные"
+    } else {
+        builtins::IMAGES
+            .get(usize::from(index - 1))
+            .map(|v| v.0)
+            .unwrap_or("Обои")
+    }
+}
+pub fn builtin(index: u8) -> Option<Vec<u16>> {
+    let (_, bytes) = builtins::IMAGES.get(usize::from(index.saturating_sub(1)))?;
+    png::decode(bytes).ok()
+}
 pub fn load<D: BlockDevice>(dev: &D) -> Option<Vec<u16>> {
     let part = gpt::find_partition(dev, "userdata").ok()?;
     let mut header = [0; 512];
@@ -57,4 +78,82 @@ pub fn save_screenshot<D: BlockDevice>(dev: &D, pixels: &[u16]) -> bool {
     header[16..20].copy_from_slice(&gpt::crc32(&bytes).to_le_bytes());
     gpt::write_partition(dev, part, SCREENSHOT_OFFSET + 512, &bytes).is_ok()
         && gpt::write_partition(dev, part, SCREENSHOT_OFFSET, &header).is_ok()
+}
+
+// ADB receives bytes in the network service; the boot loop owns disk writes.
+// Do not acknowledge SYNC completion until the image has actually been saved.
+use core::cell::RefCell;
+use critical_section::Mutex;
+enum Upload {
+    Idle,
+    Pending(Vec<u16>),
+    Applying,
+    Finished(bool),
+}
+static UPLOAD: Mutex<RefCell<Upload>> = Mutex::new(RefCell::new(Upload::Idle));
+pub fn queue_png(bytes: &[u8]) -> Result<(), &'static str> {
+    let pixels = png::decode(bytes)?;
+    critical_section::with(|cs| {
+        let mut upload = UPLOAD.borrow(cs).borrow_mut();
+        if !matches!(*upload, Upload::Idle) {
+            return Err("another wallpaper upload is pending");
+        }
+        *upload = Upload::Pending(pixels);
+        Ok(())
+    })
+}
+pub fn take_upload() -> Option<Vec<u16>> {
+    critical_section::with(|cs| {
+        let mut upload = UPLOAD.borrow(cs).borrow_mut();
+        match core::mem::replace(&mut *upload, Upload::Applying) {
+            Upload::Pending(pixels) => Some(pixels),
+            other => {
+                *upload = other;
+                None
+            }
+        }
+    })
+}
+pub fn complete_upload(ok: bool) {
+    critical_section::with(|cs| *UPLOAD.borrow(cs).borrow_mut() = Upload::Finished(ok));
+}
+pub fn cancel_upload() {
+    critical_section::with(|cs| *UPLOAD.borrow(cs).borrow_mut() = Upload::Idle);
+}
+pub fn upload_result() -> Option<bool> {
+    critical_section::with(|cs| {
+        let mut upload = UPLOAD.borrow(cs).borrow_mut();
+        if let Upload::Finished(ok) = *upload {
+            *upload = Upload::Idle;
+            Some(ok)
+        } else {
+            None
+        }
+    })
+}
+pub fn save<D: BlockDevice>(dev: &D, pixels: &[u16]) -> bool {
+    if pixels.len() != PIXELS {
+        return false;
+    }
+    let Ok(part) = gpt::find_partition(dev, "userdata") else {
+        return false;
+    };
+    let mut old = [0; 512];
+    if gpt::read_partition(dev, part, 0, &mut old).is_err()
+        || (old.iter().any(|&v| v != 0) && &old[..8] != b"WALLv1\0\0")
+    {
+        return false;
+    }
+    let mut bytes = Vec::with_capacity(PIXELS * 2);
+    for pixel in pixels {
+        bytes.extend_from_slice(&pixel.to_be_bytes());
+    }
+    let mut header = [0; 512];
+    header[..8].copy_from_slice(b"WALLv1\0\0");
+    header[8..10].copy_from_slice(&240u16.to_le_bytes());
+    header[10..12].copy_from_slice(&280u16.to_le_bytes());
+    header[12..16].copy_from_slice(&(bytes.len() as u32).to_le_bytes());
+    header[16..20].copy_from_slice(&gpt::crc32(&bytes).to_le_bytes());
+    gpt::write_partition(dev, part, 512, &bytes).is_ok()
+        && gpt::write_partition(dev, part, 0, &header).is_ok()
 }

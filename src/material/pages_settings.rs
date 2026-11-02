@@ -4,14 +4,43 @@ use super::*;
 impl Surface {
     pub(super) fn system_page(&mut self, f: MaterialFrame, t: Theme) {
         self.title("SYSTEM", t);
-        let labels = ["DATE & TIME", "ABOUT", "DEVELOPER OPTIONS", "BACK"];
-        let cur = f.cursor.min(3) as usize;
-        let start = cur.saturating_sub(1).min(1);
+        let labels = [
+            "DATE & TIME",
+            "ABOUT",
+            "DEVELOPER OPTIONS",
+            "Имя устройства",
+            "BACK",
+        ];
+        let cur = f.cursor.min(4) as usize;
+        let start = cur.saturating_sub(1).min(2);
         for row in 0..3 {
-            let i = (start + row).min(3);
+            let i = (start + row).min(4);
             self.wear_row(55 + row as i32 * 64, labels[i], i == cur, t);
         }
-        self.scroll_indicator(f.cursor, 4, t);
+        self.scroll_indicator(f.cursor, 5, t);
+    }
+
+    pub(super) fn device_name_page(&mut self, f: MaterialFrame, t: Theme) {
+        self.title("Имя устройства", t);
+        let draft = core::str::from_utf8(&f.name_draft[..usize::from(f.name_draft_len).min(32)])
+            .unwrap_or("");
+        self.round_rect(12, 65, 216, 66, 25, t.surface_high);
+        self.text_center_raw(88, draft, 1, t.on_surface);
+        let key = usize::from(f.name_key);
+        let label = if key < crate::device_name::KEYS.len() {
+            let ch = &crate::device_name::KEYS[key..key + 1];
+            if ch == " " { "Пробел" } else { ch }
+        } else if key == crate::device_name::KEYS.len() {
+            "Удалить"
+        } else if key == crate::device_name::KEYS.len() + 1 {
+            "Сохранить"
+        } else {
+            "Отмена"
+        };
+        self.round_rect(30, 151, 180, 62, 31, t.primary);
+        self.text_center_raw(173, label, 2, t.on_primary);
+        self.text_center_raw(232, "Колёсико — выбрать", 1, t.on_surface_variant);
+        self.text_center_raw(252, "Нажатие — добавить", 1, t.on_surface_variant);
     }
 
     pub(super) fn date_time(&mut self, f: MaterialFrame, t: Theme) {

@@ -1,6 +1,18 @@
 //! Host renderer for the exact RGB565 firmware surface; no display mockups.
-//! rustc --edition=2024 tools/render_watch.rs -o /tmp/render-watch
+//! Build through tools/runtime-check/Cargo.toml, bin render-watch (host target).
 extern crate alloc;
+#[allow(dead_code)]
+#[path = "../src/device_info.rs"]
+mod device_info;
+#[allow(dead_code)]
+#[path = "../src/device_name.rs"]
+mod device_name;
+#[allow(dead_code)]
+#[path = "../src/gpt.rs"]
+mod gpt;
+#[allow(dead_code)]
+#[path = "../src/wallpaper.rs"]
+mod wallpaper;
 #[allow(dead_code)]
 #[path = "../src/material.rs"]
 mod material;

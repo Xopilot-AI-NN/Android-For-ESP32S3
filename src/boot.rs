@@ -127,7 +127,7 @@ pub(crate) fn run() -> ! {
         // GPIO1 = SCL/SCK, GPIO2 = SDA/MOSI, GPIO3 = RES/RST,
         // GPIO4 = DC, GPIO5 = CS, GPIO6 = BLK (active high).
         // This deliberately does NOT use SPI3 or the GPIO matrix.
-        esp_println::println!("ST7789: GPIO software SPI enabled; CLK=GPIO1 DATA=GPIO2 BLK=GPIO6");
+        crate::watch_println!("ST7789: GPIO software SPI enabled; CLK=GPIO1 DATA=GPIO2 BLK=GPIO6");
         let spi = crate::soft_spi::SoftSpi::new(
             Output::new(p.GPIO1, Level::Low, OutputConfig::default()),
             Output::new(p.GPIO2, Level::Low, OutputConfig::default()),
@@ -297,6 +297,7 @@ pub(crate) fn run() -> ! {
         let mut persisted_clock_config = os.clock_config();
         let mut persisted_preferences = os.preference_config();
         let mut persisted_security = os.security_config();
+        let mut persisted_name_revision = device_name::revision();
         first_frame.set_swap_pages(0);
         #[cfg(feature = "radio-services")]
         if let Some(radios) = radios.as_mut() {
@@ -316,6 +317,7 @@ pub(crate) fn run() -> ! {
 
         loop {
             keys.set_sensitivity(os.crown_sensitivity());
+            apply_wallpaper_upload(session.block_device(), &mut display, &mut os);
             let rotation = keys.poll_rotation();
             let events = [
                 if rotation != 0 {
@@ -374,7 +376,7 @@ pub(crate) fn run() -> ! {
                     DesktopEvent::AdbGetProp => {
                         session
                             .block_device()
-                            .viewer_adb_output("getprop", adb::getprop());
+                            .viewer_adb_output("getprop", &adb::getprop());
                         None
                     }
                     DesktopEvent::AdbServices => {
@@ -639,6 +641,12 @@ pub(crate) fn run() -> ! {
             }
 
             if let Some(pager) = pager.as_ref() {
+                let revision = device_name::revision();
+                if revision != persisted_name_revision
+                    && save_device_name(pager, session.block_device())
+                {
+                    persisted_name_revision = revision;
+                }
                 let settings = os.state() & SYSTEM_SETTINGS_MASK;
                 if settings != persisted_settings
                     && save_system_settings(pager, session.block_device(), os.state())
@@ -928,6 +936,7 @@ pub(crate) fn run() -> ! {
         let mut persisted_clock_config = os.clock_config();
         let mut persisted_preferences = os.preference_config();
         let mut persisted_security = os.security_config();
+        let mut persisted_name_revision = device_name::revision();
         first_frame.set_swap_pages(0);
         #[cfg(feature = "radio-services")]
         if let Some(radios) = radios.as_mut() {
@@ -943,6 +952,7 @@ pub(crate) fn run() -> ! {
         loop {
             #[cfg(not(feature = "pc-block-boot"))]
             display.pump();
+            apply_wallpaper_upload(session.block_device(), &mut display, &mut os);
             keys.set_sensitivity(os.crown_sensitivity());
             let rotation = keys.poll_rotation();
             if rotation != 0 {
@@ -1151,6 +1161,12 @@ pub(crate) fn run() -> ! {
             }
 
             if let Some(pager) = pager.as_ref() {
+                let revision = device_name::revision();
+                if revision != persisted_name_revision
+                    && save_device_name(pager, session.block_device())
+                {
+                    persisted_name_revision = revision;
+                }
                 let settings = os.state() & SYSTEM_SETTINGS_MASK;
                 if settings != persisted_settings
                     && save_system_settings(pager, session.block_device(), os.state())

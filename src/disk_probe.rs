@@ -4,7 +4,7 @@ use embedded_sdmmc::{Block, BlockDevice, BlockIdx};
 pub fn report<D: BlockDevice>(dev: &D) {
     let mut sector = Block { contents: [0; 512] };
     match dev.read(core::slice::from_mut(&mut sector), BlockIdx(0)) {
-        Ok(()) => esp_println::println!(
+        Ok(()) => crate::watch_println!(
             "disk: LBA0 prefix={:02x?} signature={:02x?} partition_types={:02x?}",
             &sector.contents[..16],
             &sector.contents[510..],
@@ -15,24 +15,24 @@ pub fn report<D: BlockDevice>(dev: &D) {
                 sector.contents[498]
             ]
         ),
-        Err(e) => esp_println::println!("disk: LBA0 read failed: {e:?}"),
+        Err(e) => crate::watch_println!("disk: LBA0 read failed: {e:?}"),
     }
     if let Err(e) = dev.read(core::slice::from_mut(&mut sector), BlockIdx(1)) {
-        esp_println::println!("disk: LBA1 read failed: {e:?}");
+        crate::watch_println!("disk: LBA1 read failed: {e:?}");
         return;
     }
     let first = sector.contents;
-    esp_println::println!(
+    crate::watch_println!(
         "disk: LBA1 prefix={:02x?}; expected EFI PART (45 46 49 20 50 41 52 54)",
         &first[..16]
     );
     match dev.read(core::slice::from_mut(&mut sector), BlockIdx(1)) {
-        Ok(()) => esp_println::println!(
+        Ok(()) => crate::watch_println!(
             "disk: repeated LBA1 stable={}; prefix={:02x?}",
             first == sector.contents,
             &sector.contents[..16]
         ),
-        Err(e) => esp_println::println!("disk: repeated LBA1 failed: {e:?}"),
+        Err(e) => crate::watch_println!("disk: repeated LBA1 failed: {e:?}"),
     }
 }
 

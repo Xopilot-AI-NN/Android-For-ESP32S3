@@ -2,7 +2,13 @@
 use super::MaterialFrame;
 impl MaterialFrame {
     pub fn visual_key(mut self) -> Self {
-        let analog = self.screen == 1 && self.watch_face == 1 && !self.power_menu;
+        if self.aod {
+            self.timer_secs = 0;
+            self.stopwatch_secs = 0;
+            self.lockout_secs = 0;
+            self.media_progress = 0;
+        }
+        let analog = self.screen == 1 && self.watch_face == 1 && !self.power_menu && !self.aod;
         let animated_media =
             self.screen == 10 && self.media_known && self.media_playing && !self.power_menu;
         if !analog {

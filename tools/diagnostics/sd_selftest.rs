@@ -2,6 +2,10 @@
 #![no_std]
 #![no_main]
 extern crate alloc;
+#[macro_export]
+macro_rules! watch_println {
+    ($($arg:tt)*) => { esp_println::println!($($arg)*) };
+}
 use embedded_hal::spi::SpiBus;
 use embedded_sdmmc::SdCard;
 use esp_backtrace as _;

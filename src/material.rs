@@ -11,6 +11,12 @@ pub const HEIGHT: usize = 280;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MaterialFrame {
+    pub device_name: [u8; 32],
+    pub device_name_len: u8,
+    pub name_editing: bool,
+    pub name_key: u8,
+    pub name_draft: [u8; 32],
+    pub name_draft_len: u8,
     pub screen: u8,
     pub cursor: u8,
     pub brightness: u8,
@@ -75,6 +81,9 @@ pub struct MaterialFrame {
     pub power_menu: bool,
     pub wallpaper_enabled: bool,
     pub wallpaper_available: bool,
+    pub wallpaper_index: u8,
+    pub aod_enabled: bool,
+    pub aod: bool,
     pub media_known: bool,
     pub media_playing: bool,
     pub media_progress: u16,
@@ -108,6 +117,12 @@ impl MaterialFrame {
             return None;
         }
         Some(Self {
+            device_name: [0; 32],
+            device_name_len: 0,
+            name_editing: false,
+            name_key: 0,
+            name_draft: [0; 32],
+            name_draft_len: 0,
             screen,
             cursor,
             brightness,
@@ -168,6 +183,9 @@ impl MaterialFrame {
             power_menu: false,
             wallpaper_enabled: true,
             wallpaper_available: false,
+            wallpaper_index: 1,
+            aod_enabled: false,
+            aod: false,
             media_known: false,
             media_playing: false,
             media_progress: 0,
@@ -322,6 +340,8 @@ fn theme(index: u8) -> Theme {
 pub struct Surface {
     pixels: Vec<u16>,
     wallpaper: Option<Vec<u16>>,
+    custom_wallpaper: Option<Vec<u16>>,
+    selected_wallpaper: u8,
 }
 
 impl Surface {
@@ -329,6 +349,8 @@ impl Surface {
         Self {
             pixels: vec![0; WIDTH * HEIGHT],
             wallpaper: None,
+            custom_wallpaper: None,
+            selected_wallpaper: u8::MAX,
         }
     }
     pub fn pixels(&self) -> &[u16] {
@@ -336,7 +358,8 @@ impl Surface {
     }
     pub fn set_wallpaper(&mut self, pixels: Vec<u16>) {
         if pixels.len() == WIDTH * HEIGHT {
-            self.wallpaper = Some(pixels);
+            self.custom_wallpaper = Some(pixels);
+            self.selected_wallpaper = u8::MAX;
         }
     }
 
@@ -350,10 +373,33 @@ impl Surface {
             t.outline = 0xffff;
         }
         self.fill_rect(0, 0, WIDTH as i32, HEIGHT as i32, t.bg);
+        if frame.aod {
+            // LCD AOD: no wallpaper, no private data and only minute updates.
+            self.fill_rect(0, 0, WIDTH as i32, HEIGHT as i32, 0);
+            let text = Self::time_text(frame.time_minutes);
+            let shift = i32::from(frame.time_minutes % 5) - 2;
+            self.text_center_raw(
+                119 + shift,
+                core::str::from_utf8(&text).unwrap_or("00:00"),
+                3,
+                0xffff,
+            );
+            return Rect::FULL;
+        }
         if frame.screen == 1 && frame.wallpaper_enabled {
+            if self.selected_wallpaper != frame.wallpaper_index {
+                self.wallpaper = if frame.wallpaper_index == 0 {
+                    self.custom_wallpaper
+                        .clone()
+                        .or_else(|| crate::wallpaper::builtin(1))
+                } else {
+                    crate::wallpaper::builtin(frame.wallpaper_index)
+                };
+                self.selected_wallpaper = frame.wallpaper_index;
+            }
             if let Some(wallpaper) = self.wallpaper.as_ref() {
                 self.pixels.copy_from_slice(wallpaper);
-                self.scale_pixels(40);
+                self.scale_pixels(85);
             }
         }
         if frame.power_menu {
@@ -376,6 +422,10 @@ impl Surface {
                 );
                 self.text_center(157, "PRESS TO DISMISS", 1, t.on_primary);
             }
+            return Rect::FULL;
+        }
+        if frame.name_editing {
+            self.device_name_page(frame, t);
             return Rect::FULL;
         }
         match frame.screen {

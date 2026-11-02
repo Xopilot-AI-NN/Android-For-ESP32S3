@@ -7,12 +7,12 @@
 
 use core::{fmt::Write, time::Duration};
 
+use crate::watch_println as println;
 use esp_hal::{
     delay::Delay,
     peripherals::{BT, WIFI},
     time::Instant,
 };
-use esp_println::println;
 use esp_radio::{
     Controller,
     ble::controller::BleConnector,

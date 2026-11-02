@@ -2,6 +2,14 @@
 //! only the ESP monotonic counter. Run with one test thread (shared clock state).
 #![allow(dead_code)]
 extern crate alloc;
+#[path = "../../../src/device_info.rs"]
+mod device_info;
+#[path = "../../../src/device_name.rs"]
+mod device_name;
+#[path = "../../../src/wallpaper.rs"]
+mod wallpaper;
+#[path = "../../../src/logging.rs"]
+mod logging;
 #[path = "../../../src/desktop_tx.rs"]
 mod desktop_tx;
 #[path = "../../../src/viewer_stream.rs"]

@@ -124,20 +124,8 @@ impl Surface {
         for i in 0..6 {
             let (x, y) = positions[i];
             let selected = i == cur;
-            let radius = if selected { 32 } else { 26 };
-            self.circle(
-                x,
-                y,
-                radius,
-                if selected {
-                    t.primary_container
-                } else {
-                    t.surface_high
-                },
-            );
-            if selected {
-                self.ring(x, y, radius + 3, 2, t.primary);
-            }
+            let radius = 26;
+            self.circle(x, y, radius, Self::focus_fill(t.surface_high, selected));
             self.app_icon(
                 i as u8,
                 x,
@@ -331,12 +319,7 @@ impl Surface {
         for i in 0..3 {
             let selected = f.cursor as usize == i;
             let cx = 48 + i as i32 * 72;
-            self.circle(
-                cx,
-                165,
-                if selected { 28 } else { 23 },
-                if selected { t.primary } else { t.surface_high },
-            );
+            self.circle(cx, 165, 23, Self::focus_fill(t.surface_high, selected));
             self.symbol(
                 [Symbol::Timer, Symbol::Clock, Symbol::Alarm][i],
                 cx,
@@ -393,7 +376,9 @@ impl Surface {
         self.photo_header(f, "About", t);
         self.circle(120, 82, 25, t.primary_container);
         self.text_center(69, "A", 3, t.primary);
-        self.text_center(116, "AOSP WEAR", 2, t.on_surface);
+        let name = core::str::from_utf8(&f.device_name[..usize::from(f.device_name_len).min(32)])
+            .unwrap_or(crate::device_info::DEFAULT_DEVICE_NAME);
+        self.text_center_raw(116, name, 2, t.on_surface);
         self.text_center(144, "ANDROID 17", 1, t.primary);
         self.round_rect(22, 168, 196, 36, 18, t.surface);
         self.text_center(180, "BUILD 17.2.1", 1, t.on_surface);
@@ -501,7 +486,7 @@ impl Surface {
         let cream = t.primary;
         let ink = t.on_primary;
         for (i, x) in [(0, 39), (2, 201)] {
-            self.circle(x, 151, if f.cursor == i { 29 } else { 26 }, cream);
+            self.circle(x, 151, 26, Self::focus_fill(cream, f.cursor == i));
             self.symbol(
                 if i == 0 {
                     Symbol::Previous
@@ -512,19 +497,12 @@ impl Surface {
                 151,
                 ink,
             );
-            if f.cursor == i {
-                self.ring(x, 151, 32, 2, t.on_surface);
-            }
         }
         self.scallop(
             120,
             151,
-            cream,
-            if f.cursor == 1 {
-                t.on_surface
-            } else {
-                t.surface_high
-            },
+            Self::focus_fill(cream, f.cursor == 1),
+            t.surface_high,
         );
         self.symbol(
             if f.media_playing {
@@ -608,11 +586,7 @@ impl Surface {
                 176,
                 28,
                 14,
-                if f.cursor as usize == i {
-                    t.primary_container
-                } else {
-                    t.surface_high
-                },
+                Self::focus_fill(t.surface_high, f.cursor as usize == i),
             );
             self.text_center(187 + i as i32 * 31, label, 1, t.on_surface);
         }
@@ -644,12 +618,8 @@ impl Surface {
                 y,
                 99,
                 61,
-                if f.cursor as usize == i { 20 } else { 29 },
-                if f.cursor as usize == i {
-                    lime
-                } else {
-                    lavender
-                },
+                29,
+                Self::focus_fill(lavender, f.cursor as usize == i),
             );
             self.text_center_x(
                 x + 49,
@@ -789,11 +759,7 @@ impl Surface {
                 196,
                 34,
                 17,
-                if f.cursor as usize == i {
-                    t.primary_container
-                } else {
-                    t.surface_high
-                },
+                Self::focus_fill(t.surface_high, f.cursor as usize == i),
             );
             self.text_center(114 + i as i32 * 39, label, 1, t.on_surface);
         }

@@ -64,7 +64,7 @@ where
         card.mark_card_as_init(kind);
     }
     let bytes = card.num_bytes().map_err(InitError::Capacity)?;
-    esp_println::println!(
+    crate::watch_println!(
         "microSD: initialized, {} MiB, {:?}",
         bytes / (1024 * 1024),
         kind
@@ -192,15 +192,15 @@ where
     C: OutputPin,
     D: DelayNs,
 {
-    esp_println::println!("microSD: checked startup v6; two CMD0 resets; ACMD41 budget 500 x 10ms");
+    crate::watch_println!("microSD: checked startup v6; two CMD0 resets; ACMD41 budget 500 x 10ms");
     // ESP-IDF sends an initial GO_IDLE without relying on its response, then
     // repeats it with R1 checking: some cards do not select SPI on the first.
-    esp_println::println!("microSD: wait clocks={CLOCKED}");
+    crate::watch_println!("microSD: wait clocks={CLOCKED}");
     let wake = command(spi, 0, 0);
     if matches!(wake, Err(InitError::Transport)) {
         return Err(InitError::Transport);
     }
-    esp_println::println!("microSD: first CMD0 wake response={wake:?}");
+    crate::watch_println!("microSD: first CMD0 wake response={wake:?}");
     spi.finish_command().map_err(|_| InitError::Transport)?;
     settle::<B, C, D, CLOCKED>(spi, delay, 100)?;
     let mut idle = false;
@@ -226,7 +226,7 @@ where
     let r1 = command(spi, 8, 0x1aa)?;
     let v2 = if r1 == 1 {
         let r7 = tail(spi)?;
-        esp_println::println!("microSD: CMD8 R1=0x{r1:02x} R7={r7:02x?}");
+        crate::watch_println!("microSD: CMD8 R1=0x{r1:02x} R7={r7:02x?}");
         if r7 != [0, 0, 1, 0xaa] {
             return Err(InitError::Interface(r7));
         }
@@ -247,7 +247,7 @@ where
         });
     }
     let initial_ocr = tail(spi)?;
-    esp_println::println!("microSD: preflight CMD58 R1=0x{initial_r1:02x} OCR={initial_ocr:02x?}");
+    crate::watch_println!("microSD: preflight CMD58 R1=0x{initial_r1:02x} OCR={initial_ocr:02x?}");
     if u32::from_be_bytes(initial_ocr) & 0x00ff_8000 == 0 {
         return Err(InitError::Ocr(initial_ocr));
     }
@@ -286,7 +286,7 @@ where
         spi.finish_command().map_err(|_| InitError::Transport)?;
         match response {
             Ok((prefix, 0)) => {
-                esp_println::println!(
+                crate::watch_println!(
                     "microSD: ready at poll {}; CMD55=0x{prefix:02x}, ACMD41=0x00, transient replies={transient_count}",
                     attempt + 1
                 );
@@ -299,7 +299,7 @@ where
                     acmd41: status,
                 };
                 if attempt == 0 || attempt % 50 == 49 {
-                    esp_println::println!(
+                    crate::watch_println!(
                         "microSD: init poll {} CMD55=0x{prefix:02x} ACMD41=0x{status:02x}",
                         attempt + 1
                     );
@@ -310,7 +310,7 @@ where
                 transient_count += 1;
                 last_error = error;
                 if transient_count == 1 || attempt % 50 == 49 {
-                    esp_println::println!(
+                    crate::watch_println!(
                         "microSD: init poll {} retry without reset: {error}",
                         attempt + 1
                     );
@@ -324,7 +324,7 @@ where
             match command(spi, 58, 0) {
                 Ok(r1) if r1 <= 1 => {
                     let ocr = tail(spi)?;
-                    esp_println::println!(
+                    crate::watch_println!(
                         "microSD: OCR poll {} R1=0x{r1:02x} OCR={ocr:02x?}",
                         attempt + 1
                     );
@@ -333,21 +333,21 @@ where
                         && u32::from_be_bytes(ocr) & 0x00ff_8000 != 0
                     {
                         ready = true;
-                        esp_println::println!(
+                        crate::watch_println!(
                             "microSD: ready confirmed by OCR after transient APP_CMD replies"
                         );
                         break;
                     }
                 }
-                Ok(r1) => esp_println::println!("microSD: OCR poll R1=0x{r1:02x}"),
-                Err(e) => esp_println::println!("microSD: OCR poll: {e}"),
+                Ok(r1) => crate::watch_println!("microSD: OCR poll R1=0x{r1:02x}"),
+                Err(e) => crate::watch_println!("microSD: OCR poll: {e}"),
             }
             spi.finish_command().map_err(|_| InitError::Transport)?;
         }
         settle::<B, C, D, CLOCKED>(spi, delay, 10)?;
     }
     if !ready {
-        esp_println::println!(
+        crate::watch_println!(
             "microSD: initialization budget exhausted; transient replies={transient_count}"
         );
         return Err(last_error);
@@ -355,7 +355,7 @@ where
     let r1 = command(spi, 58, 0)?;
     expect(58, r1, 0)?;
     let ocr = tail(spi)?;
-    esp_println::println!("microSD: CMD58 OCR={ocr:02x?}");
+    crate::watch_println!("microSD: CMD58 OCR={ocr:02x?}");
     let value = u32::from_be_bytes(ocr);
     if value & 0x8000_0000 == 0 || value & 0x00ff_8000 == 0 {
         return Err(InitError::Ocr(ocr));

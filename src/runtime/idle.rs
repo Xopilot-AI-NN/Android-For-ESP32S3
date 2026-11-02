@@ -1,13 +1,11 @@
 //! Monotonic display policy: a dim stage precedes real screen-off.
-/// Idle pages need second ticks, with short updates only during the dim fade.
+/// Idle pages tick once a second, without missing the exact dim/off boundaries.
 pub fn next_refresh(now_ms: u64, last_input_ms: u64, timeout_secs: u16) -> u64 {
     let off = last_input_ms.saturating_add(u64::from(timeout_secs) * 1000);
     let dim = off.saturating_sub(10_000);
     let second = now_ms.saturating_add(1000 - now_ms % 1000);
     if now_ms < dim {
         second.min(dim)
-    } else if now_ms < dim.saturating_add(500) {
-        now_ms.saturating_add(100).min(off)
     } else if now_ms < off {
         second.min(off)
     } else {
@@ -27,9 +25,7 @@ pub fn level(selected: u8, idle_ms: u64, timeout_secs: u16, attention: bool) -> 
     if idle_ms < dim {
         return selected;
     }
-    let target = selected.min(15);
-    let fade = (idle_ms - dim).min(500) as u16;
-    (u16::from(selected) - (u16::from(selected - target) * fade / 500)) as u8
+    selected.min(15)
 }
 #[cfg(test)]
 mod tests {
@@ -46,7 +42,7 @@ mod tests {
     fn idle_ticks_slow_down_without_missing_fractional_dim_and_off_deadlines() {
         assert_eq!(next_refresh(5000, 123, 30), 6000);
         assert_eq!(next_refresh(20_000, 123, 30), 20_123);
-        assert_eq!(next_refresh(20_123, 123, 30), 20_223);
+        assert_eq!(next_refresh(20_123, 123, 30), 21_000);
         assert_eq!(next_refresh(20_723, 123, 30), 21_000);
         assert_eq!(next_refresh(30_000, 123, 30), 30_123);
         assert_eq!(next_refresh(30_123, 123, 30), 31_000);

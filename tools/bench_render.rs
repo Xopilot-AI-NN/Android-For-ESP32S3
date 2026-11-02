@@ -1,6 +1,18 @@
 //! CPU-only benchmark of the firmware renderer (no SPI/USB timing claims).
 extern crate alloc;
 #[allow(dead_code)]
+#[path = "../src/device_info.rs"]
+mod device_info;
+#[allow(dead_code)]
+#[path = "../src/device_name.rs"]
+mod device_name;
+#[allow(dead_code)]
+#[path = "../src/gpt.rs"]
+mod gpt;
+#[allow(dead_code)]
+#[path = "../src/wallpaper.rs"]
+mod wallpaper;
+#[allow(dead_code)]
 #[path = "../src/material.rs"]
 mod material;
 use std::{hint::black_box, time::Instant};

@@ -64,6 +64,8 @@ impl Surface {
             "Сон экрана",
             "Циферблат",
             "Обои",
+            "Выбор обоев",
+            "Always-on display",
             "BACK",
         ];
         let values = [
@@ -78,10 +80,16 @@ impl Surface {
             } else {
                 "Выключены"
             },
+            crate::wallpaper::name(f.wallpaper_index),
+            if f.aod_enabled {
+                "Включён"
+            } else {
+                "Выключен"
+            },
             "К настройкам",
         ];
-        let cur = f.cursor.min(5);
-        let start = cur.saturating_sub(1).min(3);
+        let cur = f.cursor.min(7);
+        let start = cur.saturating_sub(1).min(5);
         for row in 0..3 {
             let index = (start + row) as usize;
             self.info_card(
@@ -92,7 +100,7 @@ impl Surface {
                 t,
             );
         }
-        self.scroll_indicator(cur, 6, t);
+        self.scroll_indicator(cur, 8, t);
     }
 
     pub(super) fn brightness_editor(&mut self, f: MaterialFrame, t: Theme) {
@@ -149,11 +157,7 @@ impl Surface {
                 190,
                 29,
                 14,
-                if f.cursor as usize == i {
-                    t.primary_container
-                } else {
-                    t.surface_high
-                },
+                Self::focus_fill(t.surface_high, f.cursor as usize == i),
             );
             self.text_center(178 + i as i32 * 32, label, 1, t.on_surface);
         }

@@ -283,25 +283,25 @@ mod tft {
             {
                 // RGB hardware test after ST7789 init, before normal boot drawing.
                 // Does not rely on Rhai, SD, Material UI, Wi-Fi or BLE.
-                esp_println::println!("ST7789 DIAG: BLK GPIO6 OFF for 1 s (screen should go dark)");
+                crate::watch_println!("ST7789 DIAG: BLK GPIO6 OFF for 1 s (screen should go dark)");
                 s.bl.set_low().map_err(|_| DisplayError::Bus)?;
                 delay.delay_ms(1000);
-                esp_println::println!("ST7789 DIAG: BLK GPIO6 ON");
+                crate::watch_println!("ST7789 DIAG: BLK GPIO6 ON");
                 s.bl.set_high().map_err(|_| DisplayError::Bus)?;
                 delay.delay_ms(300);
-                esp_println::println!(
+                crate::watch_println!(
                     "ST7789 DIAG: RED (GPIO1 SCK, GPIO2 MOSI, GPIO3 RST, GPIO4 DC, GPIO5 CS, GPIO6 BLK)"
                 );
                 s.clear(RED)?;
                 delay.delay_ms(750);
-                esp_println::println!("ST7789 DIAG: GREEN");
+                crate::watch_println!("ST7789 DIAG: GREEN");
                 s.clear(GREEN)?;
                 delay.delay_ms(750);
-                esp_println::println!("ST7789 DIAG: BLUE");
+                crate::watch_println!("ST7789 DIAG: BLUE");
                 s.clear(BLUE)?;
                 delay.delay_ms(750);
                 s.clear(BLACK)?;
-                esp_println::println!("ST7789 DIAG: complete; normal boot resumes");
+                crate::watch_println!("ST7789 DIAG: complete; normal boot resumes");
             }
             Ok(s)
         }

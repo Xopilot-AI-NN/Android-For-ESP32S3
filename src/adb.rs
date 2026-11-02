@@ -2,6 +2,8 @@
 //! TCP transport. The packet header matches Android's 24-byte ADB wire ABI.
 
 use core::fmt::Write;
+pub mod logcat;
+pub mod sync;
 
 pub const A_CNXN: u32 = u32::from_le_bytes(*b"CNXN");
 pub const A_OPEN: u32 = u32::from_le_bytes(*b"OPEN");
@@ -9,11 +11,9 @@ pub const A_OKAY: u32 = u32::from_le_bytes(*b"OKAY");
 pub const A_CLSE: u32 = u32::from_le_bytes(*b"CLSE");
 pub const A_WRTE: u32 = u32::from_le_bytes(*b"WRTE");
 
-pub const PRODUCT_NAME: &str = "aosp_wear";
-pub const PRODUCT_MODEL: &str = "AOSP Wear OS";
-pub const PRODUCT_DEVICE: &str = "aosp_wear";
-pub const PRODUCT_MANUFACTURER: &str = "AOSP";
-pub const HOSTNAME: &str = "android-aosp-wear";
+pub use crate::device_info::{
+    HOSTNAME, PRODUCT_DEVICE, PRODUCT_MANUFACTURER, PRODUCT_MODEL, PRODUCT_NAME,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Header {
@@ -70,7 +70,7 @@ fn prop(key: &str) -> Option<&'static str> {
         "ro.product.model" => Some(PRODUCT_MODEL),
         "ro.product.device" => Some(PRODUCT_DEVICE),
         "ro.product.manufacturer" => Some(PRODUCT_MANUFACTURER),
-        "ro.product.brand" => Some("Android"),
+        "ro.product.brand" => Some(crate::device_info::PRODUCT_BRAND),
         "ro.product.marketname" => Some(PRODUCT_MODEL),
         "ro.build.version.release" => Some("17"),
         "ro.build.version.sdk" => Some("37"),
@@ -78,11 +78,9 @@ fn prop(key: &str) -> Option<&'static str> {
         "ro.build.version.incremental" => Some("AOSP17QPR1.17.2.1"),
         "ro.build.type" => Some("userdebug"),
         "ro.build.tags" => Some("test-keys"),
-        "ro.build.flavor" => Some("aosp_wear-userdebug"),
+        "ro.build.flavor" => Some("aosp-userdebug"),
         "ro.build.display.id" => Some("AOSP Wear OS Android 17 QPR1"),
-        "ro.build.fingerprint" => {
-            Some("aosp/aosp_wear/aosp_wear:17/QPR1/17.2.1:userdebug/test-keys")
-        }
+        "ro.build.fingerprint" => Some("aosp/aosp/aosp:17/QPR1/17.2.1:userdebug/test-keys"),
         "ro.boot.dynamic_partitions" => Some("true"),
         "ro.treble.enabled" => Some("true"),
         "ro.aosp_esp32.runtime" => Some("rhai"),
@@ -98,7 +96,6 @@ fn prop(key: &str) -> Option<&'static str> {
         "ro.wear.platform" => Some("aosp"),
         "ro.aosp_esp32.version" => Some("17.2.1"),
         "net.hostname" => Some(HOSTNAME),
-        "persist.sys.device_name" => Some(PRODUCT_MODEL),
         _ => None,
     }
 }
@@ -141,8 +138,18 @@ const PROPS: &[&str] = &[
 
 /// Compact property summary used by the local ZADB bridge.
 #[cfg(feature = "pc-block-boot")]
-pub fn getprop() -> &'static str {
-    "ro.product.locale=ru-RU; persist.sys.locale=ru-RU; ro.product.name=aosp_wear; ro.product.model=AOSP Wear OS; ro.product.device=aosp_wear; ro.product.manufacturer=AOSP; ro.build.version.release=17; ro.build.version.sdk=37; ro.build.display.id=AOSP Wear OS Android 17 QPR1"
+pub fn getprop() -> heapless::String<512> {
+    let mut out = heapless::String::new();
+    let _ = write!(
+        out,
+        "ro.product.name={}; ro.product.model={}; ro.product.device={}; ro.product.manufacturer={}; persist.sys.device_name={}",
+        PRODUCT_NAME,
+        PRODUCT_MODEL,
+        PRODUCT_DEVICE,
+        PRODUCT_MANUFACTURER,
+        crate::device_name::snapshot()
+    );
+    out
 }
 
 pub fn services() -> &'static str {
@@ -168,6 +175,10 @@ pub fn shell_command<const N: usize>(service: &str, out: &mut heapless::String<N
 
     if cmd == "getprop" {
         for key in PROPS {
+            if *key == "persist.sys.device_name" {
+                let _ = writeln!(out, "[{}]: [{}]", key, crate::device_name::snapshot());
+                continue;
+            }
             if let Some(value) = prop(key) {
                 let _ = writeln!(out, "[{}]: [{}]", key, value);
             }
@@ -175,12 +186,31 @@ pub fn shell_command<const N: usize>(service: &str, out: &mut heapless::String<N
         return;
     }
     if let Some(key) = cmd.strip_prefix("getprop ") {
+        if key.trim() == "persist.sys.device_name" {
+            let _ = writeln!(out, "{}", crate::device_name::snapshot());
+            return;
+        }
         if let Some(value) = prop(key.trim()) {
             let _ = writeln!(out, "{}", value);
         }
         return;
     }
 
+    if let Some(value) = cmd.strip_prefix("settings put global device_name ") {
+        let value = value.trim();
+        let value = value
+            .strip_prefix('\'')
+            .and_then(|v| v.strip_suffix('\''))
+            .or_else(|| value.strip_prefix('"').and_then(|v| v.strip_suffix('"')))
+            .unwrap_or(value);
+        if !crate::device_name::set(value) {
+            let _ = writeln!(
+                out,
+                "invalid device name: use 1..32 UTF-8 bytes without control characters"
+            );
+        }
+        return;
+    }
     match cmd {
         "service list" => {
             for (idx, item) in services().split(' ').enumerate() {
@@ -294,7 +324,7 @@ pub fn shell_command<const N: usize>(service: &str, out: &mut heapless::String<N
             let _ = writeln!(out, "SwapBackend:    ZPager");
         }
         "settings get global device_name" | "settings get secure bluetooth_name" => {
-            let _ = writeln!(out, "{}", PRODUCT_MODEL);
+            let _ = writeln!(out, "{}", crate::device_name::snapshot());
         }
         "help" => {
             let _ = writeln!(out, "getprop, id, uname -a, hostname, pwd, whoami");

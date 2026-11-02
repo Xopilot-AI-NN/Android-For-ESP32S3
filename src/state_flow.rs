@@ -1,6 +1,26 @@
 //! Framework events and Activity-local page-out/page-in.
 use crate::*;
 
+/// Apply the validated ADB upload through the disk owner, then release SYNC ACK.
+pub(crate) fn apply_wallpaper_upload<D: BlockDevice, B: BootDisplay>(
+    dev: &D,
+    display: &mut B,
+    os: &mut runtime::Runtime,
+) {
+    if let Some(pixels) = wallpaper::take_upload() {
+        let ok = wallpaper::save(dev, &pixels);
+        if ok {
+            display.set_wallpaper(pixels);
+            os.use_uploaded_wallpaper();
+        }
+        wallpaper::complete_upload(ok);
+        println!(
+            "WallpaperManager: uploaded wallpaper {}",
+            if ok { "saved" } else { "save failed" }
+        );
+    }
+}
+
 pub(crate) fn set_runtime_flag(
     os: &mut runtime::Runtime,
     bit: u32,
@@ -30,7 +50,7 @@ pub(crate) fn dispatch_with_pager<D: BlockDevice>(
     let new_screen = (new_state & 0x1f) as u32;
     if new_screen != old_screen {
         // Log meaningful navigation, not every redraw or crown sample.
-        esp_println::println!(
+        crate::watch_println!(
             "I ({}) ActivityTaskManager: screen {} -> {}",
             esp_hal::time::Instant::now()
                 .duration_since_epoch()

@@ -176,10 +176,10 @@ pub fn load_system<SPI: SpiDevice<u8>, DELAY: DelayNs, PostInit: FnOnce(&SdCard<
     delay: DELAY,
     post_init: PostInit,
 ) -> Result<BootSession<SdCard<SPI, DELAY>>, AndroidBootError> {
-    esp_println::println!("microSD: startup=original embedded-sdmmc 0.10 / CRC on");
+    crate::watch_println!("microSD: startup=original embedded-sdmmc 0.10 / CRC on");
     let card = SdCard::new(spi, delay);
     let bytes = card.num_bytes().map_err(AndroidBootError::SdAcquire)?;
-    esp_println::println!(
+    crate::watch_println!(
         "microSD: initialized, {} MiB, {:?}",
         bytes / (1024 * 1024),
         card.get_card_type()

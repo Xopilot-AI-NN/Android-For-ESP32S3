@@ -4,6 +4,16 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+[[bin]]
+name = "render-watch"
+path = "../render_watch.rs"
+test = false
+
+[[bin]]
+name = "bench-render"
+path = "../bench_render.rs"
+test = false
+
 [features]
 default = ["rhai-runtime", "display-st7789", "radio-services"]
 rhai-runtime = []
@@ -17,6 +27,8 @@ sd-selftest = []
 radio-services = []
 
 [dependencies]
+critical-section = { version = "=1.2.0", features = ["std"] }
+miniz_oxide = { version = "=0.8.9", default-features = false, features = ["with-alloc"] }
 embedded-sdmmc-types = "=0.1.0"
 embedded-sdmmc = { version = "=0.10.0", default-features = false }
 embedded-hal = "=1.0.0"
