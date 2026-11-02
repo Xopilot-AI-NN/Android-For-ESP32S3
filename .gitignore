@@ -5,3 +5,6 @@ out/
 __pycache__/
 *.pyc
 *.img
+
+# Local restoration snapshots; maintained source is tracked normally.
+/.watch-*-backup-*/
