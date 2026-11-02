@@ -7,7 +7,8 @@ pub const CALCULATOR: u8 = 6;
 pub const FILES: u8 = 7;
 pub const SHARE: u8 = 8;
 pub const DIAGNOSTICS: u8 = 9;
-pub const COUNT: u8 = 11;
+pub const MEMORY: u8 = 11;
+pub const COUNT: u8 = 12;
 pub const LABELS: [&str; COUNT as usize] = [
     "Clock",
     "Media",
@@ -20,6 +21,7 @@ pub const LABELS: [&str; COUNT as usize] = [
     "Передача файлов",
     "Диагностика",
     "Flashlight",
+    "Память и swap",
 ];
 pub fn route(index: u8) -> Option<u8> {
     match index {
@@ -44,6 +46,7 @@ pub struct View {
     pub internal_kib: u32,
     pub script_us: u64,
     pub cache_hits: u32,
+    pub memory: crate::swap_config::Snapshot,
 }
 impl Default for View {
     fn default() -> Self {
@@ -57,6 +60,7 @@ impl Default for View {
             internal_kib: 0,
             script_us: 0,
             cache_hits: 0,
+            memory: crate::swap_config::Snapshot::default(),
         }
     }
 }
@@ -80,11 +84,18 @@ impl State {
         self.view.id = NONE;
     }
     pub fn open(&mut self, id: u8) {
-        if !(CALCULATOR..=DIAGNOSTICS).contains(&id) {
+        if !(CALCULATOR..=MEMORY).contains(&id) {
             return;
         }
         self.view.id = id;
-        self.view.cursor = 0;
+        self.view.cursor = if id == MEMORY {
+            crate::swap_config::CHOICES
+                .iter()
+                .position(|&m| m == crate::swap_config::snapshot().selected)
+                .unwrap_or(0) as u8
+        } else {
+            0
+        };
         self.refresh_text();
     }
     pub fn view(&self) -> View {
@@ -103,6 +114,7 @@ impl State {
             CALCULATOR => 20,
             FILES => i32::from(crate::wallpaper::builtin_count()),
             SHARE => 3,
+            MEMORY => 5,
             _ => 5,
         };
         match event {
@@ -119,6 +131,9 @@ impl State {
                 self.refresh_text();
             }
             RuntimeEvent::Press if self.view.id == FILES => return Some(self.view.cursor + 1),
+            RuntimeEvent::Press if self.view.id == MEMORY => crate::swap_config::request(
+                crate::swap_config::CHOICES[usize::from(self.view.cursor)],
+            ),
             _ => {}
         }
         None

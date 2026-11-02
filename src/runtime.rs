@@ -362,6 +362,9 @@ impl Runtime {
             m.device_name[..name.len()].copy_from_slice(name.as_bytes());
             m.resource_revision = crate::ui_resources::revision();
             m.app = self.native_app.view();
+            if m.app.id == crate::apps::MEMORY {
+                m.app.memory = crate::swap_config::snapshot();
+            }
             if m.app.id == crate::apps::DIAGNOSTICS {
                 m.app.uptime = Instant::now().duration_since_epoch().as_secs();
                 m.app.free_kib = (esp_alloc::HEAP.free() / 1024) as u32;
@@ -822,7 +825,7 @@ impl Runtime {
             match event {
                 RuntimeEvent::Rotate(delta) => {
                     self.state = (self.state & !0x1e0)
-                        | ((i32::from(cursor) + delta.rem_euclid(7)).rem_euclid(7) << 5)
+                        | ((i32::from(cursor) + delta.rem_euclid(8)).rem_euclid(8) << 5)
                 }
                 RuntimeEvent::Press => match cursor {
                     0 => self.state = (self.state & !0x1ff) | 16,
@@ -834,6 +837,7 @@ impl Runtime {
                         self.power_menu = true;
                         self.power_cursor = 0;
                     }
+                    6 => self.native_app.open(crate::apps::MEMORY),
                     _ => self.state = (self.state & !0x1ff) | 5 | (7 << 5),
                 },
                 RuntimeEvent::Back => self.state = (self.state & !0x1ff) | 5 | (7 << 5),

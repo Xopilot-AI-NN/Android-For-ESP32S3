@@ -11,15 +11,16 @@ impl Surface {
             "Имя устройства",
             "Диагностика",
             "Меню питания",
+            "Память и swap",
             "BACK",
         ];
-        let cur = f.cursor.min(6) as usize;
-        let start = cur.saturating_sub(1).min(4);
+        let cur = f.cursor.min(7) as usize;
+        let start = cur.saturating_sub(1).min(5);
         for row in 0..3 {
-            let i = (start + row).min(6);
+            let i = (start + row).min(7);
             self.wear_row(55 + row as i32 * 64, labels[i], i == cur, t);
         }
-        self.scroll_indicator(f.cursor, 7, t);
+        self.scroll_indicator(f.cursor, 8, t);
     }
 
     pub(super) fn device_name_page(&mut self, f: MaterialFrame, t: Theme) {

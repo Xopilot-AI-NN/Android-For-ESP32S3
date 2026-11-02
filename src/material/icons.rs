@@ -121,6 +121,7 @@ impl Surface {
             8 => Symbol::Share,
             9 => Symbol::Diagnostics,
             10 => Symbol::Flashlight,
+            11 => Symbol::Developer,
             _ => Symbol::Grid,
         };
         if let Some(atlas) = crate::ui_resources::icons(true) {

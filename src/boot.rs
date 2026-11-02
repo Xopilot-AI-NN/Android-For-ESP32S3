@@ -235,6 +235,7 @@ pub(crate) fn run() -> ! {
 
         println!("heap after Rhai startup:\n{}", esp_alloc::HEAP.stats());
         let pager = page_store::PageStore::open(session.block_device()).ok();
+        crate::swap_config::initialize(session.block_device(), pager.as_ref());
         restore_watch_config(&mut os, pager.as_ref(), session.block_device());
         if let Some(pixels) = wallpaper::load(session.block_device()) {
             display.set_wallpaper(pixels);
@@ -321,7 +322,7 @@ pub(crate) fn run() -> ! {
 
         loop {
             keys.set_sensitivity(os.crown_sensitivity());
-            apply_wallpaper_upload(session.block_device(), &mut display, &mut os);
+            service_disk_requests(session.block_device(), &mut display, &mut os);
             let events = keys.poll_runtime_events(os.crown_reversed());
             for event in events.into_iter().flatten() {
                 if let Ok(frame) = dispatch_with_pager(
@@ -870,6 +871,7 @@ pub(crate) fn run() -> ! {
 
         println!("heap after Rhai startup:\n{}", esp_alloc::HEAP.stats());
         let pager = page_store::PageStore::open(session.block_device()).ok();
+        crate::swap_config::initialize(session.block_device(), pager.as_ref());
         restore_watch_config(&mut os, pager.as_ref(), session.block_device());
         if let Some(pixels) = wallpaper::load(session.block_device()) {
             display.set_wallpaper(pixels);
@@ -952,7 +954,7 @@ pub(crate) fn run() -> ! {
         loop {
             #[cfg(not(feature = "pc-block-boot"))]
             display.pump();
-            apply_wallpaper_upload(session.block_device(), &mut display, &mut os);
+            service_disk_requests(session.block_device(), &mut display, &mut os);
             keys.set_sensitivity(os.crown_sensitivity());
             for event in keys
                 .poll_runtime_events(os.crown_reversed())

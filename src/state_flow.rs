@@ -1,12 +1,17 @@
 //! Framework events and Activity-local page-out/page-in.
 use crate::*;
 
-/// Apply the validated ADB upload through the disk owner, then release SYNC ACK.
-pub(crate) fn apply_wallpaper_upload<D: BlockDevice, B: BootDisplay>(
+/// Serialize requested swap configuration, graphic reads and ADB uploads.
+pub(crate) fn service_disk_requests<D: BlockDevice, B: BootDisplay>(
     dev: &D,
     display: &mut B,
     os: &mut runtime::Runtime,
 ) {
+    if crate::swap_config::service(dev) {
+        if let Ok(frame) = os.render() {
+            let _ = display.runtime(&frame);
+        }
+    }
     if crate::ui_resources::service(dev) {
         if let Ok(frame) = os.render() {
             let _ = display.runtime(&frame);

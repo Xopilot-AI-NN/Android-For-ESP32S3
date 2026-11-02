@@ -84,6 +84,48 @@ impl Surface {
                 }
                 self.text_center(253, "Колесо: инструкция 1–3", 1, t.on_surface_variant);
             }
+            MEMORY => {
+                let memory = a.memory;
+                let mut active = heapless::String::<64>::new();
+                let _ = write!(
+                    active,
+                    "Активно {} / выбрано {} МиБ",
+                    memory.active, memory.selected
+                );
+                self.text_center_raw(55, &active, 1, t.on_surface_variant);
+                let start = usize::from(a.cursor).saturating_sub(1).min(2);
+                for row in 0..3 {
+                    let index = start + row;
+                    let size = crate::swap_config::CHOICES[index];
+                    let mut label = heapless::String::<24>::new();
+                    let _ = write!(label, "{} МиБ", size);
+                    let value = if size > memory.maximum {
+                        "Недостаточно места"
+                    } else if size == memory.selected {
+                        "Выбрано"
+                    } else {
+                        "Нажмите для выбора"
+                    };
+                    self.info_card(
+                        68 + row as i32 * 58,
+                        &label,
+                        value,
+                        index == usize::from(a.cursor),
+                        t,
+                    );
+                }
+                self.scroll_indicator(a.cursor, 5, t);
+                let status = match memory.message {
+                    1 => "Сохранение…",
+                    2 => "Применится после перезагрузки",
+                    3 => "Недостаточно места на носителе",
+                    4 => "Нет подходящей области userdata",
+                    5 => "Не удалось сохранить настройку",
+                    _ => "ZPager: хранилище страниц",
+                };
+                self.text_center(249, status, 1, t.primary);
+                self.text_center(265, "Это не дополнительная RAM", 1, t.on_surface_variant);
+            }
             DIAGNOSTICS => {
                 let mut line = heapless::String::<64>::new();
                 match a.cursor {

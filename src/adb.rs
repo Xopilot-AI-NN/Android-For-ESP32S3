@@ -212,6 +212,14 @@ pub fn shell_command<const N: usize>(service: &str, out: &mut heapless::String<N
         return;
     }
     match cmd {
+        "dumpsys swap" => {
+            let s = crate::swap_config::snapshot();
+            let _ = writeln!(
+                out,
+                "ZPager backing: active={}MiB selected={}MiB maximum={}MiB status={} (not MMU RAM swap)",
+                s.active, s.selected, s.maximum, s.message
+            );
+        }
         "dumpsys meminfo" => {
             let _ = writeln!(
                 out,
