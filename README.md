@@ -70,7 +70,7 @@ The launcher has 30 px Material icons and 11 entries. Native utilities add a
 calculator, a built-in wallpaper browser, Wi-Fi/ADB transfer instructions,
 device diagnostics and a flashlight shortcut. The file browser covers the
 built-in PNG assets; it is not a general FAT/ext4 filesystem browser or Android
-Quick Share implementation. Grid pages contain up to six apps.
+Quick Share implementation. The three-column grid scrolls vertically by rows instead of horizontal pages.
 
 Open **Настройки → Система → Диагностика** for live heap/internal-memory,
 uptime, Wi-Fi/BLE state, last render timings and cached storage capacities.
@@ -163,3 +163,21 @@ AOSP_WEAR_SKIP_FIRMWARE_BUILD=1 ./flash sd
 ```
 
 Current implementation status and limitations: [DELIVERY.md](Bootloader/DELIVERY.md).
+
+## Expand userdata on a larger microSD
+
+Keep the 512 MiB installation image and expand only its last userdata partition
+on the actual card. System/swap sizes, partition starts and existing payloads
+are preserved; this does not create a filesystem or add more RAM.
+The Linux helper validates the watch GPT layout and refuses mounted/busy cards.
+Check the card path with lsblk; /dev/sdX below is a placeholder.
+
+```sh
+sudo python3 Firmware/tools/grow_userdata.py --device /dev/sdX
+sudo python3 Firmware/tools/grow_userdata.py --device /dev/sdX --apply --backup-dir Bootloader/out/gpt-backups
+```
+
+The first command is read-only. The second backs up affected GPT/MBR sectors,
+then grows userdata and relocates backup GPT. This is a metadata backup, not a
+full data backup. Rewriting the full installation image afterwards resets the
+partition layout. The helper does not format or resize a filesystem.
