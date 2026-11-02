@@ -145,13 +145,9 @@ pub fn write_partition<D: BlockDevice>(
         let mut block = Block {
             contents: [0u8; SECTOR_SIZE],
         };
+        dev.read(core::slice::from_mut(&mut block), BlockIdx(lba as u32))
+            .map_err(|_| GptError::Io)?;
         let n = core::cmp::min(SECTOR_SIZE - in_sector, data.len() - copied);
-        // A complete sector replaces every byte. Only partial-sector updates
-        // need a read to preserve neighboring data (e.g. A/B metadata).
-        if in_sector != 0 || n != SECTOR_SIZE {
-            dev.read(core::slice::from_mut(&mut block), BlockIdx(lba as u32))
-                .map_err(|_| GptError::Io)?;
-        }
         block.contents[in_sector..in_sector + n].copy_from_slice(&data[copied..copied + n]);
         dev.write(core::slice::from_ref(&block), BlockIdx(lba as u32))
             .map_err(|_| GptError::Io)?;

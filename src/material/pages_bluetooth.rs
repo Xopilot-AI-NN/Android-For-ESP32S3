@@ -57,31 +57,15 @@ impl Surface {
             3 => "Coral",
             _ => "Teal",
         };
-        let face_name = ["Цифровой", "Аналоговый", "Компликации"][f.watch_face.min(2) as usize];
-        let labels = [
-            "Brightness",
-            "COLOR THEME",
-            "Сон экрана",
-            "Циферблат",
-            "Обои",
-            "BACK",
-        ];
+        let labels = ["Brightness", "COLOR THEME", "Сон экрана", "BACK"];
         let values = [
             brightness.as_str(),
             theme_name,
             timeout.as_str(),
-            face_name,
-            if !f.wallpaper_available {
-                "Не загружены"
-            } else if f.wallpaper_enabled {
-                "Включены"
-            } else {
-                "Выключены"
-            },
             "К настройкам",
         ];
-        let cur = f.cursor.min(5);
-        let start = cur.saturating_sub(1).min(3);
+        let cur = f.cursor.min(3);
+        let start = cur.saturating_sub(1).min(1);
         for row in 0..3 {
             let index = (start + row) as usize;
             self.info_card(
@@ -92,7 +76,7 @@ impl Surface {
                 t,
             );
         }
-        self.scroll_indicator(cur, 6, t);
+        self.scroll_indicator(cur, 4, t);
     }
 
     pub(super) fn brightness_editor(&mut self, f: MaterialFrame, t: Theme) {

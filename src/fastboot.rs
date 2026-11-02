@@ -14,8 +14,7 @@ pub fn run<D: BootDisplay>(
     keys: &mut BootKeys<'_>,
     delay: &Delay,
 ) -> ! {
-    let mut selected = 0u8;
-    let _ = display.boot_menu(1, selected);
+    let _ = display.fastboot();
     write_hello(&mut tx);
     write_ui_fastboot(&mut tx);
     write_line(&mut tx, "INFOAOSP Wear OS fastboot+ ready");
@@ -23,6 +22,7 @@ pub fn run<D: BootDisplay>(
 
     let mut line = [0u8; 128];
     let mut len = 0usize;
+    let mut last_power = keys.power_pressed();
 
     loop {
         let mut buf = [0u8; 64];
@@ -38,7 +38,7 @@ pub fn run<D: BootDisplay>(
                         } else if cmd == "@ZWIN|PING" {
                             write_line(&mut tx, "@ZWUI|PONG|2");
                         } else if cmd == "@ZWIN|POWER" || cmd == "@ZWIN|NORMAL" {
-                            activate(selected);
+                            reboot(&mut tx, "desktop requested normal boot", delay);
                         } else {
                             handle_command(&mut tx, cmd, delay);
                         }
@@ -56,28 +56,20 @@ pub fn run<D: BootDisplay>(
             }
         }
 
-        let rotation = keys.poll_rotation();
-        if rotation != 0 {
-            selected = (i32::from(selected) + i32::from(rotation)).rem_euclid(4) as u8;
-            let _ = display.boot_menu(1, selected);
+        let power = keys.power_pressed();
+        if power && !last_power {
+            write_line(&mut tx, "INFOreboot requested by button");
+            write_line(&mut tx, "OKAY");
+            delay.delay_millis(80);
+            system::software_reset();
         }
-        if let Some(event) = keys.poll_button_event() {
-            match event {
-                crate::runtime::RuntimeEvent::Press => activate(selected),
-                crate::runtime::RuntimeEvent::Home | crate::runtime::RuntimeEvent::Back => {
-                    activate(0)
-                }
-                _ => {}
-            }
-        }
+        last_power = power;
         delay.delay_millis(10);
     }
 }
 
 fn handle_command(tx: &mut UsbSerialJtagTx<'_, Blocking>, cmd: &str, delay: &Delay) {
     match cmd {
-        "reboot-recovery" => crate::power::request(crate::runtime::SystemAction::Recovery),
-        "poweroff" => crate::power::request(crate::runtime::SystemAction::PowerOff),
         "help" => {
             for s in [
                 "INFOcommands: devices getvar:all getvar:version getvar:product",
@@ -197,14 +189,4 @@ fn display_pins() -> &'static str {
 #[cfg(feature = "display-st7789")]
 fn display_pins() -> &'static str {
     "INFOdisplay:st7789v3,bl=1,cs=2,dc=3,rst=4,mosi=5,sck=6"
-}
-
-fn activate(selected: u8) -> ! {
-    use crate::runtime::SystemAction;
-    crate::power::request(match selected {
-        1 => SystemAction::Fastboot,
-        2 => SystemAction::Recovery,
-        3 => SystemAction::PowerOff,
-        _ => SystemAction::Reboot,
-    })
 }

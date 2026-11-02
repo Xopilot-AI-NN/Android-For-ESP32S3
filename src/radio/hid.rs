@@ -49,9 +49,6 @@ impl RadioServices {
         }
     }
 
-    pub fn take_playback(&mut self) -> Option<crate::media::Playback> {
-        self.hid.as_mut().and_then(BleHost::take_playback)
-    }
     pub fn bluetooth_snapshot(&self) -> (u8, Option<u32>) {
         if self.hid_error {
             return (5, None);

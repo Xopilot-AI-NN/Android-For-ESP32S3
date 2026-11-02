@@ -37,11 +37,6 @@ SIMPLE_COMMANDS = {
 
 
 def build_command(args: argparse.Namespace) -> tuple[str, str]:
-    if args.command == "shell":
-        command = " ".join(args.words).encode("utf-8")
-        if not 1 <= len(command) <= 80:
-            raise SystemExit("shell command must be 1..80 UTF-8 bytes")
-        return "@ZADB|CMD|" + command.hex(), "shell"
     if args.command in SIMPLE_COMMANDS:
         return SIMPLE_COMMANDS[args.command]
     if args.command == "wifi-connect":
@@ -74,8 +69,6 @@ def main() -> int:
     sub = ap.add_subparsers(dest="command", required=True)
     for name in SIMPLE_COMMANDS:
         sub.add_parser(name)
-    shell = sub.add_parser("shell", help="bounded device commands; use shell help")
-    shell.add_argument("words", nargs="+")
     wifi_connect = sub.add_parser("wifi-connect")
     wifi_connect.add_argument("ssid")
     wifi_connect.add_argument("password", nargs="?", default="")

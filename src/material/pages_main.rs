@@ -9,7 +9,7 @@ impl Surface {
         self.text_center(238, "PRESS CROWN TO UNLOCK", 1, t.on_surface_variant);
     }
 
-    pub(super) fn complication_face(&mut self, f: MaterialFrame, t: Theme) {
+    pub(super) fn watchface(&mut self, f: MaterialFrame, t: Theme) {
         self.status_strip(f, t);
         let accent = t.primary;
         let muted = t.surface_high;
@@ -44,7 +44,7 @@ impl Surface {
             if f.alarm_enabled {
                 core::str::from_utf8(&alarm).unwrap_or("07:00")
             } else {
-                ""
+                "Off"
             },
             1,
             t.on_surface,
@@ -54,9 +54,9 @@ impl Surface {
             184,
             77,
             if f.wifi_link_state == 4 {
-                ""
+                "Online"
             } else if f.wifi {
-                ""
+                "Wi-Fi"
             } else {
                 "Off"
             },
@@ -88,7 +88,8 @@ impl Surface {
             1,
             t.on_surface,
         );
-
+        self.text_center_x(56, 259, "Timer", 1, t.on_surface_variant);
+        self.text_center_x(184, 259, "Stopwatch", 1, t.on_surface_variant);
         for i in 0..3 {
             self.circle(
                 110 + i * 10,
@@ -184,7 +185,7 @@ impl Surface {
             if index == 6 {
                 self.round_rect(
                     55,
-                    208,
+                    203,
                     130,
                     72,
                     32,
@@ -206,29 +207,20 @@ impl Surface {
         self.scroll_indicator(cur as u8, 7, t);
     }
 
-    pub(super) fn assistant_page(&mut self, f: MaterialFrame, t: Theme) {
+    pub(super) fn assistant_page(&mut self, _f: MaterialFrame, t: Theme) {
         // Assistant shell is ready for the future phone companion.  The UI is
         // intentionally service-neutral: it mirrors the Wear assistant surface
         // without claiming a Google/Gemini backend that does not exist here.
         self.ring(120, 116, 70, 2, t.surface_high);
         self.icon_assistant(120, 91, t.primary);
         self.text_center(126, "ASK ASSISTANT", 2, t.on_surface);
-        self.text_center(
-            158,
-            if f.bt_status == 3 {
-                "Ассистент устройства"
-            } else {
-                "Подключите устройство"
-            },
-            1,
-            t.on_surface_variant,
-        );
+        self.text_center(158, "COMPANION APP REQUIRED", 1, t.on_surface_variant);
         self.line(79, 183, 101, 183, 3, rgb565(80, 190, 255));
         self.line(101, 183, 123, 183, 3, rgb565(126, 225, 165));
         self.line(123, 183, 145, 183, 3, rgb565(224, 187, 255));
         self.line(145, 183, 167, 183, 3, rgb565(255, 184, 161));
         self.round_rect(51, 224, 138, 38, 19, t.surface_high);
-        self.text_center(236, "Нажмите для запуска", 1, t.on_surface_variant);
+        self.text_center(236, "PRESS TO RETURN", 1, t.on_surface_variant);
     }
 
     pub(super) fn notifications(&mut self, f: MaterialFrame, t: Theme) {
@@ -526,49 +518,10 @@ impl Surface {
                 t.surface_high
             },
         );
-        self.symbol(
-            if f.media_playing {
-                Symbol::Pause
-            } else {
-                Symbol::Play
-            },
-            120,
-            151,
-            ink,
-        );
-        if f.media_known {
-            self.round_rect(36, 198, 168, 4, 2, t.surface_high);
-            self.round_rect(
-                36,
-                198,
-                (168 * i32::from(f.media_progress) / 1000).max(2),
-                4,
-                2,
-                t.primary,
-            );
-            if f.media_playing {
-                for i in 0..3 {
-                    let h = 3 + ((u16::from(f.animation_phase) / 20 + i * 3) % 7) as i32;
-                    self.round_rect(111 + i as i32 * 7, 230 - h, 3, h, 1, t.primary);
-                }
-            }
-        }
+        self.symbol(Symbol::Play, 120, 151, ink);
         // HID reports do not contain playback state: Play/Pause is one toggle,
         // and the watch must not fabricate a paused/playing status or metadata.
-        self.text_center(
-            208,
-            if f.media_known {
-                if f.media_playing {
-                    "Воспроизведение"
-                } else {
-                    "Пауза"
-                }
-            } else {
-                "Play / pause"
-            },
-            1,
-            t.on_surface_variant,
-        );
+        self.text_center(208, "Play / pause", 1, t.on_surface_variant);
         for (i, x, label) in [(3, 43, "Vol -"), (4, 120, "Vol +"), (5, 197, "Back")] {
             self.round_rect(
                 x - 33,
@@ -585,36 +538,6 @@ impl Surface {
                 1,
                 if f.cursor == i { ink } else { t.on_surface },
             );
-        }
-    }
-
-    pub(super) fn stopwatch_page(&mut self, f: MaterialFrame, t: Theme) {
-        self.photo_header(f, "Stopwatch", t);
-        let time = Self::mmss_text(f.stopwatch_secs);
-        self.clock_text(99, &time, t.primary);
-        let labels = [
-            if f.stopwatch_running {
-                "Пауза"
-            } else {
-                "Пуск"
-            },
-            "Сброс",
-            "BACK",
-        ];
-        for (i, label) in labels.iter().enumerate() {
-            self.round_rect(
-                32,
-                178 + i as i32 * 31,
-                176,
-                28,
-                14,
-                if f.cursor as usize == i {
-                    t.primary_container
-                } else {
-                    t.surface_high
-                },
-            );
-            self.text_center(187 + i as i32 * 31, label, 1, t.on_surface);
         }
     }
 
@@ -695,10 +618,6 @@ impl Surface {
     }
 
     pub(super) fn clock_tools(&mut self, f: MaterialFrame, t: Theme) {
-        if f.timer_editor == 3 {
-            self.stopwatch_page(f, t);
-            return;
-        }
         if f.timer_editor != 0 {
             self.timer_presets(f, t);
             return;

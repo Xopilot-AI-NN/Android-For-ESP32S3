@@ -1,21 +1,27 @@
-//! Constant GPIO backlight. No PWM is applied to the user's panel.
-//! Intermediate brightness is applied to RGB pixels by the display driver.
+//! Hardware PWM for the ST7789 BLK pin (GPIO6).
 use core::convert::Infallible;
 use embedded_hal::digital::{ErrorType, OutputPin};
-use esp_hal::gpio::Output;
-pub struct DcBacklight<'a> {
-    pin: Output<'a>,
-    on: bool,
+use esp_hal::ledc::{
+    LowSpeed,
+    channel::{Channel, ChannelIFace},
+};
+
+pub struct PwmBacklight<'a> {
+    channel: Channel<'a, LowSpeed>,
+    last: Option<u8>,
 }
-impl<'a> DcBacklight<'a> {
-    pub fn new(pin: Output<'a>) -> Self {
-        Self { pin, on: false }
+impl<'a> PwmBacklight<'a> {
+    pub fn new(channel: Channel<'a, LowSpeed>) -> Self {
+        Self {
+            channel,
+            last: Some(0),
+        }
     }
 }
-impl ErrorType for DcBacklight<'_> {
+impl ErrorType for PwmBacklight<'_> {
     type Error = Infallible;
 }
-impl OutputPin for DcBacklight<'_> {
+impl OutputPin for PwmBacklight<'_> {
     fn set_low(&mut self) -> Result<(), Infallible> {
         self.set_brightness(0)
     }
@@ -23,20 +29,15 @@ impl OutputPin for DcBacklight<'_> {
         self.set_brightness(100)
     }
 }
-impl crate::display::Backlight for DcBacklight<'_> {
-    fn software_dimming(&self) -> bool {
-        true
-    }
+impl crate::display::Backlight for PwmBacklight<'_> {
     fn set_brightness(&mut self, percent: u8) -> Result<(), Infallible> {
-        let on = percent != 0;
-        if on != self.on {
-            if on {
-                self.pin.set_high();
-            } else {
-                self.pin.set_low();
-            }
-            self.on = on;
+        // Configured once at boot; the bounded duty is always valid.
+        let percent = percent.min(100);
+        if self.last == Some(percent) {
+            return Ok(());
         }
+        self.channel.set_duty(percent).expect("configured PWM duty");
+        self.last = Some(percent);
         Ok(())
     }
 }

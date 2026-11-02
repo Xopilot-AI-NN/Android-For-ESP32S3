@@ -28,7 +28,7 @@ pub(crate) fn restore_watch_config<D: BlockDevice>(
     esp_hal::rng::Rng::new().read(&mut entropy);
     os.set_security_storage(pager.is_some(), entropy);
     if let Some(pager) = pager {
-        let mut preferences = [0; 8];
+        let mut preferences = [0; 4];
         if let Ok(n) = pager.read(dev, 71, 0x5750_5246, &mut preferences) {
             os.restore_preferences(&preferences[..n]);
         }
@@ -44,7 +44,7 @@ pub(crate) fn restore_watch_config<D: BlockDevice>(
 pub(crate) fn save_watch_preferences<D: BlockDevice>(
     pager: &page_store::PageStore,
     dev: &D,
-    bytes: &[u8; 8],
+    bytes: &[u8; 4],
 ) -> bool {
     pager.write(dev, 71, 0x5750_5246, bytes).is_ok()
 }

@@ -62,32 +62,6 @@ pub fn local_minutes() -> i32 {
     (utc_minutes + timezone_minutes()).rem_euclid(1440)
 }
 
-/// Seconds follow the same RTC base as minutes, including manual corrections.
-pub fn local_seconds() -> u8 {
-    (if valid() {
-        unix_seconds_raw()
-    } else {
-        uptime_seconds()
-    })
-    .rem_euclid(60) as u8
-}
-/// Real calendar date is shown only when an epoch source supplied it.
-pub fn calendar() -> Option<(u8, u8)> {
-    let unix = unix_seconds_raw();
-    if !valid() || unix < 1_000_000_000 {
-        return None;
-    }
-    let z = (unix + timezone_minutes() * 60).div_euclid(86400) + 719468;
-    let era = z.div_euclid(146097);
-    let doe = z - era * 146097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = mp + if mp < 10 { 3 } else { -9 };
-    Some((day as u8, month as u8))
-}
-
 pub fn set_local_minutes(minutes: u16) {
     let target_local = (minutes % 1440) as i32 * 60;
     let tz = timezone_minutes() * 60;

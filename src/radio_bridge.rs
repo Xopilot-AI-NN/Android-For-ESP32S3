@@ -41,9 +41,6 @@ pub(crate) fn service_radio_runtime<D: BlockDevice>(
                     }
                 }
             }
-            if let Some(playback) = radios.take_playback() {
-                os.set_playback(playback);
-            }
             os.set_bluetooth_status(status, pin)
         }
         #[cfg(not(feature = "ble-hid"))]

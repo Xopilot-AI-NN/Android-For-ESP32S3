@@ -96,11 +96,7 @@ impl Surface {
         if alpha == 0 || x < 0 || y < 0 || x >= WIDTH as i32 || y >= HEIGHT as i32 {
             return;
         }
-        if alpha >= 15 {
-            self.pixels[y as usize * WIDTH + x as usize] = color;
-            return;
-        }
-        let alpha = u32::from(alpha);
+        let alpha = u32::from(alpha.min(15));
         let bg = u32::from(self.pixels[y as usize * WIDTH + x as usize]);
         let blend = |shift: u32, mask: u32| -> u16 {
             (((((u32::from(color) >> shift) & mask) * alpha
@@ -144,57 +140,34 @@ impl Surface {
             for dx in 0..r {
                 let ox = r - dx;
                 let oy = r - dy;
-                let alpha = Self::circle_coverage(ox, oy, r);
-                self.coverage_pixel(x + dx, y + dy, c, alpha);
-                self.coverage_pixel(x + w - 1 - dx, y + dy, c, alpha);
-                self.coverage_pixel(x + dx, y + h - 1 - dy, c, alpha);
-                self.coverage_pixel(x + w - 1 - dx, y + h - 1 - dy, c, alpha);
+                if ox * ox + oy * oy <= r * r {
+                    self.pixel(x + dx, y + dy, c);
+                    self.pixel(x + w - 1 - dx, y + dy, c);
+                    self.pixel(x + dx, y + h - 1 - dy, c);
+                    self.pixel(x + w - 1 - dx, y + h - 1 - dy, c);
+                }
             }
         }
     }
 
-    fn circle_coverage(x: i32, y: i32, r: i32) -> u8 {
-        if r <= 0 {
-            return if x == 0 && y == 0 { 15 } else { 0 };
-        }
-        let d = x * x + y * y;
-        if d <= (r - 1) * (r - 1) {
-            return 15;
-        }
-        if d >= (r + 1) * (r + 1) {
-            return 0;
-        }
-        let mut inside = 0;
-        for dx in [-3, -1, 1, 3] {
-            for dy in [-3, -1, 1, 3] {
-                let sx = x * 8 + dx;
-                let sy = y * 8 + dy;
-                if sx * sx + sy * sy <= r * r * 64 {
-                    inside += 1;
-                }
-            }
-        }
-        ((inside * 15 + 8) / 16) as u8
-    }
     pub(super) fn circle(&mut self, cx: i32, cy: i32, r: i32, c: u16) {
         for y in -r..=r {
             for x in -r..=r {
-                let a = Self::circle_coverage(x, y, r);
-                self.coverage_pixel(cx + x, cy + y, c, a);
+                if x * x + y * y <= r * r {
+                    self.pixel(cx + x, cy + y, c);
+                }
             }
         }
     }
+
     pub(super) fn ring(&mut self, cx: i32, cy: i32, r: i32, thickness: i32, c: u16) {
         let inner = (r - thickness).max(0);
         for y in -r..=r {
             for x in -r..=r {
-                let outer = Self::circle_coverage(x, y, r);
-                let hole = if inner > 0 {
-                    Self::circle_coverage(x, y, inner)
-                } else {
-                    0
-                };
-                self.coverage_pixel(cx + x, cy + y, c, outer.saturating_sub(hole));
+                let d = x * x + y * y;
+                if d <= r * r && d >= inner * inner {
+                    self.pixel(cx + x, cy + y, c);
+                }
             }
         }
     }

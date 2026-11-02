@@ -34,7 +34,6 @@ const REPORT_MAP: [u8; 23] = [
 #[gatt_server]
 struct Server {
     hid: MediaHid,
-    companion: Companion,
 }
 
 #[gatt_service(uuid = "1812")]
@@ -50,13 +49,6 @@ struct MediaHid {
     report: [u8; 2],
 }
 
-// Optional custom service; it does not impersonate Google Wear OS services.
-#[gatt_service(uuid = "3c7e0001-3b14-4a80-9d3f-178b14740001")]
-struct Companion {
-    #[characteristic(uuid = "3c7e0002-3b14-4a80-9d3f-178b14740001", write)]
-    playback: [u8; 20],
-}
-
 #[derive(Default)]
 struct State {
     enabled: bool,
@@ -66,7 +58,6 @@ struct State {
     disconnect: bool,
     pair_until: u64,
     media: Vec<u16, 8>,
-    playback: Option<crate::media::Playback>,
     subscribed: bool,
     bonds: Vec<BondInformation, 4>,
     bonds_dirty: bool,
@@ -185,14 +176,11 @@ impl BleHost {
         // Consumer Control usage IDs: Play/Pause, Next, Previous, Stop, Mute, Volume +/-.
         if !matches!(
             usage,
-            0x00CF | 0x00CD | 0x00B5 | 0x00B6 | 0x00B7 | 0x00E2 | 0x00E9 | 0x00EA
+            0x00CD | 0x00B5 | 0x00B6 | 0x00B7 | 0x00E2 | 0x00E9 | 0x00EA
         ) {
             return false;
         }
         s.media.push(usage).is_ok()
-    }
-    pub fn take_playback(&mut self) -> Option<crate::media::Playback> {
-        self.state.borrow_mut().playback.take()
     }
     pub fn snapshot(&self) -> (u8, Option<u32>) {
         let s = self.state.borrow();
@@ -320,7 +308,6 @@ async fn run(connector: BleConnector<'static>, mut address: [u8; 6], shared: Rc<
                 s.disconnect = false;
                 s.pin = None;
                 s.media.clear();
-                s.playback = None;
                 s.subscribed = false;
             }
             let pairable = now_ms() < shared.borrow().pair_until;
@@ -416,17 +403,6 @@ async fn run(connector: BleConnector<'static>, mut address: [u8; 6], shared: Rc<
                                 .security_level()
                                 .map(|s| s.encrypted())
                                 .unwrap_or(false);
-                            if encrypted {
-                                if let GattEvent::Write(e) = &event {
-                                    if e.handle() == server.companion.playback.handle {
-                                        if let Some(p) =
-                                            crate::media::Playback::decode(e.data(), now_ms())
-                                        {
-                                            shared.borrow_mut().playback = Some(p);
-                                        }
-                                    }
-                                }
-                            }
                             let subscription = match &event {
                                 GattEvent::Write(e)
                                     if Some(e.handle()) == server.hid.report.cccd_handle

@@ -21,14 +21,9 @@ display-diagnostic = ["display-st7789"]
 # Independent GPIO SPI bypass for ST7789V3, OFF by default.
 display-software-spi = ["display-st7789"]
 pc-block-boot = []
-# Full-duplex GPIO fallback for diagnosing the SD hardware SPI path.
-sd-software-spi = []
-# Opt-in command-level diagnostic startup, independent of the normal driver.
-sd-checked-startup = []
 radio-services = ["dep:esp-radio", "dep:esp-rtos", "dep:static_cell", "dep:smoltcp"]
 
 [dependencies]
-embedded-sdmmc-types = "=0.1.0"
 trouble-host = { version = "=0.5.1", default-features = false, features = ["peripheral", "gatt", "derive", "default-packet-pool", "security"], optional = true }
 embassy-futures = { version = "0.1", optional = true }
 embassy-sync = { version = "0.7", optional = true }

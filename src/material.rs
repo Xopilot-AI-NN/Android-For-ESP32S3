@@ -64,20 +64,6 @@ pub struct MaterialFrame {
     pub lock_timeout_secs: u16,
     pub display_sleep: bool,
     pub timeout_is_display: bool,
-    pub display_brightness: Option<u8>,
-    pub transition_alpha: u8,
-    pub animation_phase: u8,
-    pub watch_face: u8,
-    pub time_seconds: u8,
-    pub date_day: u8,
-    pub date_month: u8,
-    pub stopwatch_running: bool,
-    pub power_menu: bool,
-    pub wallpaper_enabled: bool,
-    pub wallpaper_available: bool,
-    pub media_known: bool,
-    pub media_playing: bool,
-    pub media_progress: u16,
 }
 
 impl MaterialFrame {
@@ -157,20 +143,6 @@ impl MaterialFrame {
             lock_timeout_secs: 30,
             display_sleep: false,
             timeout_is_display: false,
-            display_brightness: None,
-            transition_alpha: 255,
-            animation_phase: 0,
-            watch_face: 0,
-            time_seconds: 0,
-            date_day: 0,
-            date_month: 0,
-            stopwatch_running: false,
-            power_menu: false,
-            wallpaper_enabled: true,
-            wallpaper_available: false,
-            media_known: false,
-            media_playing: false,
-            media_progress: 0,
         })
     }
 
@@ -321,23 +293,16 @@ fn theme(index: u8) -> Theme {
 
 pub struct Surface {
     pixels: Vec<u16>,
-    wallpaper: Option<Vec<u16>>,
 }
 
 impl Surface {
     pub fn new() -> Self {
         Self {
             pixels: vec![0; WIDTH * HEIGHT],
-            wallpaper: None,
         }
     }
     pub fn pixels(&self) -> &[u16] {
         &self.pixels
-    }
-    pub fn set_wallpaper(&mut self, pixels: Vec<u16>) {
-        if pixels.len() == WIDTH * HEIGHT {
-            self.wallpaper = Some(pixels);
-        }
     }
 
     pub fn render(&mut self, frame: MaterialFrame) -> Rect {
@@ -350,16 +315,6 @@ impl Surface {
             t.outline = 0xffff;
         }
         self.fill_rect(0, 0, WIDTH as i32, HEIGHT as i32, t.bg);
-        if frame.screen == 1 && frame.wallpaper_enabled {
-            if let Some(wallpaper) = self.wallpaper.as_ref() {
-                self.pixels.copy_from_slice(wallpaper);
-                self.scale_pixels(40);
-            }
-        }
-        if frame.power_menu {
-            self.power_page(frame, t);
-            return Rect::FULL;
-        }
         if frame.security_view != 0 && (frame.screen == 0 || frame.screen == 20) {
             self.pin_entry(frame, t);
             if frame.clock_alert != 0 {
@@ -476,13 +431,3 @@ mod theme_tests {
         }
     }
 }
-#[path = "material/compositor.rs"]
-mod compositor;
-#[path = "material/dial.rs"]
-mod dial;
-#[path = "material/frame_key.rs"]
-mod frame_key;
-#[path = "material/pages_boot.rs"]
-mod pages_boot;
-#[path = "material/pages_faces.rs"]
-mod pages_faces;

@@ -84,7 +84,6 @@ impl<'d> BootKeys<'d> {
                 ButtonAction::Press => crate::runtime::RuntimeEvent::Press,
                 ButtonAction::Back => crate::runtime::RuntimeEvent::Back,
                 ButtonAction::Home => crate::runtime::RuntimeEvent::Home,
-                ButtonAction::Power => crate::runtime::RuntimeEvent::Power,
             })
     }
 
