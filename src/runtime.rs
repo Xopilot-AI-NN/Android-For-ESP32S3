@@ -194,7 +194,8 @@ pub struct Runtime {
     high_contrast: bool,
     last_input_ms: u64,
     timeout_parent: u8,
-    transition_started_ms: u64,
+    transition_started_ms: Option<u64>,
+    transition_screen: u8,
     watch_face: u8,
     wallpaper_enabled: bool,
     has_wallpaper: bool,
@@ -313,7 +314,8 @@ impl Runtime {
             high_contrast: false,
             last_input_ms: Instant::now().duration_since_epoch().as_millis() as u64,
             timeout_parent: 20,
-            transition_started_ms: 0,
+            transition_started_ms: None,
+            transition_screen: (state & 31) as u8,
             watch_face: 0,
             wallpaper_enabled: true,
             has_wallpaper: false,
@@ -357,6 +359,12 @@ impl Runtime {
         } else {
             self.flashlight_since_secs = None;
         }
+        let screen = (self.state & 31) as u8;
+        if screen != self.transition_screen {
+            self.transition_screen = screen;
+            self.transition_started_ms =
+                Some(Instant::now().duration_since_epoch().as_millis() as u64);
+        }
         let options = CallFnOptions::new().eval_ast(false).rewind_scope(true);
         let raw = self
             .engine
@@ -398,8 +406,10 @@ impl Runtime {
             let now_ms = Instant::now().duration_since_epoch().as_millis() as u64;
             m.display_brightness = Some(self.idle_brightness(now_ms));
             m.display_sleep = m.display_brightness == Some(0);
-            m.transition_alpha =
-                (now_ms.saturating_sub(self.transition_started_ms) * 255 / 180).min(255) as u8;
+            m.transition_alpha = self
+                .transition_started_ms
+                .map(|start| (now_ms.saturating_sub(start) * 255 / 180).min(255) as u8)
+                .unwrap_or(255);
             m.watch_face = self.watch_face;
             m.wallpaper_enabled = self.wallpaper_enabled;
             m.wallpaper_available = self.has_wallpaper;
@@ -660,7 +670,9 @@ impl Runtime {
         if event != RuntimeEvent::Sync {
             let asleep = self.display_should_sleep(now_ms);
             self.last_input_ms = now_ms;
-            self.transition_started_ms = now_ms;
+            // Crown movement is direct manipulation. Do not hide each step
+            // behind a new fade, and finish any page fade when input arrives.
+            self.transition_started_ms = None;
             self.security.activity(now);
             if asleep {
                 return self.render();

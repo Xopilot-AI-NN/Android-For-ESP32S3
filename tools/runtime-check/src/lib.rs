@@ -2,6 +2,8 @@
 //! only the ESP monotonic counter. Run with one test thread (shared clock state).
 #![allow(dead_code)]
 extern crate alloc;
+#[path = "../../../src/desktop_tx.rs"]
+mod desktop_tx;
 extern crate self as esp_hal;
 extern crate self as esp_println;
 pub use std::println;
@@ -14,11 +16,14 @@ pub mod time {
             Self
         }
         pub fn duration_since_epoch(&self) -> std::time::Duration {
-            std::time::Duration::from_secs(NOW.load(Ordering::Relaxed))
+            std::time::Duration::from_millis(NOW.load(Ordering::Relaxed))
         }
     }
     pub fn set(seconds: u64) {
-        NOW.store(seconds, Ordering::Relaxed);
+        set_ms(seconds * 1000);
+    }
+    pub fn set_ms(milliseconds: u64) {
+        NOW.store(milliseconds, Ordering::Relaxed);
     }
 }
 #[path = "../../../src/input/button.rs"]
@@ -99,6 +104,26 @@ mod tests {
             panic!("not Material");
         };
         f
+    }
+    #[test]
+    fn continuous_crown_steps_are_visible_immediately_while_page_changes_still_fade() {
+        time::set(100);
+        let mut os = start();
+        os.replace_state(5 | (70 << 9)).unwrap();
+        time::set_ms(100_100);
+        let alpha = frame(&mut os).transition_alpha;
+        assert!(alpha > 0 && alpha < 255, "page transition still animates");
+        for ms in [100_120, 100_160, 100_200, 100_240] {
+            time::set_ms(ms);
+            let before = os.state();
+            let RuntimeFrame::Material(f) = os.dispatch(RuntimeEvent::Rotate(1)).unwrap() else { panic!(); };
+            assert_ne!(os.state(), before);
+            assert_eq!(f.transition_alpha, 255, "each crown step must reach the panel immediately");
+        }
+        os.dispatch(RuntimeEvent::Home).unwrap();
+        assert_eq!(frame(&mut os).transition_alpha, 0);
+        time::set_ms(100_440);
+        assert_eq!(frame(&mut os).transition_alpha, 255);
     }
     #[test]
     fn navigation_media_pairing_and_clocks() {
