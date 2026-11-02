@@ -21,26 +21,9 @@ impl Surface {
     }
 
     pub(super) fn device_name_page(&mut self, f: MaterialFrame, t: Theme) {
-        self.title("Имя устройства", t);
         let draft = core::str::from_utf8(&f.name_draft[..usize::from(f.name_draft_len).min(32)])
             .unwrap_or("");
-        self.round_rect(12, 65, 216, 66, 25, t.surface_high);
-        self.text_center_raw(88, draft, 1, t.on_surface);
-        let key = usize::from(f.name_key);
-        let label = if key < crate::device_name::KEYS.len() {
-            let ch = &crate::device_name::KEYS[key..key + 1];
-            if ch == " " { "Пробел" } else { ch }
-        } else if key == crate::device_name::KEYS.len() {
-            "Удалить"
-        } else if key == crate::device_name::KEYS.len() + 1 {
-            "Сохранить"
-        } else {
-            "Отмена"
-        };
-        self.round_rect(30, 151, 180, 62, 31, t.primary);
-        self.text_center_raw(173, label, 2, t.on_primary);
-        self.text_center_raw(232, "Колёсико — выбрать", 1, t.on_surface_variant);
-        self.text_center_raw(252, "Нажатие — добавить", 1, t.on_surface_variant);
+        self.text_keyboard(f, t, "Имя устройства", draft, "OK");
     }
 
     pub(super) fn date_time(&mut self, f: MaterialFrame, t: Theme) {

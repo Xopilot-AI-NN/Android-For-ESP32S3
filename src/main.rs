@@ -100,6 +100,7 @@ mod power;
 #[cfg(feature = "radio-services")]
 mod radio_bridge;
 mod state_flow;
+mod text_input;
 
 #[main]
 fn main() -> ! {

@@ -26,33 +26,6 @@ use crate::watch_println as println;
 #[cfg(feature = "rhai-runtime")]
 use rhai::{AST, CallFnOptions, Engine, ImmutableString, Scope};
 
-// Compact full QWERTY keyboard used by the crown-only Wi-Fi password editor.
-// The visible rows mirror a phone/watch keyboard instead of the old single-
-// character carousel.  Password bytes never leave this Runtime object.
-const WIFI_KB_ALPHA: &[u8] = b"qwertyuiopasdfghjklzxcvbnm";
-// Together these two symbol pages plus SPACE cover the complete printable
-// ASCII set used by WPA/WPA2 passphrases (0x20..=0x7e).
-const WIFI_KB_SYMBOLS_1: &[u8] = b"1234567890!@#$%^&*()_+-=[]";
-const WIFI_KB_SYMBOLS_2: &[u8] = b"{}.,:;?'\"/\\|<>`~";
-const WIFI_KB_LOWER: u8 = 0;
-const WIFI_KB_UPPER: u8 = 1;
-const WIFI_KB_SYMBOL_1: u8 = 2;
-const WIFI_KB_SYMBOL_2: u8 = 3;
-
-fn wifi_keyboard_chars(page: u8) -> &'static [u8] {
-    match page {
-        WIFI_KB_SYMBOL_1 => WIFI_KB_SYMBOLS_1,
-        WIFI_KB_SYMBOL_2 => WIFI_KB_SYMBOLS_2,
-        _ => WIFI_KB_ALPHA,
-    }
-}
-fn wifi_keyboard_char_count(page: u8) -> usize {
-    wifi_keyboard_chars(page).len()
-}
-fn wifi_keyboard_total(page: u8) -> usize {
-    wifi_keyboard_char_count(page) + 6
-}
-
 #[derive(Clone, Debug)]
 struct WifiUiAp {
     ssid: HString<32>,
@@ -64,8 +37,8 @@ struct WifiUi {
     aps: HVec<WifiUiAp, 10>,
     selected: u8,
     password: HString<64>,
-    editor_char: u8,
-    keyboard_page: u8,
+    keyboard: crate::text_input::Keyboard,
+    keyboard_error: u8,
     pending_scan: bool,
     pending_connect: bool,
     link_state: u8,
@@ -76,8 +49,8 @@ impl WifiUi {
             aps: HVec::new(),
             selected: 0,
             password: HString::new(),
-            editor_char: 0,
-            keyboard_page: WIFI_KB_LOWER,
+            keyboard: crate::text_input::Keyboard::english(),
+            keyboard_error: 0,
             pending_scan: false,
             pending_connect: false,
             link_state: 0,
@@ -381,7 +354,10 @@ impl Runtime {
             m.device_name_len = name.len() as u8;
             m.device_name[..name.len()].copy_from_slice(name.as_bytes());
             m.name_editing = self.name_editor.active;
-            m.name_key = self.name_editor.key;
+            if m.name_editing {
+                m.keyboard = self.name_editor.keyboard.view;
+                m.keyboard_error = self.name_editor.error;
+            }
             m.name_draft_len = self.name_editor.draft.len() as u8;
             m.name_draft[..self.name_editor.draft.len()]
                 .copy_from_slice(self.name_editor.draft.as_bytes());
@@ -656,13 +632,24 @@ impl Runtime {
         m.wifi_password_preview = [0; 16];
         m.wifi_password_preview_len = 0;
         let password = self.wifi_ui.password.as_bytes();
-        let start = password.len().saturating_sub(16);
+        let mut start = password.len().saturating_sub(16);
+        while !self.wifi_ui.password.is_char_boundary(start) {
+            start += 1;
+        }
         let tail = &password[start..];
         m.wifi_password_preview[..tail.len()].copy_from_slice(tail);
         m.wifi_password_preview_len = tail.len() as u8;
         // High two bits carry the keyboard page; low six bits are the selected key.
         // This keeps the viewer protocol compatible while allowing a real full keyboard.
-        m.wifi_editor_char = (self.wifi_ui.keyboard_page << 6) | (self.wifi_ui.editor_char & 0x3f);
+        let keyboard = self.wifi_ui.keyboard.view;
+        let legacy_page = if keyboard.page == 0 {
+            u8::from(keyboard.upper)
+        } else {
+            keyboard.page + 1
+        };
+        m.wifi_editor_char = (legacy_page << 6) | (keyboard.focus & 0x3f);
+        m.keyboard = keyboard;
+        m.keyboard_error = self.wifi_ui.keyboard_error;
         m.wifi_link_state = self.wifi_ui.link_state;
     }
 
@@ -755,6 +742,7 @@ impl Runtime {
                         self.state = (self.state & !0x1ff) | 1;
                     }
                 }
+                RuntimeEvent::Swipe(2) => self.name_editor.active = false,
                 _ => {}
             }
             return self.render();
@@ -1114,8 +1102,8 @@ impl Runtime {
                     if cur < self.wifi_ui.aps.len() {
                         self.wifi_ui.selected = cur as u8;
                         self.wifi_ui.password.clear();
-                        self.wifi_ui.editor_char = 0;
-                        self.wifi_ui.keyboard_page = WIFI_KB_LOWER;
+                        self.wifi_ui.keyboard = crate::text_input::Keyboard::english();
+                        self.wifi_ui.keyboard_error = 0;
                         self.state = set_sc(self.state, 24, 0);
                     } else {
                         self.state = set_sc(self.state, 12, 1);
@@ -1130,113 +1118,31 @@ impl Runtime {
                 _ => false,
             },
             24 => match event {
-                RuntimeEvent::Rotate(d) => {
-                    let total = wifi_keyboard_total(self.wifi_ui.keyboard_page) as i32;
-                    self.wifi_ui.editor_char =
-                        (self.wifi_ui.editor_char as i32 + d).rem_euclid(total.max(1)) as u8;
+                RuntimeEvent::Rotate(delta) => {
+                    self.wifi_ui.keyboard.rotate(delta);
                     true
                 }
                 RuntimeEvent::Press => {
-                    let page = self.wifi_ui.keyboard_page;
-                    let i = self.wifi_ui.editor_char as usize;
-                    let chars = wifi_keyboard_chars(page);
-                    if i < chars.len() {
-                        if self.wifi_ui.password.len() < 64 {
-                            let mut ch = chars[i] as char;
-                            if page == WIFI_KB_UPPER {
-                                ch = ch.to_ascii_uppercase();
+                    use crate::text_input::Action;
+                    self.wifi_ui.keyboard_error = 0;
+                    match self.wifi_ui.keyboard.press() {
+                        Action::Character(ch) => {
+                            if self.wifi_ui.password.push(ch).is_err() {
+                                self.wifi_ui.keyboard_error = 1;
                             }
-                            let _ = self.wifi_ui.password.push(ch);
                         }
-                    } else {
-                        // Six fixed actions are kept on every page so crown
-                        // navigation is predictable: page switch, ABC/123,
-                        // SPACE, DEL, CONNECT, BACK.
-                        let action = i - chars.len();
-                        match page {
-                            WIFI_KB_LOWER | WIFI_KB_UPPER => match action {
-                                0 => {
-                                    self.wifi_ui.keyboard_page = if page == WIFI_KB_UPPER {
-                                        WIFI_KB_LOWER
-                                    } else {
-                                        WIFI_KB_UPPER
-                                    };
-                                    self.wifi_ui.editor_char = 0;
-                                }
-                                1 => {
-                                    self.wifi_ui.keyboard_page = WIFI_KB_SYMBOL_1;
-                                    self.wifi_ui.editor_char = 0;
-                                }
-                                2 => {
-                                    if self.wifi_ui.password.len() < 64 {
-                                        let _ = self.wifi_ui.password.push(' ');
-                                    }
-                                }
-                                3 => {
-                                    let _ = self.wifi_ui.password.pop();
-                                }
-                                4 => {
-                                    self.wifi_ui.pending_connect = true;
-                                    self.wifi_ui.link_state = 1;
-                                    self.state = set_sc(self.state, 25, 0);
-                                }
-                                _ => {
-                                    self.state = set_sc(self.state, 23, self.wifi_ui.selected);
-                                }
-                            },
-                            WIFI_KB_SYMBOL_1 => match action {
-                                0 => {
-                                    self.wifi_ui.keyboard_page = WIFI_KB_SYMBOL_2;
-                                    self.wifi_ui.editor_char = 0;
-                                } // #+=
-                                1 => {
-                                    self.wifi_ui.keyboard_page = WIFI_KB_LOWER;
-                                    self.wifi_ui.editor_char = 0;
-                                }
-                                2 => {
-                                    if self.wifi_ui.password.len() < 64 {
-                                        let _ = self.wifi_ui.password.push(' ');
-                                    }
-                                }
-                                3 => {
-                                    let _ = self.wifi_ui.password.pop();
-                                }
-                                4 => {
-                                    self.wifi_ui.pending_connect = true;
-                                    self.wifi_ui.link_state = 1;
-                                    self.state = set_sc(self.state, 25, 0);
-                                }
-                                _ => {
-                                    self.state = set_sc(self.state, 23, self.wifi_ui.selected);
-                                }
-                            },
-                            _ => match action {
-                                0 => {
-                                    self.wifi_ui.keyboard_page = WIFI_KB_SYMBOL_1;
-                                    self.wifi_ui.editor_char = 0;
-                                } // 123
-                                1 => {
-                                    self.wifi_ui.keyboard_page = WIFI_KB_LOWER;
-                                    self.wifi_ui.editor_char = 0;
-                                }
-                                2 => {
-                                    if self.wifi_ui.password.len() < 64 {
-                                        let _ = self.wifi_ui.password.push(' ');
-                                    }
-                                }
-                                3 => {
-                                    let _ = self.wifi_ui.password.pop();
-                                }
-                                4 => {
-                                    self.wifi_ui.pending_connect = true;
-                                    self.wifi_ui.link_state = 1;
-                                    self.state = set_sc(self.state, 25, 0);
-                                }
-                                _ => {
-                                    self.state = set_sc(self.state, 23, self.wifi_ui.selected);
-                                }
-                            },
+                        Action::Backspace => {
+                            self.wifi_ui.password.pop();
                         }
+                        Action::Submit => {
+                            self.wifi_ui.pending_connect = true;
+                            self.wifi_ui.link_state = 1;
+                            self.state = set_sc(self.state, 25, 0);
+                        }
+                        Action::Cancel => {
+                            self.state = set_sc(self.state, 23, self.wifi_ui.selected)
+                        }
+                        Action::None => {}
                     }
                     true
                 }

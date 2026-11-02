@@ -14,7 +14,8 @@ pub struct MaterialFrame {
     pub device_name: [u8; 32],
     pub device_name_len: u8,
     pub name_editing: bool,
-    pub name_key: u8,
+    pub keyboard: crate::text_input::KeyboardView,
+    pub keyboard_error: u8,
     pub name_draft: [u8; 32],
     pub name_draft_len: u8,
     pub screen: u8,
@@ -120,7 +121,8 @@ impl MaterialFrame {
             device_name: [0; 32],
             device_name_len: 0,
             name_editing: false,
-            name_key: 0,
+            keyboard: crate::text_input::KeyboardView::default(),
+            keyboard_error: 0,
             name_draft: [0; 32],
             name_draft_len: 0,
             screen,
@@ -485,6 +487,8 @@ impl Surface {
 mod components;
 #[path = "material/icons.rs"]
 mod icons;
+#[path = "material/keyboard.rs"]
+mod keyboard;
 #[path = "material/pages_bluetooth.rs"]
 mod pages_bluetooth;
 #[path = "material/pages_main.rs"]

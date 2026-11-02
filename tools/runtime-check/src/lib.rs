@@ -6,6 +6,8 @@ extern crate alloc;
 mod device_info;
 #[path = "../../../src/device_name.rs"]
 mod device_name;
+#[path = "../../../src/text_input.rs"]
+mod text_input;
 #[path = "../../../src/wallpaper.rs"]
 mod wallpaper;
 #[path = "../../../src/logging.rs"]

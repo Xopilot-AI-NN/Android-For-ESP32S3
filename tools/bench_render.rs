@@ -7,6 +7,9 @@ mod device_info;
 #[path = "../src/device_name.rs"]
 mod device_name;
 #[allow(dead_code)]
+#[path = "../src/text_input.rs"]
+mod text_input;
+#[allow(dead_code)]
 #[path = "../src/gpt.rs"]
 mod gpt;
 #[allow(dead_code)]

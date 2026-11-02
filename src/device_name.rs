@@ -38,35 +38,45 @@ pub fn set(raw: &str) -> bool {
     true
 }
 
-// Crown editor actions follow characters: erase, save, cancel.
-pub const KEYS: &str = " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.";
+/// Device-name editor uses the same layout and actions as Wi-Fi text input.
 #[derive(Default)]
 pub struct Editor {
     pub active: bool,
-    pub key: u8,
+    pub keyboard: crate::text_input::Keyboard,
     pub draft: String<32>,
+    pub error: u8,
 }
 impl Editor {
     pub fn begin(&mut self) {
         self.draft = snapshot();
-        self.key = 0;
+        self.keyboard = Default::default();
+        self.error = 0;
         self.active = true;
     }
     pub fn rotate(&mut self, delta: i32) {
-        self.key = (i32::from(self.key) + delta).rem_euclid(KEYS.len() as i32 + 3) as u8;
+        self.keyboard.rotate(delta);
     }
     pub fn press(&mut self) {
-        let key = usize::from(self.key);
-        if key < KEYS.len() {
-            let _ = self.draft.push(KEYS.as_bytes()[key] as char);
-        } else if key == KEYS.len() {
-            self.draft.pop();
-        } else if key == KEYS.len() + 1 {
-            if set(&self.draft) {
-                self.active = false;
+        use crate::text_input::Action;
+        self.error = 0;
+        match self.keyboard.press() {
+            Action::Character(ch) => {
+                if self.draft.push(ch).is_err() {
+                    self.error = 1;
+                }
             }
-        } else {
-            self.active = false;
+            Action::Backspace => {
+                self.draft.pop();
+            }
+            Action::Submit => {
+                if set(&self.draft) {
+                    self.active = false;
+                } else {
+                    self.error = 2;
+                }
+            }
+            Action::Cancel => self.active = false,
+            Action::None => {}
         }
     }
 }
