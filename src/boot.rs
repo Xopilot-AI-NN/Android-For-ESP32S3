@@ -236,6 +236,7 @@ pub(crate) fn run() -> ! {
         println!("heap after Rhai startup:\n{}", esp_alloc::HEAP.stats());
         let pager = page_store::PageStore::open(session.block_device()).ok();
         crate::swap_config::initialize(session.block_device(), pager.as_ref());
+        crate::weather::restore_location(session.block_device(), pager.as_ref());
         restore_watch_config(&mut os, pager.as_ref(), session.block_device());
         if let Some(pixels) = wallpaper::load(session.block_device()) {
             display.set_wallpaper(pixels);
@@ -311,6 +312,10 @@ pub(crate) fn run() -> ! {
         println!("system_server handoff succeeded");
         if let Err(err) = session.mark_successful() {
             println!("warning: failed to mark slot successful: {:?}", err);
+        }
+        crate::startup::begin();
+        if let Ok(frame) = os.render() {
+            first_frame = frame;
         }
         let _ = display.runtime(&first_frame);
         session.block_device().viewer_runtime(&first_frame);
@@ -623,13 +628,9 @@ pub(crate) fn run() -> ! {
             }
             #[cfg(feature = "radio-services")]
             if let Some(radios) = radios.as_mut() {
-                if let Some(mut frame) = service_radio_runtime(
-                    radios,
-                    &mut os,
-                    pager.as_ref(),
-                    session.block_device(),
-                    &mut pager_used,
-                ) {
+                if let Some(mut frame) =
+                    service_radio_runtime(radios, &mut os, pager.as_ref(), session.block_device())
+                {
                     frame.set_swap_pages(pager_used.count_ones().min(255) as u8);
                     radios.sync_frame(&frame);
                     let _ = display.runtime(&frame);
@@ -872,6 +873,7 @@ pub(crate) fn run() -> ! {
         println!("heap after Rhai startup:\n{}", esp_alloc::HEAP.stats());
         let pager = page_store::PageStore::open(session.block_device()).ok();
         crate::swap_config::initialize(session.block_device(), pager.as_ref());
+        crate::weather::restore_location(session.block_device(), pager.as_ref());
         restore_watch_config(&mut os, pager.as_ref(), session.block_device());
         if let Some(pixels) = wallpaper::load(session.block_device()) {
             display.set_wallpaper(pixels);
@@ -947,6 +949,10 @@ pub(crate) fn run() -> ! {
         println!("system_server handoff succeeded");
         if let Err(err) = session.mark_successful() {
             println!("warning: failed to mark slot successful: {:?}", err);
+        }
+        crate::startup::begin();
+        if let Ok(frame) = os.render() {
+            first_frame = frame;
         }
         let _ = display.runtime(&first_frame);
 
@@ -1137,13 +1143,9 @@ pub(crate) fn run() -> ! {
             }
             #[cfg(feature = "radio-services")]
             if let Some(radios) = radios.as_mut() {
-                if let Some(mut frame) = service_radio_runtime(
-                    radios,
-                    &mut os,
-                    pager.as_ref(),
-                    session.block_device(),
-                    &mut pager_used,
-                ) {
+                if let Some(mut frame) =
+                    service_radio_runtime(radios, &mut os, pager.as_ref(), session.block_device())
+                {
                     frame.set_swap_pages(pager_used.count_ones().min(255) as u8);
                     radios.sync_frame(&frame);
                     let _ = display.runtime(&frame);

@@ -233,7 +233,7 @@ impl RadioServices {
             self.wifi_aps.len()
         );
         if let Some(ip) = self.net.ip() {
-            let _ = write!(out, " ip={} web=http://{}/", ip, ip);
+            let _ = write!(out, " ip={}", ip);
         }
         if matches!(self.net.link_state(), LinkState::Online) {
             if let Ok(rssi) = self.wifi.rssi() {

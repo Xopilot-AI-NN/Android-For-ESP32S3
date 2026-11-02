@@ -9,7 +9,6 @@ pub(crate) fn service_radio_runtime<D: BlockDevice>(
     os: &mut runtime::Runtime,
     pager: Option<&page_store::PageStore>,
     dev: &D,
-    pager_used: &mut u32,
 ) -> Option<runtime::RuntimeFrame> {
     #[cfg(feature = "ble-hid")]
     if !radios.bonds_loaded {
@@ -52,22 +51,6 @@ pub(crate) fn service_radio_runtime<D: BlockDevice>(
             os.set_bluetooth_status(0, None)
         }
     };
-
-    // The browser remote uses the same RuntimeEvent path as the physical crown
-    // and desktop viewer, so it cannot bypass normal navigation semantics.
-    if let Some(web) = radios.take_web_event() {
-        let event = match web {
-            net::WebRemoteEvent::Rotate(d) => runtime::RuntimeEvent::Rotate(d as i32),
-            net::WebRemoteEvent::Press => runtime::RuntimeEvent::Press,
-            net::WebRemoteEvent::Back => runtime::RuntimeEvent::Back,
-            net::WebRemoteEvent::Home => runtime::RuntimeEvent::Home,
-            net::WebRemoteEvent::Swipe(d) => runtime::RuntimeEvent::Swipe(d as i32),
-        };
-        if let Ok(frame) = dispatch_with_pager(os, event, pager, dev, pager_used) {
-            radios.sync_frame(&frame);
-            return Some(frame);
-        }
-    }
 
     // Commit Wi-Fi credentials only after real association succeeded. A typo in
     // the crown keyboard must never overwrite the previous known-good profile.

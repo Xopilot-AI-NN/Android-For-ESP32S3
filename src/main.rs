@@ -74,12 +74,14 @@ mod sd_init;
 mod sd_spi;
 #[cfg(feature = "display-software-spi")]
 mod soft_spi;
+mod startup;
 mod swap_config;
 mod ui_resources;
 #[cfg(feature = "pc-block-boot")]
 mod usb_pc_block;
 mod viewer_stream;
 mod wallpaper;
+mod weather;
 
 use desktop::{DesktopEvent, WifiCredentials};
 #[cfg(not(feature = "pc-block-boot"))]

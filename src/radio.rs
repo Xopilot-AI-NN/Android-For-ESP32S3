@@ -23,7 +23,7 @@ use static_cell::StaticCell;
 
 use crate::{
     desktop::WifiCredentials,
-    net::{LinkState, NetworkService, WebRemoteEvent},
+    net::{LinkState, NetworkService},
     runtime::RuntimeFrame,
 };
 
@@ -199,9 +199,6 @@ impl RadioServices {
     pub fn request_network_time_sync(&mut self) {
         self.net.request_time_sync();
     }
-    pub fn take_web_event(&mut self) -> Option<WebRemoteEvent> {
-        self.net.take_web_event()
-    }
     pub fn take_connected_wifi_for_persist(&mut self) -> Option<WifiCredentials> {
         self.persist_wifi.take()
     }
@@ -215,7 +212,6 @@ impl RadioServices {
     }
 
     pub fn sync_frame(&mut self, frame: &RuntimeFrame) {
-        self.net.set_web_frame(frame);
         let RuntimeFrame::Material(m) = frame else {
             return;
         };
