@@ -498,6 +498,9 @@ impl Runtime {
     pub fn crown_sensitivity(&self) -> u8 {
         self.crown_sensitivity
     }
+    pub fn crown_reversed(&self) -> bool {
+        self.crown_reverse
+    }
     pub fn preference_config(&self) -> [u8; 12] {
         [
             3,
@@ -1295,6 +1298,9 @@ impl Runtime {
     }
     pub fn crown_sensitivity(&self) -> u8 {
         1
+    }
+    pub fn crown_reversed(&self) -> bool {
+        false
     }
     pub fn preference_config(&self) -> [u8; 12] {
         [3, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0]

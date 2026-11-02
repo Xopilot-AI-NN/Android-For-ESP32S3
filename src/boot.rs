@@ -318,15 +318,7 @@ pub(crate) fn run() -> ! {
         loop {
             keys.set_sensitivity(os.crown_sensitivity());
             apply_wallpaper_upload(session.block_device(), &mut display, &mut os);
-            let rotation = keys.poll_rotation();
-            let events = [
-                if rotation != 0 {
-                    Some(runtime::RuntimeEvent::Rotate(rotation as i32))
-                } else {
-                    None
-                },
-                keys.poll_button_event(),
-            ];
+            let events = keys.poll_runtime_events(os.crown_reversed());
             for event in events.into_iter().flatten() {
                 if let Ok(frame) = dispatch_with_pager(
                     &mut os,
@@ -954,26 +946,14 @@ pub(crate) fn run() -> ! {
             display.pump();
             apply_wallpaper_upload(session.block_device(), &mut display, &mut os);
             keys.set_sensitivity(os.crown_sensitivity());
-            let rotation = keys.poll_rotation();
-            if rotation != 0 {
+            for event in keys
+                .poll_runtime_events(os.crown_reversed())
+                .into_iter()
+                .flatten()
+            {
                 if let Ok(frame) = dispatch_with_pager(
                     &mut os,
-                    runtime::RuntimeEvent::Rotate(rotation as i32),
-                    pager.as_ref(),
-                    session.block_device(),
-                    &mut pager_used,
-                ) {
-                    #[cfg(feature = "radio-services")]
-                    if let Some(radios) = radios.as_mut() {
-                        radios.sync_frame(&frame);
-                    }
-                    let _ = display.runtime(&frame);
-                }
-            }
-            if let Some(action) = keys.poll_button_event() {
-                if let Ok(frame) = dispatch_with_pager(
-                    &mut os,
-                    action,
+                    event,
                     pager.as_ref(),
                     session.block_device(),
                     &mut pager_used,

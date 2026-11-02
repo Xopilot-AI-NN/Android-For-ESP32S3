@@ -25,6 +25,7 @@ pub struct BootKeys<'d> {
     pcnt: Pcnt<'d>,
     steps: encoder::EncoderSteps,
     button: ButtonState,
+    last_gesture: Option<(u64, i8)>,
 }
 
 impl<'d> BootKeys<'d> {
@@ -65,6 +66,7 @@ impl<'d> BootKeys<'d> {
             pcnt,
             steps: encoder::EncoderSteps::new(),
             button: ButtonState::default(),
+            last_gesture: None,
         }
     }
 
@@ -90,6 +92,53 @@ impl<'d> BootKeys<'d> {
 
     pub fn set_sensitivity(&mut self, value: u8) {
         self.steps.sensitivity(value);
+    }
+    /// Sample button and crown together so a chord cannot also activate a row.
+    pub fn poll_runtime_events(
+        &mut self,
+        reverse_gesture: bool,
+    ) -> [Option<crate::runtime::RuntimeEvent>; 2] {
+        use crate::runtime::RuntimeEvent;
+        let now = esp_hal::time::Instant::now()
+            .duration_since_epoch()
+            .as_millis();
+        let raw_pressed = self.power.is_low();
+        let action = self.button.poll(raw_pressed, now);
+        let rotation = self.poll_rotation();
+        if raw_pressed || self.button.is_pressed() {
+            if rotation != 0 {
+                self.button.consume_hold();
+                let direction = if reverse_gesture {
+                    -rotation.signum()
+                } else {
+                    rotation.signum()
+                };
+                let ready = self
+                    .last_gesture
+                    .map(|(at, old)| old != direction || now.saturating_sub(at) >= 180)
+                    .unwrap_or(true);
+                if ready {
+                    self.last_gesture = Some((now, direction));
+                    return [Some(RuntimeEvent::Swipe(i32::from(direction) * 2)), None];
+                }
+            }
+            return [None, None];
+        }
+        self.last_gesture = None;
+        let button = action.map(|action| match action {
+            ButtonAction::Press => RuntimeEvent::Press,
+            ButtonAction::Back => RuntimeEvent::Back,
+            ButtonAction::Home => RuntimeEvent::Home,
+            ButtonAction::Power => RuntimeEvent::Power,
+        });
+        [
+            if rotation != 0 {
+                Some(RuntimeEvent::Rotate(i32::from(rotation)))
+            } else {
+                None
+            },
+            button,
+        ]
     }
     pub fn poll_rotation(&mut self) -> i8 {
         self.steps.poll(self.pcnt.unit0.counter.get())

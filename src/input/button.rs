@@ -5,6 +5,7 @@ pub struct ButtonState {
     stable: bool,
     changed_ms: u64,
     pressed_ms: u64,
+    consumed: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -18,6 +19,9 @@ pub enum ButtonAction {
 impl ButtonState {
     pub fn poll(&mut self, pressed: bool, now: u64) -> Option<ButtonAction> {
         if pressed != self.raw {
+            if pressed && !self.stable {
+                self.consumed = false;
+            }
             self.raw = pressed;
             self.changed_ms = now;
         }
@@ -29,12 +33,23 @@ impl ButtonState {
             self.pressed_ms = now;
             return None;
         }
+        if self.consumed {
+            self.consumed = false;
+            return None;
+        }
         Some(match now.saturating_sub(self.pressed_ms) {
             3500.. => ButtonAction::Power,
             1800.. => ButtonAction::Home,
             700.. => ButtonAction::Back,
             _ => ButtonAction::Press,
         })
+    }
+    pub fn is_pressed(&self) -> bool {
+        self.stable
+    }
+    /// A press-and-rotate gesture owns this hold, including its release.
+    pub fn consume_hold(&mut self) {
+        self.consumed = true;
     }
 }
 
