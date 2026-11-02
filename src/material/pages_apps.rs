@@ -8,6 +8,18 @@ impl Surface {
     pub(super) fn native_application(&mut self, f: MaterialFrame, t: Theme) {
         use crate::apps::*;
         let a = f.app;
+        if a.id == WEATHER {
+            self.weather_page(f, t);
+            return;
+        }
+        if a.id == WORLD {
+            self.world_page(f, t);
+            return;
+        }
+        if a.id == BREATHING {
+            self.breathing_page(f, t);
+            return;
+        }
         self.photo_header(f, LABELS[usize::from(a.id)], t);
         match a.id {
             CALCULATOR => {
@@ -93,8 +105,8 @@ impl Surface {
                     memory.active, memory.selected
                 );
                 self.text_center_raw(55, &active, 1, t.on_surface_variant);
-                let start = usize::from(a.cursor).saturating_sub(1).min(2);
-                for row in 0..3 {
+                let start = usize::from(a.cursor).saturating_sub(1).min(3);
+                for row in 0..2 {
                     let index = start + row;
                     let size = crate::swap_config::CHOICES[index];
                     let mut label = heapless::String::<24>::new();
@@ -107,7 +119,7 @@ impl Surface {
                         "Нажмите для выбора"
                     };
                     self.info_card(
-                        68 + row as i32 * 58,
+                        82 + row as i32 * 65,
                         &label,
                         value,
                         index == usize::from(a.cursor),
@@ -123,8 +135,8 @@ impl Surface {
                     5 => "Не удалось сохранить настройку",
                     _ => "ZPager: хранилище страниц",
                 };
-                self.text_center(249, status, 1, t.primary);
-                self.text_center(265, "Это не дополнительная RAM", 1, t.on_surface_variant);
+                self.text_center(225, status, 1, t.primary);
+                self.text_center(253, "Это не дополнительная RAM", 1, t.on_surface_variant);
             }
             DIAGNOSTICS => {
                 let mut line = heapless::String::<64>::new();

@@ -39,7 +39,9 @@ impl Surface {
                 t.error
             },
         );
-        let bytes = if f.name_editing {
+        let bytes = if f.app.id == crate::apps::WEATHER {
+            f.app.weather_editor.len
+        } else if f.name_editing {
             f.name_draft_len
         } else {
             f.wifi_password_len

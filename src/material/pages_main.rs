@@ -124,17 +124,13 @@ impl Surface {
                 break;
             }
             let selected = i == cur;
-            self.circle(x, y, 29, Self::focus_fill(t.surface_high, selected));
-            self.app_icon(
-                i as u8,
+            self.circle(
                 x,
                 y,
-                if selected {
-                    t.primary
-                } else {
-                    Self::app_accent(i as u8)
-                },
+                32,
+                Self::focus_fill(Self::app_accent(i as u8), selected),
             );
+            self.app_icon(i as u8, x, y, rgb565(8, 20, 17));
         }
         self.text_center(
             199,
@@ -364,25 +360,24 @@ impl Surface {
 
     pub(super) fn about(&mut self, f: MaterialFrame, t: Theme) {
         self.photo_header(f, "About", t);
-        self.circle(120, 82, 25, t.primary_container);
-        self.text_center(69, "A", 3, t.primary);
         let name = core::str::from_utf8(&f.device_name[..usize::from(f.device_name_len).min(32)])
             .unwrap_or(crate::device_info::DEFAULT_DEVICE_NAME);
-        self.text_center_raw(116, name, 2, t.on_surface);
-        self.text_center(144, "ANDROID 17", 1, t.primary);
-        self.round_rect(22, 168, 196, 36, 18, t.surface);
-        self.text_center(180, "BUILD 17.2.1", 1, t.on_surface);
-        self.text_center(216, "ESP32-S3-ZERO-N4R2", 1, t.on_surface_variant);
-        self.text_center(
-            238,
-            if f.swap_pages > 0 {
-                "SYSTEM STORAGE ACTIVE"
-            } else {
-                "SYSTEM STORAGE READY"
-            },
-            1,
-            t.outline,
-        );
+        let labels = ["Система", "Модель", "Имя устройства", "Версия"];
+        let values = [
+            "AOSP Wear",
+            crate::device_info::BOARD,
+            name,
+            crate::config::BOOTLOADER_VERSION,
+        ];
+        let cur = usize::from(f.cursor.min(3));
+        let start = cur.saturating_sub(1).min(1);
+        for row in 0..3 {
+            let index = start + row;
+            let y = 65 + row as i32 * 66;
+            self.text(22, y, labels[index], 1, t.primary);
+            self.text_fitted_raw(22, y + 23, values[index], 2, 196, t.on_surface);
+        }
+        self.scroll_indicator(cur as u8, 4, t);
     }
 
     pub(super) fn widgets(&mut self, f: MaterialFrame, t: Theme) {

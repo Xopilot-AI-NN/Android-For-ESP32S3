@@ -13,6 +13,7 @@ pub const HEIGHT: usize = 280;
 pub struct MaterialFrame {
     pub app: crate::apps::View,
     pub resource_revision: u32,
+    pub startup: u8,
     pub device_name: [u8; 32],
     pub device_name_len: u8,
     pub name_editing: bool,
@@ -45,7 +46,7 @@ pub struct MaterialFrame {
     pub wifi_ap_ssid_len: u8,
     pub wifi_ap_rssi: i8,
     pub wifi_password_len: u8,
-    // On-device-only clear-text preview. Desktop/web serializers deliberately
+    // On-device-only clear-text preview. Desktop serializers deliberately
     // omit these bytes; they exist only so the physical keyboard can show
     // exactly what was entered with the crown.
     pub wifi_password_preview: [u8; 16],
@@ -128,6 +129,7 @@ impl MaterialFrame {
             keyboard: crate::text_input::KeyboardView::default(),
             keyboard_error: 0,
             resource_revision: 0,
+            startup: 0,
             app: crate::apps::View::default(),
             name_draft: [0; 32],
             name_draft_len: 0,
@@ -383,6 +385,21 @@ impl Surface {
             t.outline = 0xffff;
         }
         self.fill_rect(0, 0, WIDTH as i32, HEIGHT as i32, t.bg);
+        if frame.startup != 0 && !frame.power_menu {
+            self.boot_frame(255);
+            self.text_center(232, "Запуск…", 2, t.on_surface);
+            self.text_center(
+                260,
+                match frame.startup {
+                    2 => "Подготовка графики",
+                    3 => "Запуск Bluetooth",
+                    _ => "Подготовка интерфейса",
+                },
+                1,
+                t.on_surface_variant,
+            );
+            return Rect::FULL;
+        }
         if frame.aod {
             // LCD AOD: no wallpaper, no private data and only minute updates.
             self.fill_rect(0, 0, WIDTH as i32, HEIGHT as i32, 0);
@@ -511,6 +528,8 @@ mod pages_bluetooth;
 mod pages_main;
 #[path = "material/pages_settings.rs"]
 mod pages_settings;
+#[path = "material/pages_weather.rs"]
+mod pages_weather;
 #[path = "material/pages_wifi.rs"]
 mod pages_wifi;
 #[path = "material/primitives.rs"]

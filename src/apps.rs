@@ -8,7 +8,10 @@ pub const FILES: u8 = 7;
 pub const SHARE: u8 = 8;
 pub const DIAGNOSTICS: u8 = 9;
 pub const MEMORY: u8 = 11;
-pub const COUNT: u8 = 12;
+pub const WEATHER: u8 = 12;
+pub const WORLD: u8 = 13;
+pub const BREATHING: u8 = 14;
+pub const COUNT: u8 = 15;
 pub const LABELS: [&str; COUNT as usize] = [
     "Clock",
     "Media",
@@ -22,6 +25,9 @@ pub const LABELS: [&str; COUNT as usize] = [
     "Диагностика",
     "Flashlight",
     "Память и swap",
+    "Погода",
+    "Мировое время",
+    "Дыхание",
 ];
 pub fn route(index: u8) -> Option<u8> {
     match index {
@@ -47,6 +53,11 @@ pub struct View {
     pub script_us: u64,
     pub cache_hits: u32,
     pub memory: crate::swap_config::Snapshot,
+    pub weather: crate::weather::Snapshot,
+    pub weather_editor: crate::weather::EditorView,
+    pub world_offset: i8,
+    pub breathe_elapsed: u16,
+    pub breathing: bool,
 }
 impl Default for View {
     fn default() -> Self {
@@ -61,30 +72,53 @@ impl Default for View {
             script_us: 0,
             cache_hits: 0,
             memory: crate::swap_config::Snapshot::default(),
+            weather: crate::weather::Snapshot::default(),
+            weather_editor: crate::weather::EditorView::default(),
+            world_offset: 3,
+            breathe_elapsed: 0,
+            breathing: false,
         }
     }
 }
 pub struct State {
     view: View,
     calculator: calculator::Calculator,
+    weather: crate::weather::Controller,
+    world_offset: i8,
+    breathe_started: Option<u64>,
 }
 impl Default for State {
     fn default() -> Self {
         Self {
             view: View::default(),
             calculator: calculator::Calculator::default(),
+            weather: crate::weather::Controller::default(),
+            world_offset: 3,
+            breathe_started: None,
         }
     }
 }
 impl State {
+    pub fn keep_awake(&self) -> bool {
+        self.view.id == BREATHING
+            && self.breathe_started.is_some_and(|start| {
+                esp_hal::time::Instant::now()
+                    .duration_since_epoch()
+                    .as_secs()
+                    .saturating_sub(start)
+                    < 125
+            })
+    }
     pub fn active(&self) -> bool {
         self.view.id != NONE
     }
     pub fn close(&mut self) {
         self.view.id = NONE;
+        self.weather.cancel();
+        self.breathe_started = None;
     }
     pub fn open(&mut self, id: u8) {
-        if !(CALCULATOR..=MEMORY).contains(&id) {
+        if !(CALCULATOR..=BREATHING).contains(&id) {
             return;
         }
         self.view.id = id;
@@ -98,8 +132,27 @@ impl State {
         };
         self.refresh_text();
     }
+    pub fn cancel_editor(&mut self) -> bool {
+        self.view.id == WEATHER && self.weather.cancel()
+    }
     pub fn view(&self) -> View {
-        self.view
+        let mut view = self.view;
+        if view.id == WEATHER {
+            view.weather = crate::weather::snapshot();
+            view.weather_editor = self.weather.view();
+        }
+        view.world_offset = self.world_offset;
+        if view.id == BREATHING {
+            if let Some(start) = self.breathe_started {
+                let elapsed = esp_hal::time::Instant::now()
+                    .duration_since_epoch()
+                    .as_secs()
+                    .saturating_sub(start);
+                view.breathe_elapsed = elapsed.min(120) as u16;
+                view.breathing = elapsed < 120;
+            }
+        }
+        view
     }
     fn refresh_text(&mut self) {
         let text = self.calculator.text();
@@ -110,6 +163,38 @@ impl State {
     }
     /// Work is performed only on input; utility pages have no polling tasks.
     pub fn event(&mut self, event: RuntimeEvent) -> Option<u8> {
+        if self.view.id == WEATHER {
+            self.weather.event(event);
+            return None;
+        }
+        if self.view.id == WORLD {
+            match event {
+                RuntimeEvent::Rotate(d) => {
+                    self.world_offset = ((i32::from(self.world_offset) + 12 + d.rem_euclid(27))
+                        .rem_euclid(27)
+                        - 12) as i8
+                }
+                RuntimeEvent::Press => self.world_offset = crate::rtc::timezone_hours(),
+                _ => {}
+            }
+            return None;
+        }
+        if self.view.id == BREATHING {
+            if event == RuntimeEvent::Press {
+                let now = esp_hal::time::Instant::now()
+                    .duration_since_epoch()
+                    .as_secs();
+                self.breathe_started = if self
+                    .breathe_started
+                    .is_some_and(|start| now.saturating_sub(start) < 120)
+                {
+                    None
+                } else {
+                    Some(now)
+                };
+            }
+            return None;
+        }
         let count = match self.view.id {
             CALCULATOR => 20,
             FILES => i32::from(crate::wallpaper::builtin_count()),

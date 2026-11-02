@@ -40,7 +40,7 @@ impl Surface {
         );
         // Match the three rows in the original watch photographs.
         self.info_card(205, "MEDIA CONTROLS", "PHONE / PC", f.cursor == 2, t);
-        self.text_center(270, "HOLD CROWN: BACK", 1, t.on_surface_variant);
+        self.text_center(260, "HOLD CROWN: BACK", 1, t.on_surface_variant);
     }
 
     pub(super) fn display_settings(&mut self, f: MaterialFrame, t: Theme) {

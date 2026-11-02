@@ -361,6 +361,11 @@ impl Runtime {
             m.device_name_len = name.len() as u8;
             m.device_name[..name.len()].copy_from_slice(name.as_bytes());
             m.resource_revision = crate::ui_resources::revision();
+            if crate::startup::active() && self.wallpaper_enabled && self.wallpaper_index > 0 {
+                let _ = crate::ui_resources::wallpaper(self.wallpaper_index);
+            }
+            m.startup =
+                crate::startup::phase(crate::ui_resources::pending(), self.bluetooth_status == 7);
             m.app = self.native_app.view();
             if m.app.id == crate::apps::MEMORY {
                 m.app.memory = crate::swap_config::snapshot();
@@ -373,6 +378,10 @@ impl Runtime {
                     / 1024) as u32;
                 m.app.script_us = self.scene_cache.stats.last_us;
                 m.app.cache_hits = self.scene_cache.stats.cache_hits;
+            }
+            if m.app.id == crate::apps::WEATHER && m.app.weather_editor.active {
+                m.keyboard = m.app.weather_editor.keyboard;
+                m.keyboard_error = 0;
             }
             m.name_editing = self.name_editor.active;
             if m.name_editing {
@@ -492,7 +501,10 @@ impl Runtime {
             ((self.state >> 9) & 127) as u8,
             now_ms.saturating_sub(self.last_input_ms),
             self.security.timeout,
-            clock::alert() != 0 || self.bluetooth_pin.is_some() || (self.state & 31) == 29,
+            clock::alert() != 0
+                || self.bluetooth_pin.is_some()
+                || (self.state & 31) == 29
+                || self.native_app.keep_awake(),
         )
     }
     fn display_should_sleep(&self, now_ms: u64) -> bool {
@@ -744,6 +756,9 @@ impl Runtime {
             }
             other => other,
         };
+        if crate::startup::active() {
+            return self.render();
+        }
         if self.security.locked {
             // A timer/alarm may be dismissed without unlocking private screens.
             if clock::alert() != 0 && event == RuntimeEvent::Press {
@@ -761,6 +776,11 @@ impl Runtime {
         let cursor = ((self.state >> 5) & 15) as u8;
         // Native applications share one bounded router; the old SD script ABI stays intact.
         if self.native_app.active() {
+            if matches!(event, RuntimeEvent::Back | RuntimeEvent::Swipe(2))
+                && self.native_app.cancel_editor()
+            {
+                return self.render();
+            }
             if matches!(
                 event,
                 RuntimeEvent::Home | RuntimeEvent::Back | RuntimeEvent::Swipe(2)
@@ -817,6 +837,20 @@ impl Runtime {
                     }
                 }
                 RuntimeEvent::Swipe(2) => self.name_editor.active = false,
+                _ => {}
+            }
+            return self.render();
+        }
+        if screen == 8 {
+            match event {
+                RuntimeEvent::Rotate(d) => {
+                    self.state = (self.state & !0x1e0)
+                        | ((i32::from(cursor) + d.rem_euclid(4)).rem_euclid(4) << 5)
+                }
+                RuntimeEvent::Back | RuntimeEvent::Swipe(2) => {
+                    self.state = (self.state & !0x1ff) | 15 | (1 << 5)
+                }
+                RuntimeEvent::Home => self.state = (self.state & !0x1ff) | 1,
                 _ => {}
             }
             return self.render();
