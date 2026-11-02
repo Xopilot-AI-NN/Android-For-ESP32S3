@@ -22,6 +22,22 @@ and exact deadlines for an immediate dim step ten seconds before screen-off.
 Viewer state is sent only after a viewer subscribes with SYNC/PING; identical
 state is not repeatedly printed while the watch lies idle.
 
+## Crown gestures and text input
+
+Hold the crown button and rotate forward/back for right/left swipes. Releasing
+after a gesture does not also click a row or trigger a long-press action.
+The configured reverse direction applies to these gestures. Ordinary rotation
+and button holds remain unchanged when no chord is used.
+
+Device name and Wi-Fi password use one phone-style keyboard with QWERTY/ЙЦУКЕН
+rows, RU/EN, Shift, digits, symbols, Space, Delete, Done and Cancel. Rotate to
+focus, press to activate; the focus changes color without resizing keys.
+Device names are limited to 32 UTF-8 bytes, passwords to 64. Voice input is a
+future companion feature; a microphone button is not currently implemented.
+
+Browser/Telegram architecture and current limitations are described in
+[DELIVERY.md](Bootloader/DELIVERY.md); neither client is implemented yet.
+
 ## Ordinary Android ADB over Wi-Fi
 
 The firmware has a limited native ADB TCP service. The system `adb` client
