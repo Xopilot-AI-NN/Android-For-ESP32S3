@@ -8,6 +8,19 @@ const PIXELS: usize = 240 * 280;
 mod builtins;
 #[path = "wallpapers/png.rs"]
 mod png;
+/// Read-only virtual files exported over ADB; no image decoding or heap copy.
+pub fn builtin_png(index: u8) -> Option<&'static [u8]> {
+    if index == 0 {
+        return None;
+    }
+    builtins::IMAGES.get(usize::from(index - 1)).map(|v| v.1)
+}
+pub fn builtin_file(path: &str) -> Option<&'static [u8]> {
+    let number = path
+        .strip_prefix("/sdcard/Wallpapers/")?
+        .strip_suffix(".png")?;
+    builtin_png(number.parse::<u8>().ok()?)
+}
 pub fn builtin_count() -> u8 {
     builtins::IMAGES.len() as u8
 }
