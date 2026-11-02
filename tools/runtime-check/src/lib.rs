@@ -61,6 +61,8 @@ mod boot_control;
 mod cpio;
 #[path = "../../../src/gpt.rs"]
 mod gpt;
+#[path = "../../../src/page_store.rs"]
+mod page_store;
 #[cfg(test)]
 mod image_boot;
 #[path = "../../../src/lp.rs"]
