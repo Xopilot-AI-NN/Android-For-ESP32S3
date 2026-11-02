@@ -37,7 +37,7 @@ impl core::fmt::Display for InitError {
             Self::Interface(r7) => write!(f, "CMD8: invalid voltage/echo R7={r7:02x?}"),
             Self::NotReady { cmd55, acmd41 } => write!(
                 f,
-                "ACMD41: still idle after 200 polls; CMD55=0x{cmd55:02x}, ACMD41=0x{acmd41:02x}"
+                "ACMD41: still idle after 500 polls; CMD55=0x{cmd55:02x}, ACMD41=0x{acmd41:02x}"
             ),
             Self::Ocr(ocr) => write!(f, "CMD58: invalid power/voltage OCR={ocr:02x?}"),
             Self::Capacity(error) => write!(f, "CSD capacity read: {error}"),
@@ -102,6 +102,15 @@ where
     D: DelayNs,
 {
     spi.begin_command().map_err(|_| InitError::Transport)?;
+    selected_command(spi, cmd, arg)
+}
+
+// Diagnostic path can preserve CS across the APP_CMD prefix and ACMD41.
+fn selected_command<B: SpiBus<u8>, C: OutputPin, D: DelayNs>(
+    spi: &mut SdSpiSession<B, C, D>,
+    cmd: u8,
+    arg: u32,
+) -> Result<u8, InitError> {
     if cmd != 0 {
         let mut last = 0;
         for _ in 0..64 {
@@ -121,14 +130,6 @@ where
     for _ in 0..64 {
         let r1 = byte(spi)?;
         if r1 & 0x80 == 0 {
-            if r1 & !1 != 0 {
-                let mut trailing = [0xff; 8];
-                spi.transfer_in_place(&mut trailing)
-                    .map_err(|_| InitError::Transport)?;
-                esp_println::println!(
-                    "microSD: CMD{cmd} tx={packet:02x?} R1=0x{r1:02x} trailing={trailing:02x?}"
-                );
-            }
             return Ok(r1);
         }
     }
@@ -150,15 +151,58 @@ fn tail<S: SpiDevice<u8>>(spi: &mut S) -> Result<[u8; 4], InitError> {
     Ok(bytes)
 }
 
-fn handshake<B, C, D>(spi: &mut SdSpiSession<B, C, D>, delay: &mut D) -> Result<CardType, InitError>
+pub(crate) fn handshake<B: SpiBus<u8>, C: OutputPin, D: DelayNs>(
+    spi: &mut SdSpiSession<B, C, D>,
+    delay: &mut D,
+) -> Result<CardType, InitError> {
+    handshake_impl::<B, C, D, false>(spi, delay)
+}
+
+#[cfg(any(test, feature = "sd-selftest"))]
+pub(crate) fn handshake_clocked<B: SpiBus<u8>, C: OutputPin, D: DelayNs>(
+    spi: &mut SdSpiSession<B, C, D>,
+    delay: &mut D,
+) -> Result<CardType, InitError> {
+    handshake_impl::<B, C, D, true>(spi, delay)
+}
+
+fn settle<B: SpiBus<u8>, C: OutputPin, D: DelayNs, const CLOCKED: bool>(
+    spi: &mut SdSpiSession<B, C, D>,
+    delay: &mut D,
+    ms: u32,
+) -> Result<(), InitError> {
+    if CLOCKED {
+        // At <=100 kHz, 16 bytes provide at least 1.28ms of selected clocks.
+        // 0xff cannot form an SD command start bit and is safe during idle.
+        for _ in 0..ms {
+            spi.write(&[0xff; 16]).map_err(|_| InitError::Transport)?;
+        }
+    } else {
+        delay.delay_ms(ms);
+    }
+    Ok(())
+}
+
+fn handshake_impl<B, C, D, const CLOCKED: bool>(
+    spi: &mut SdSpiSession<B, C, D>,
+    delay: &mut D,
+) -> Result<CardType, InitError>
 where
     B: SpiBus<u8>,
     C: OutputPin,
     D: DelayNs,
 {
-    esp_println::println!(
-        "microSD: checked startup v3; released idle; CRC_ON after ready; ACMD41 budget 200 x 10ms"
-    );
+    esp_println::println!("microSD: checked startup v6; two CMD0 resets; ACMD41 budget 500 x 10ms");
+    // ESP-IDF sends an initial GO_IDLE without relying on its response, then
+    // repeats it with R1 checking: some cards do not select SPI on the first.
+    esp_println::println!("microSD: wait clocks={CLOCKED}");
+    let wake = command(spi, 0, 0);
+    if matches!(wake, Err(InitError::Transport)) {
+        return Err(InitError::Transport);
+    }
+    esp_println::println!("microSD: first CMD0 wake response={wake:?}");
+    spi.finish_command().map_err(|_| InitError::Transport)?;
+    settle::<B, C, D, CLOCKED>(spi, delay, 100)?;
     let mut idle = false;
     for _ in 0..50 {
         match command(spi, 0, 0) {
@@ -169,7 +213,7 @@ where
             Ok(r1) => return Err(InitError::Response { command: 0, r1 }),
             Err(InitError::NoResponse { .. }) => {
                 spi.finish_command().map_err(|_| InitError::Transport)?;
-                delay.delay_ms(10);
+                settle::<B, C, D, CLOCKED>(spi, delay, 10)?;
             }
             Err(e) => return Err(e),
         }
@@ -177,6 +221,8 @@ where
     if !idle {
         return Err(InitError::NoResponse { command: 0 });
     }
+    spi.finish_command().map_err(|_| InitError::Transport)?;
+    settle::<B, C, D, CLOCKED>(spi, delay, 100)?;
     let r1 = command(spi, 8, 0x1aa)?;
     let v2 = if r1 == 1 {
         let r7 = tail(spi)?;
@@ -191,42 +237,120 @@ where
         return Err(InitError::Response { command: 8, r1 });
     };
 
-    let mut last = (0xff, 0xff);
+    // OCR is readable in idle. Validate the supply window before requesting
+    // initialization; the ready/CCS bits are interpreted only after it starts.
+    let initial_r1 = command(spi, 58, 0)?;
+    if initial_r1 > 1 {
+        return Err(InitError::Response {
+            command: 58,
+            r1: initial_r1,
+        });
+    }
+    let initial_ocr = tail(spi)?;
+    esp_println::println!("microSD: preflight CMD58 R1=0x{initial_r1:02x} OCR={initial_ocr:02x?}");
+    if u32::from_be_bytes(initial_ocr) & 0x00ff_8000 == 0 {
+        return Err(InitError::Ocr(initial_ocr));
+    }
+
+    // Some controllers stop answering while their flash controller starts.
+    // Keep their initialization running: never issue another CMD0 here.
+    let mut last_error = InitError::NotReady {
+        cmd55: 0xff,
+        acmd41: 0xff,
+    };
+    let mut transient_count = 0u16;
     let mut ready = false;
-    for attempt in 0..200 {
-        let cmd55 = command(spi, 55, 0)?;
-        if cmd55 != 0 && cmd55 != 1 {
-            return Err(InitError::Response {
-                command: 55,
-                r1: cmd55,
-            });
-        }
-        let acmd41 = command(spi, 41, if v2 { 0x4000_0000 } else { 0 })?;
+    for attempt in 0..500 {
+        let response = (|| {
+            let prefix = command(spi, 55, 0)?;
+            if prefix > 1 {
+                return Err(InitError::Response {
+                    command: 55,
+                    r1: prefix,
+                });
+            }
+            let arg = if v2 { 0x4000_0000 } else { 0 };
+            let status = if CLOCKED {
+                selected_command(spi, 41, arg)?
+            } else {
+                command(spi, 41, arg)?
+            };
+            if status > 1 {
+                return Err(InitError::Response {
+                    command: 41,
+                    r1: status,
+                });
+            }
+            Ok((prefix, status))
+        })();
         spi.finish_command().map_err(|_| InitError::Transport)?;
-        if attempt == 0 || last != (cmd55, acmd41) || attempt % 50 == 49 {
-            esp_println::println!(
-                "microSD: init poll {} CMD55 R1=0x{cmd55:02x} ACMD41 R1=0x{acmd41:02x}",
-                attempt + 1
-            );
+        match response {
+            Ok((prefix, 0)) => {
+                esp_println::println!(
+                    "microSD: ready at poll {}; CMD55=0x{prefix:02x}, ACMD41=0x00, transient replies={transient_count}",
+                    attempt + 1
+                );
+                ready = true;
+                break;
+            }
+            Ok((prefix, status)) => {
+                last_error = InitError::NotReady {
+                    cmd55: prefix,
+                    acmd41: status,
+                };
+                if attempt == 0 || attempt % 50 == 49 {
+                    esp_println::println!(
+                        "microSD: init poll {} CMD55=0x{prefix:02x} ACMD41=0x{status:02x}",
+                        attempt + 1
+                    );
+                }
+            }
+            Err(InitError::Transport) => return Err(InitError::Transport),
+            Err(error) => {
+                transient_count += 1;
+                last_error = error;
+                if transient_count == 1 || attempt % 50 == 49 {
+                    esp_println::println!(
+                        "microSD: init poll {} retry without reset: {error}",
+                        attempt + 1
+                    );
+                }
+            }
         }
-        last = (cmd55, acmd41);
-        if acmd41 == 0 {
-            ready = true;
-            break;
+        // Independently check readiness instead of assuming every missing
+        // APP_CMD means the flash controller is still in idle. Never accept an
+        // error response: both R1=0 and OCR power-up-complete are required.
+        if attempt == 1 || attempt % 50 == 49 {
+            match command(spi, 58, 0) {
+                Ok(r1) if r1 <= 1 => {
+                    let ocr = tail(spi)?;
+                    esp_println::println!(
+                        "microSD: OCR poll {} R1=0x{r1:02x} OCR={ocr:02x?}",
+                        attempt + 1
+                    );
+                    if r1 == 0
+                        && u32::from_be_bytes(ocr) & 0x8000_0000 != 0
+                        && u32::from_be_bytes(ocr) & 0x00ff_8000 != 0
+                    {
+                        ready = true;
+                        esp_println::println!(
+                            "microSD: ready confirmed by OCR after transient APP_CMD replies"
+                        );
+                        break;
+                    }
+                }
+                Ok(r1) => esp_println::println!("microSD: OCR poll R1=0x{r1:02x}"),
+                Err(e) => esp_println::println!("microSD: OCR poll: {e}"),
+            }
+            spi.finish_command().map_err(|_| InitError::Transport)?;
         }
-        if acmd41 != 1 {
-            return Err(InitError::Response {
-                command: 41,
-                r1: acmd41,
-            });
-        }
-        delay.delay_ms(10);
+        settle::<B, C, D, CLOCKED>(spi, delay, 10)?;
     }
     if !ready {
-        return Err(InitError::NotReady {
-            cmd55: last.0,
-            acmd41: last.1,
-        });
+        esp_println::println!(
+            "microSD: initialization budget exhausted; transient replies={transient_count}"
+        );
+        return Err(last_error);
     }
     let r1 = command(spi, 58, 0)?;
     expect(58, r1, 0)?;
@@ -270,7 +394,15 @@ mod tests {
         bad_ocr: bool,
         reject_crc: bool,
         bad_prefix: bool,
+        prefix_calls: u16,
+        prefix_pauses: u16,
+        prefix_garbled: u16,
+        ready: bool,
+        ocr_ready_without_41_zero: bool,
+        cmd0_count: u8,
+        needs_two_cmd0: bool,
         sleeps: u32,
+        clocked_bytes: usize,
     }
     struct Bus(Rc<RefCell<Model>>);
     struct Cs(Rc<RefCell<Model>>);
@@ -305,21 +437,50 @@ mod tests {
     impl SpiBus<u8> for Bus {
         fn write(&mut self, b: &[u8]) -> Result<(), Self::Error> {
             let mut m = self.0.borrow_mut();
+            if m.selected && b == [0xff; 16] {
+                m.clocked_bytes += b.len();
+            }
             if m.selected && b.len() == 6 {
                 assert_eq!(b[5], command_crc(&b[..5]));
                 let cmd = b[0] & 63;
                 m.commands.push(cmd);
                 let mut response = std::vec![0xff];
                 match cmd {
-                    0 => response.push(1),
+                    0 => {
+                        m.cmd0_count += 1;
+                        response.push(1);
+                    }
                     8 => {
                         response.extend([1, 0, 0, 1, if m.bad_echo { 0xab } else { 0xaa }]);
                     }
-                    55 => response.push(if m.bad_prefix && m.polls == 1 { 7 } else { 1 }),
+                    55 => {
+                        m.prefix_calls += 1;
+                        if m.needs_two_cmd0 && m.cmd0_count < 2 {
+                            response.push(5);
+                            m.pending.extend(response);
+                            return Ok(());
+                        }
+                        if m.prefix_calls > 1 && m.prefix_calls <= m.prefix_pauses + 1 {
+                        } else {
+                            response.push(
+                                if (m.bad_prefix && m.polls == 1)
+                                    || (m.prefix_calls > 1
+                                        && m.prefix_calls <= m.prefix_garbled + 1)
+                                {
+                                    7
+                                } else {
+                                    1
+                                },
+                            );
+                        }
+                    }
                     41 => {
                         assert_eq!(&b[1..5], &0x40000000u32.to_be_bytes());
                         m.polls += 1;
                         if !m.never_reply {
+                            if !m.reject && m.polls >= m.ready_after {
+                                m.ready = true;
+                            }
                             response.push(if m.reject {
                                 9
                             } else if m.polls >= m.ready_after {
@@ -329,9 +490,18 @@ mod tests {
                             });
                         }
                     }
-                    58 => response.extend([0, if m.bad_ocr { 0x40 } else { 0xc0 }, 0xff, 0x80, 0]),
+                    58 => {
+                        let ready = m.ready || (m.ocr_ready_without_41_zero && m.polls > 0);
+                        response.extend([
+                            if ready { 0 } else { 1 },
+                            if ready && !m.bad_ocr { 0xc0 } else { 0x40 },
+                            0xff,
+                            0x80,
+                            0,
+                        ]);
+                    }
                     59 => {
-                        assert!(m.polls >= m.ready_after);
+                        assert!(m.ready || (m.ocr_ready_without_41_zero && m.polls > 0));
                         response.push(if m.reject_crc { 4 } else { 0 });
                     }
                     _ => panic!("unexpected command {cmd}"),
@@ -365,6 +535,69 @@ mod tests {
     fn run(m: Rc<RefCell<Model>>) -> Result<CardType, InitError> {
         let mut spi = SdSpiSession::new(Bus(m.clone()), Cs(m.clone()), Delay(m.clone()));
         handshake(&mut spi, &mut Delay(m))
+    }
+    #[test]
+    fn pauses_and_garbled_prefix_during_init_recover_without_another_cmd0() {
+        for garbled in [false, true] {
+            let m = Rc::new(RefCell::new(Model {
+                ready_after: 2,
+                prefix_pauses: if garbled { 0 } else { 3 },
+                prefix_garbled: if garbled { 3 } else { 0 },
+                ..Default::default()
+            }));
+            assert_eq!(run(m.clone()).unwrap(), CardType::SdhcSdxc);
+            let m = m.borrow();
+            assert_eq!(m.commands.iter().filter(|&&cmd| cmd == 0).count(), 2);
+            assert_eq!(m.polls, 2);
+            assert_eq!(m.sleeps, 240);
+            assert_eq!(&m.commands[m.commands.len() - 2..], &[58, 59]);
+        }
+    }
+    #[test]
+    fn valid_ocr_can_confirm_readiness_but_crc_ack_still_required() {
+        let m = Rc::new(RefCell::new(Model {
+            ready_after: 501,
+            ocr_ready_without_41_zero: true,
+            ..Default::default()
+        }));
+        assert_eq!(run(m).unwrap(), CardType::SdhcSdxc);
+        let m = Rc::new(RefCell::new(Model {
+            ready_after: 501,
+            ocr_ready_without_41_zero: true,
+            reject_crc: true,
+            ..Default::default()
+        }));
+        assert!(matches!(
+            run(m),
+            Err(InitError::Response { command: 59, r1: 4 })
+        ));
+    }
+    #[test]
+    fn wake_ack_does_not_skip_the_second_spi_mode_reset() {
+        let m = Rc::new(RefCell::new(Model {
+            ready_after: 2,
+            needs_two_cmd0: true,
+            ..Default::default()
+        }));
+        assert_eq!(run(m.clone()).unwrap(), CardType::SdhcSdxc);
+        assert_eq!(m.borrow().cmd0_count, 2);
+    }
+    #[test]
+    fn clocked_wait_preserves_commands_and_replaces_cpu_sleep() {
+        let m = Rc::new(RefCell::new(Model {
+            ready_after: 2,
+            needs_two_cmd0: true,
+            ..Default::default()
+        }));
+        let mut spi = SdSpiSession::new(Bus(m.clone()), Cs(m.clone()), Delay(m.clone()));
+        assert_eq!(
+            handshake_clocked(&mut spi, &mut Delay(m.clone())).unwrap(),
+            CardType::SdhcSdxc
+        );
+        let m = m.borrow();
+        assert_eq!(m.cmd0_count, 2);
+        assert_eq!(m.sleeps, 0);
+        assert_eq!(m.clocked_bytes, 210 * 16);
     }
     #[test]
     fn known_command_crc_vectors() {
@@ -413,7 +646,7 @@ mod tests {
         assert_eq!(run(m.clone()).unwrap(), CardType::SdhcSdxc);
         let m = m.borrow();
         assert_eq!(m.polls, 4);
-        assert_eq!(m.sleeps, 30);
+        assert_eq!(m.sleeps, 230);
         assert_eq!(&m.commands[m.commands.len() - 2..], &[58, 59]);
     }
     #[test]
@@ -436,7 +669,7 @@ mod tests {
     #[test]
     fn idle_is_bounded_and_voltage_echo_is_checked() {
         let m = Rc::new(RefCell::new(Model {
-            ready_after: 201,
+            ready_after: 501,
             ..Default::default()
         }));
         assert!(matches!(
@@ -446,8 +679,8 @@ mod tests {
                 acmd41: 1
             })
         ));
-        assert_eq!(m.borrow().polls, 200);
-        assert_eq!(m.borrow().sleeps, 2000);
+        assert_eq!(m.borrow().polls, 500);
+        assert_eq!(m.borrow().sleeps, 5200);
         let m = Rc::new(RefCell::new(Model {
             bad_echo: true,
             ..Default::default()

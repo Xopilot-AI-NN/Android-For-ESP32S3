@@ -13,6 +13,7 @@ display-diagnostic = []
 pc-block-boot = []
 sd-software-spi = []
 sd-checked-startup = []
+sd-selftest = []
 radio-services = []
 
 [dependencies]

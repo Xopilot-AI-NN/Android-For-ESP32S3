@@ -10,7 +10,15 @@ path = "src/main.rs"
 test = false
 bench = false
 
+[[bin]]
+name = "sd-selftest"
+path = "tools/diagnostics/sd_selftest.rs"
+test = false
+bench = false
+required-features = ["sd-selftest"]
+
 [features]
+sd-selftest = []
 ble-hid = ["radio-services", "dep:trouble-host", "dep:embassy-futures", "dep:embassy-sync", "dep:embassy-time", "dep:embassy-time-driver", "dep:rand_core"]
 default = ["rhai-runtime", "display-st7789", "pc-block-boot", "ble-hid"]
 rhai-runtime = ["dep:rhai"]
