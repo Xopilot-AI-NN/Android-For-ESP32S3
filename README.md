@@ -83,15 +83,28 @@ adb shell dumpsys hardware
 adb pull /sdcard/Wallpapers/1.png ./watch-wallpaper.png
 ```
 
-Built-in PNGs 1.png through 16.png are read-only and stream in ACK-paced 512-byte
-chunks. Display settings now persist wallpaper brightness and the analog second
+System PNGs 1.png through 16.png are read-only and stream in ACK-paced 512-byte
+chunks after an on-demand disk read. Display settings now persist wallpaper brightness and the analog second
 hand switch. Hidden timer/stopwatch ticks no longer invalidate static pages.
 For scope, limitations, power-measurement guidance and loader-only update
 commands, see [delivery notes](Bootloader/DELIVERY.md).
 
+## System graphics update
+
+The loader now requires the resource package from the matching system image for
+normal app icons and default wallpapers. Rebuild Firmware along with Bootloader;
+for PC mode, `cd Bootloader && ./flash pc` performs both builds. For SD mode,
+update the system image on the card as well as flashing the loader with
+`./flash sd`; that command does not write a card inserted in a PC card reader.
+A loader-only update against an older system image leaves normal graphics
+unavailable and logs `Resources: system image needs UI resource update`.
+Boot/recovery/fastboot lettering and drawing remain available without that pack.
+
 ## Wallpapers, launcher and AOD
 
-Sixteen defaults from `Firmware/walp` are built into the loader. Select them in
+Sixteen defaults from `Firmware/walp` and both icon atlases are packaged in
+`system/usr/share/aosp-wear/ui-resources.bin` inside `super.img`. They are not
+linked into the ESP32 executable. Select wallpapers in
 **Настройки → Экран → Выбор обоев**. Wallpaper brightness defaults to 85%
 and is configurable independently of the overall display brightness.
 
@@ -106,7 +119,7 @@ up to 320 KiB, validates them and saves RGB565 to the reserved userdata area.
 It does not expose a general filesystem. A successful transfer selects the
 uploaded wallpaper; saving can fail if userdata is unavailable or occupied by
 an incompatible filesystem. JPEG/other sizes must be converted on the PC first.
-No card rewrite is needed. Defaults are restored by selecting one in Settings.
+Custom wallpaper uploads require no card rewrite. Defaults are restored by selecting one in Settings.
 
 The launcher remembers grid/list mode across reopening and reboot. Focus uses
 a darker fill without changing button dimensions. AOD is an optional switch
