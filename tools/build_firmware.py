@@ -105,7 +105,7 @@ def ui_resource_package() -> bytes:
         raise ValueError("UI resource ABI v1 requires 16 default wallpapers")
     payloads = [(icons / "atlas.bin").read_bytes(),
                 (icons / "launcher.bin").read_bytes()]
-    if len(payloads[0]) != 31 * 24 * 24 // 2 or len(payloads[1]) != 31 * 30 * 30 // 2:
+    if len(payloads[0]) != 35 * 24 * 24 // 2 or len(payloads[1]) != 35 * 30 * 30 // 2:
         raise ValueError("Material icon atlas does not match UI resource ABI v1")
     payloads.extend((ROOT / "walp" / item["file"]).read_bytes() for item in manifest)
     header = bytearray(512)

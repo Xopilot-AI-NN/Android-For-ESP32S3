@@ -16,6 +16,7 @@ const symbols = {
     Flashlight: 'flashlight_on', Previous: 'skip_previous', Next: 'skip_next',
     Timer: 'timer', Alarm: 'alarm', Devices: 'devices',
     Calculator: 'calculate', Folder: 'folder_open', Share: 'share', Diagnostics: 'monitor_heart',
+    Weather: 'partly_cloudy_day', World: 'public', Breathing: 'air', Memory: 'memory',
 };
 fs.mkdirSync(root, {recursive: true});
 const fetch = process.argv.includes('--fetch');
