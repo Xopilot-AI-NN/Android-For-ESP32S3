@@ -498,11 +498,8 @@ mod tft {
         }
         fn boot_logo(&mut self) -> Result<(), DisplayError> {
             self.frame_valid = false;
-            for phase in 1..=12 {
-                self.material_surface.boot_frame((phase * 255 / 12) as u8);
-                self.flush_material_rect(Rect::FULL)?;
-            }
-            Ok(())
+            self.material_surface.boot_frame(255);
+            self.flush_material_rect(Rect::FULL)
         }
         fn boot_progress(&mut self, label: &str, phase: u8) -> Result<(), DisplayError> {
             self.frame_valid = false;

@@ -106,13 +106,13 @@ mod tests {
         f
     }
     #[test]
-    fn continuous_crown_steps_are_visible_immediately_while_page_changes_still_fade() {
+    fn reduced_motion_keeps_crown_steps_and_page_changes_immediate() {
         time::set(100);
         let mut os = start();
         os.replace_state(5 | (70 << 9)).unwrap();
         time::set_ms(100_100);
-        let alpha = frame(&mut os).transition_alpha;
-        assert!(alpha > 0 && alpha < 255, "page transition still animates");
+        assert_eq!(frame(&mut os).transition_alpha, 255);
+        assert_eq!(frame(&mut os).animation_phase, 0);
         for ms in [100_120, 100_160, 100_200, 100_240] {
             time::set_ms(ms);
             let before = os.state();
@@ -121,7 +121,7 @@ mod tests {
             assert_eq!(f.transition_alpha, 255, "each crown step must reach the panel immediately");
         }
         os.dispatch(RuntimeEvent::Home).unwrap();
-        assert_eq!(frame(&mut os).transition_alpha, 0);
+        assert_eq!(frame(&mut os).transition_alpha, 255);
         time::set_ms(100_440);
         assert_eq!(frame(&mut os).transition_alpha, 255);
     }
