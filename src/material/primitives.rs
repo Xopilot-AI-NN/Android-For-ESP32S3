@@ -96,7 +96,11 @@ impl Surface {
         if alpha == 0 || x < 0 || y < 0 || x >= WIDTH as i32 || y >= HEIGHT as i32 {
             return;
         }
-        let alpha = u32::from(alpha.min(15));
+        if alpha >= 15 {
+            self.pixels[y as usize * WIDTH + x as usize] = color;
+            return;
+        }
+        let alpha = u32::from(alpha);
         let bg = u32::from(self.pixels[y as usize * WIDTH + x as usize]);
         let blend = |shift: u32, mask: u32| -> u16 {
             (((((u32::from(color) >> shift) & mask) * alpha

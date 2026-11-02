@@ -3,6 +3,14 @@ pub enum DisplayError {
     Bus,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RenderStats {
+    pub drawn: u32,
+    pub skipped: u32,
+    pub last_us: u64,
+    pub max_us: u64,
+    pub last_pixels: u32,
+}
 use crate::runtime::RuntimeFrame;
 pub trait Backlight: embedded_hal::digital::OutputPin {
     fn set_brightness(&mut self, percent: u8) -> Result<(), Self::Error>;
@@ -12,6 +20,9 @@ pub trait Backlight: embedded_hal::digital::OutputPin {
 }
 
 pub trait BootDisplay {
+    fn render_stats(&self) -> RenderStats {
+        RenderStats::default()
+    }
     fn set_wallpaper(&mut self, _pixels: alloc::vec::Vec<u16>) {}
     fn snapshot_rgb565(&self) -> Option<&[u16]> {
         None
@@ -161,7 +172,7 @@ mod tft {
     use crate::{
         config,
         font::glyph,
-        material::{Rect, Surface},
+        material::{MaterialFrame, Rect, Surface},
         runtime::RuntimeFrame,
     };
     use alloc::{vec, vec::Vec};
@@ -188,6 +199,8 @@ mod tft {
         awake: bool,
         displayed: Vec<u16>,
         frame_valid: bool,
+        last_scene: Option<MaterialFrame>,
+        stats: super::RenderStats,
     }
 
     impl<SPI, CS, DC, RST, BL> St7789Display<SPI, CS, DC, RST, BL>
@@ -223,6 +236,8 @@ mod tft {
                 awake: true,
                 displayed: vec![0; 240 * 280],
                 frame_valid: false,
+                last_scene: None,
+                stats: super::RenderStats::default(),
             };
             s.cmd(0x01, &[])?; // SWRESET
             delay.delay_ms(120);
@@ -372,22 +387,27 @@ mod tft {
             }
             self.set_window(x0, y0, x1, y1)?;
             let pixels = self.material_surface.pixels();
-            let mut buf = [0u8; 256];
+            // Carry the buffer across row boundaries: full chunks match SPI FIFO
+            // sizing and avoid two short writes for every 240-pixel row.
+            let mut buf = [0u8; 1024];
+            let mut used = 0;
             for y in y0..=y1 {
                 let row = &pixels[y as usize * W as usize + x0 as usize
                     ..y as usize * W as usize + x1 as usize + 1];
-                let mut pos = 0;
-                while pos < row.len() {
-                    let count = (row.len() - pos).min(buf.len() / 2);
-                    for (i, &px) in row[pos..pos + count].iter().enumerate() {
-                        buf[i * 2] = (px >> 8) as u8;
-                        buf[i * 2 + 1] = px as u8;
+                for &px in row {
+                    buf[used] = (px >> 8) as u8;
+                    buf[used + 1] = px as u8;
+                    used += 2;
+                    if used == buf.len() {
+                        self.spi.write(&buf).map_err(|_| DisplayError::Bus)?;
+                        used = 0;
                     }
-                    self.spi
-                        .write(&buf[..count * 2])
-                        .map_err(|_| DisplayError::Bus)?;
-                    pos += count;
                 }
+            }
+            if used != 0 {
+                self.spi
+                    .write(&buf[..used])
+                    .map_err(|_| DisplayError::Bus)?;
             }
             self.spi.flush().map_err(|_| DisplayError::Bus)?;
             self.cs.set_high().map_err(|_| DisplayError::Bus)
@@ -462,6 +482,9 @@ mod tft {
         RST: OutputPin,
         BL: Backlight,
     {
+        fn render_stats(&self) -> super::RenderStats {
+            self.stats
+        }
         fn set_wallpaper(&mut self, pixels: Vec<u16>) {
             self.material_surface.set_wallpaper(pixels);
             self.frame_valid = false;
@@ -521,6 +544,17 @@ mod tft {
                         self.awake = true;
                         self.frame_valid = false;
                     }
+                    let key = scene.visual_key();
+                    if self.frame_valid
+                        && scene.transition_alpha == 255
+                        && self.last_scene == Some(key)
+                    {
+                        self.stats.skipped = self.stats.skipped.saturating_add(1);
+                        return Ok(());
+                    }
+                    let began = esp_hal::time::Instant::now()
+                        .duration_since_epoch()
+                        .as_micros() as u64;
                     self.material_surface.render(*scene);
                     let brightness = scene
                         .display_brightness
@@ -538,12 +572,20 @@ mod tft {
                     } else {
                         Some(Rect::FULL)
                     };
+                    self.stats.last_pixels = dirty.map(|r| (r.w * r.h) as u32).unwrap_or(0);
                     if let Some(dirty) = dirty {
                         self.flush_material_rect(dirty)?;
                         self.displayed
                             .copy_from_slice(self.material_surface.pixels());
                         self.frame_valid = true;
                     }
+                    self.last_scene = Some(key);
+                    self.stats.drawn = self.stats.drawn.saturating_add(1);
+                    self.stats.last_us = (esp_hal::time::Instant::now()
+                        .duration_since_epoch()
+                        .as_micros() as u64)
+                        .saturating_sub(began);
+                    self.stats.max_us = self.stats.max_us.max(self.stats.last_us);
                     // On wake, show the PIN frame before enabling the backlight.
                     self.bl
                         .set_brightness(if scene.screen == 29 { 100 } else { brightness })
@@ -573,6 +615,8 @@ mod tft {
             cs_high: bool,
             dc_high: bool,
             bytes: usize,
+            writes: usize,
+            ram: Vec<u8>,
             brightness: u8,
             command: u8,
             madctl: u8,
@@ -589,10 +633,17 @@ mod tft {
                 let mut wire = self.0.borrow_mut();
                 assert!(!wire.cs_high, "writing with CS deasserted");
                 wire.bytes += bytes.len();
+                wire.writes += 1;
                 if !wire.dc_high {
                     wire.command = bytes[0];
+                    if wire.command == 0x2c {
+                        wire.ram.clear();
+                    }
                 } else if wire.command == 0x36 {
                     wire.madctl = bytes[0];
+                }
+                if wire.dc_high && wire.command == 0x2c {
+                    wire.ram.extend_from_slice(bytes);
                 }
                 // Model esp-hal: the final transfer remains active on return.
                 wire.busy = true;
@@ -649,6 +700,64 @@ mod tft {
         struct NoDelay;
         impl DelayNs for NoDelay {
             fn delay_ns(&mut self, _: u32) {}
+        }
+
+        #[test]
+        fn static_frames_skip_rasterization_and_cropped_transfers_keep_row_order() {
+            let wire = Rc::new(RefCell::new(Wire::default()));
+            let pin = |kind| Pin {
+                wire: wire.clone(),
+                kind,
+            };
+            let mut display = St7789Display::new(
+                Bus(wire.clone()),
+                pin(0),
+                pin(1),
+                pin(2),
+                pin(3),
+                &mut NoDelay,
+            )
+            .unwrap();
+            let mut frame =
+                crate::material::MaterialFrame::parse("M3|5|0|70|0|0|0|0|1|1|0|0|600|0|0|0|1|1|3")
+                    .unwrap();
+            let before = wire.borrow().writes;
+            display.runtime(&RuntimeFrame::Material(frame)).unwrap();
+            assert!(
+                wire.borrow().writes - before < 180,
+                "full frame should use batched SPI writes"
+            );
+            let drawn = display.stats.drawn;
+            let calls = wire.borrow().writes;
+            frame.animation_phase = 120;
+            frame.time_seconds = 37;
+            display.runtime(&RuntimeFrame::Material(frame)).unwrap();
+            assert_eq!(display.stats.drawn, drawn);
+            assert_eq!(display.stats.skipped, 1);
+            assert_eq!(wire.borrow().writes, calls);
+            let rect = Rect {
+                x: 7,
+                y: 8,
+                w: 200,
+                h: 4,
+            };
+            let expected: Vec<u8> = (8..12)
+                .flat_map(|y| {
+                    display.material_surface.pixels()[y * 240 + 7..y * 240 + 207]
+                        .iter()
+                        .flat_map(|p| p.to_be_bytes())
+                        .collect::<Vec<_>>()
+                })
+                .collect();
+            display.flush_material_rect(rect).unwrap();
+            assert_eq!(
+                wire.borrow().ram,
+                expected,
+                "cropped rows and partial chunks must retain RGB565 byte order"
+            );
+            frame.brightness = 25;
+            display.runtime(&RuntimeFrame::Material(frame)).unwrap();
+            assert_eq!(display.stats.drawn, drawn + 1);
         }
 
         #[test]

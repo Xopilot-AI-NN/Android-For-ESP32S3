@@ -17,7 +17,15 @@ pub fn execute<D: BlockDevice, B: BootDisplay>(
     let mut words = cmd.split_whitespace();
     let name = words.next().unwrap_or("");
     match name {
-        "state" | "display" | "input" | "clock" => {
+        "display" => {
+            let _ = write!(
+                out,
+                "state={} renderer={:?}",
+                os.state(),
+                display.render_stats()
+            );
+        }
+        "state" | "input" | "clock" => {
             let _ = write!(
                 out,
                 "state={} sensitivity={} prefs={:?}",

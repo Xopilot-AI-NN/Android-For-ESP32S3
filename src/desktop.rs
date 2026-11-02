@@ -394,6 +394,9 @@ impl<'d, D> DesktopMirror<'d, D> {
 
 #[cfg(not(feature = "pc-block-boot"))]
 impl<D: BootDisplay> BootDisplay for DesktopMirror<'_, D> {
+    fn render_stats(&self) -> crate::display::RenderStats {
+        self.inner.render_stats()
+    }
     fn set_wallpaper(&mut self, pixels: alloc::vec::Vec<u16>) {
         self.inner.set_wallpaper(pixels);
     }

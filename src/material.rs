@@ -480,6 +480,8 @@ mod theme_tests {
 mod compositor;
 #[path = "material/dial.rs"]
 mod dial;
+#[path = "material/frame_key.rs"]
+mod frame_key;
 #[path = "material/pages_boot.rs"]
 mod pages_boot;
 #[path = "material/pages_faces.rs"]
