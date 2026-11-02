@@ -19,6 +19,7 @@ import threading
 import zlib
 from contextlib import contextmanager
 from pathlib import Path
+from logcat import LogBuffer
 
 try:
     import fcntl
@@ -120,6 +121,7 @@ class ViewerBridge:
         self.stop_event = threading.Event()
         self.clients: set[socket.socket] = set()
         self.clients_lock = threading.Lock()
+        self.logs = LogBuffer()
         self.thread = threading.Thread(target=self._run, name="aosp-wear-viewer-bridge", daemon=True)
 
     def start(self) -> None:
@@ -134,10 +136,9 @@ class ViewerBridge:
         self.stop_event.set()
         # Wake selector/accept without touching the serial device.
         try:
-            wake = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            wake.settimeout(0.1)
-            wake.connect(str(self.path))
-            wake.close()
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as wake:
+                wake.settimeout(0.1)
+                wake.connect(str(self.path))
         except OSError:
             pass
         self.thread.join(timeout=1.0)
@@ -174,6 +175,33 @@ class ViewerBridge:
                     client.close()
                 except OSError:
                     pass
+
+    def publish_log(self, line: str) -> None:
+        with self.clients_lock:
+            record = self.logs.add(line)
+        if record is not None:
+            self.broadcast(record.wire())
+
+    def _log_command(self, client: socket.socket, line: str) -> bool:
+        # These commands stay on the host; never send them into the disk link.
+        if not line.startswith("@ZLOG|"):
+            return False
+        parts = line.split("|")
+        with self.clients_lock:
+            if len(parts) >= 2 and parts[1] == "CLEAR":
+                self.logs.records.clear()
+                records = []
+            elif len(parts) == 3 and parts[1] == "DUMP" and parts[2].isdigit():
+                count = max(1, min(128, int(parts[2])))
+                records = list(self.logs.records)[-count:]
+            else:
+                records = []
+            payload = "".join(record.wire() + "\n" for record in records) + "@ZLOG|END\n"
+            try:
+                client.sendall(payload.encode("utf-8"))
+            except OSError:
+                pass
+        return True
 
     def _queue_command(self, line: str) -> None:
         line = line.strip("\r\n")
@@ -243,7 +271,9 @@ class ViewerBridge:
                     while b"\n" in buf:
                         raw, _, rest = buf.partition(b"\n")
                         buf[:] = rest
-                        self._queue_command(raw.rstrip(b"\r").decode("utf-8", errors="replace"))
+                        line = raw.rstrip(b"\r").decode("utf-8", errors="replace")
+                        if not self._log_command(client, line):
+                            self._queue_command(line)
         finally:
             for client in list(buffers):
                 try:
@@ -376,7 +406,8 @@ def serve(
                             # the terminal every few seconds.
                             if bridge is not None:
                                 bridge.broadcast(text)
-                            if not text.startswith("@ZWUI|PONG|"):
+                                bridge.publish_log(text)
+                            if not text.startswith("@ZWUI|"):
                                 print(f"[esp] {text}")
                         continue
 

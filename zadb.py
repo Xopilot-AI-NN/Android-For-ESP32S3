@@ -11,6 +11,7 @@ import argparse
 import os
 import socket
 import time
+import sys
 from pathlib import Path
 
 
@@ -70,6 +71,9 @@ def build_command(args: argparse.Namespace) -> tuple[str, str]:
 
 
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == "logcat":
+        from logcat import main as logcat_main
+        return logcat_main(sys.argv[2:])
     ap = argparse.ArgumentParser(description="AOSP Wear OS Android 17 QPR1 debug bridge")
     sub = ap.add_subparsers(dest="command", required=True)
     for name in SIMPLE_COMMANDS:
