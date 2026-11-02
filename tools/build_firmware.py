@@ -97,6 +97,30 @@ def bundle_framework(system_root: Path) -> bytes:
     return b"".join(chunks)
 
 
+def ui_resource_package() -> bytes:
+    """Index images independently of the runtime script; keep PNGs on disk."""
+    icons = ROOT / "resources" / "material-symbols"
+    manifest = json.loads((ROOT / "walp" / "manifest.json").read_text())
+    if len(manifest) != 16:
+        raise ValueError("UI resource ABI v1 requires 16 default wallpapers")
+    payloads = [(icons / "atlas.bin").read_bytes(),
+                (icons / "launcher.bin").read_bytes()]
+    if len(payloads[0]) != 31 * 24 * 24 // 2 or len(payloads[1]) != 31 * 30 * 30 // 2:
+        raise ValueError("Material icon atlas does not match UI resource ABI v1")
+    payloads.extend((ROOT / "walp" / item["file"]).read_bytes() for item in manifest)
+    header = bytearray(512)
+    header[:8] = b"WRESv1\0\0"
+    struct.pack_into("<I", header, 8, len(payloads))
+    offset = len(header)
+    for index, payload in enumerate(payloads):
+        if not payload or len(payload) > 320 * 1024:
+            raise ValueError("UI resource exceeds the bounded loader size")
+        struct.pack_into("<III", header, 16 + index * 12,
+                         offset, len(payload), zlib.crc32(payload))
+        offset += len(payload)
+    return bytes(header) + b"".join(payloads)
+
+
 def prepare_partition_tree(partition: str, staging: Path) -> Path:
     src = ROOT / partition
     dst = staging / partition
@@ -105,6 +129,9 @@ def prepare_partition_tree(partition: str, staging: Path) -> Path:
         bundle = bundle_framework(src)
         (dst / "framework" / "aosp-wear-framework.rhai").write_bytes(bundle)
         shutil.rmtree(dst / "framework" / "src")
+        resources = dst / "usr" / "share" / "aosp-wear"
+        resources.mkdir(parents=True, exist_ok=True)
+        (resources / "ui-resources.bin").write_bytes(ui_resource_package())
     return dst
 
 
