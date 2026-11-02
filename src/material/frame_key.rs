@@ -8,7 +8,22 @@ impl MaterialFrame {
             self.lockout_secs = 0;
             self.media_progress = 0;
         }
-        let analog = self.screen == 1 && self.watch_face == 1 && !self.power_menu && !self.aod;
+        let native = self.app.id != crate::apps::NONE;
+        // Hidden stopwatches and countdowns must not invalidate static pages.
+        // Alerts retain their own clock_alert field and still repaint immediately.
+        if self.aod || self.power_menu || native || !matches!(self.screen, 1 | 9 | 11) {
+            self.timer_secs = 0;
+            self.stopwatch_secs = 0;
+        }
+        if self.aod || native || self.screen != 10 {
+            self.media_progress = 0;
+        }
+        let analog = self.screen == 1
+            && self.watch_face == 1
+            && self.show_seconds
+            && !native
+            && !self.power_menu
+            && !self.aod;
         let animated_media =
             self.screen == 10 && self.media_known && self.media_playing && !self.power_menu;
         if !analog {

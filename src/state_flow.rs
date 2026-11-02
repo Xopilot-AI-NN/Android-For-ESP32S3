@@ -7,6 +7,9 @@ pub(crate) fn apply_wallpaper_upload<D: BlockDevice, B: BootDisplay>(
     display: &mut B,
     os: &mut runtime::Runtime,
 ) {
+    if os.diagnostics_active() {
+        crate::apps::storage::sample(dev, display.render_stats().last_us);
+    }
     if let Some(pixels) = wallpaper::take_upload() {
         let ok = wallpaper::save(dev, &pixels);
         if ok {

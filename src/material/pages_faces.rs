@@ -95,22 +95,29 @@ impl Surface {
         }
         let minute = f.time_minutes % 60;
         let hour = f.time_minutes / 60 % 12;
-        let h = super::dial::point(hour * 300 + minute * 5 + u16::from(f.time_seconds) / 12, 49);
-        let m = super::dial::point(minute * 60 + u16::from(f.time_seconds), 73);
+        let seconds = if f.show_seconds {
+            u16::from(f.time_seconds)
+        } else {
+            0
+        };
+        let h = super::dial::point(hour * 300 + minute * 5 + seconds / 12, 49);
+        let m = super::dial::point(minute * 60 + seconds, 73);
         let s = super::dial::point(
             u16::from(f.time_seconds) * 60 + u16::from(f.animation_phase) * 60 / 255,
             84,
         );
         self.line(120, 144, 120 + h.0, 144 + h.1, 5, t.on_surface);
         self.line(120, 144, 120 + m.0, 144 + m.1, 3, t.primary);
-        self.line(
-            120 - s.0 / 5,
-            144 - s.1 / 5,
-            120 + s.0,
-            144 + s.1,
-            1,
-            t.error,
-        );
+        if f.show_seconds {
+            self.line(
+                120 - s.0 / 5,
+                144 - s.1 / 5,
+                120 + s.0,
+                144 + s.1,
+                1,
+                t.error,
+            );
+        }
         self.circle(120, 144, 4, t.primary);
     }
 }

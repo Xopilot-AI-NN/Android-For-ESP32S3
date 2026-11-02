@@ -212,6 +212,38 @@ pub fn shell_command<const N: usize>(service: &str, out: &mut heapless::String<N
         return;
     }
     match cmd {
+        "dumpsys meminfo" => {
+            let _ = writeln!(
+                out,
+                "Heap used={} free={} internal_free={} bytes",
+                esp_alloc::HEAP.used(),
+                esp_alloc::HEAP.free(),
+                esp_alloc::HEAP.free_caps(esp_alloc::MemoryCapability::Internal.into())
+            );
+        }
+        "dumpsys hardware" => {
+            let _ = writeln!(
+                out,
+                "ESP32-S3 CPU=240MHz uptime={}s",
+                esp_hal::time::Instant::now()
+                    .duration_since_epoch()
+                    .as_secs()
+            );
+            let (disk, user, system, frame_us) = crate::apps::storage::snapshot();
+            let _ = writeln!(
+                out,
+                "storage_sampled={} disk={}MiB userdata={}MiB super={}MiB last_frame={}us",
+                crate::apps::storage::ready(),
+                disk,
+                user,
+                system,
+                frame_us
+            );
+            let _ = writeln!(
+                out,
+                "temperature=unavailable (S3 driver pending); current=unavailable (no sensor)"
+            );
+        }
         "service list" => {
             for (idx, item) in services().split(' ').enumerate() {
                 let _ = writeln!(out, "{}\t{}: [android.os.IService]", idx, item);

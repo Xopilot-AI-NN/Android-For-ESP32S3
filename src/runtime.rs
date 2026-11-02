@@ -158,6 +158,7 @@ pub struct Runtime {
     /// pure with respect to outer Scope variables, so state crosses the ABI
     /// explicitly instead of relying on closure/global-variable semantics.
     state: i32,
+    native_app: crate::apps::State,
     wifi_ui: WifiUi,
     flashlight_since_secs: Option<u64>,
     bluetooth_action: Option<BluetoothUiAction>,
@@ -176,6 +177,8 @@ pub struct Runtime {
     launcher_grid: bool,
     aod_enabled: bool,
     wallpaper_index: u8,
+    wallpaper_level: u8,
+    show_seconds: bool,
     wallpaper_enabled: bool,
     has_wallpaper: bool,
     playback: Option<crate::media::Playback>,
@@ -281,6 +284,7 @@ impl Runtime {
             scope,
             ast,
             state,
+            native_app: crate::apps::State::default(),
             wifi_ui: WifiUi::new(),
             flashlight_since_secs: None,
             bluetooth_action: None,
@@ -299,6 +303,8 @@ impl Runtime {
             launcher_grid: false,
             aod_enabled: false,
             wallpaper_index: 1,
+            wallpaper_level: 85,
+            show_seconds: true,
             wallpaper_enabled: true,
             has_wallpaper: true,
             playback: None,
@@ -320,6 +326,7 @@ impl Runtime {
         }
         if self.security.locked {
             self.name_editor.active = false;
+            self.native_app.close();
             self.state &= !0x1ff;
         }
         if self.security.has_pin {
@@ -353,6 +360,16 @@ impl Runtime {
             let name = crate::device_name::snapshot();
             m.device_name_len = name.len() as u8;
             m.device_name[..name.len()].copy_from_slice(name.as_bytes());
+            m.app = self.native_app.view();
+            if m.app.id == crate::apps::DIAGNOSTICS {
+                m.app.uptime = Instant::now().duration_since_epoch().as_secs();
+                m.app.free_kib = (esp_alloc::HEAP.free() / 1024) as u32;
+                m.app.internal_kib = (esp_alloc::HEAP
+                    .free_caps(esp_alloc::MemoryCapability::Internal.into())
+                    / 1024) as u32;
+                m.app.script_us = self.scene_cache.stats.last_us;
+                m.app.cache_hits = self.scene_cache.stats.cache_hits;
+            }
             m.name_editing = self.name_editor.active;
             if m.name_editing {
                 m.keyboard = self.name_editor.keyboard.view;
@@ -400,6 +417,8 @@ impl Runtime {
                 m.display_sleep = false;
                 m.display_brightness = Some(5);
             }
+            m.wallpaper_level = self.wallpaper_level;
+            m.show_seconds = self.show_seconds;
             m.wallpaper_index = self.wallpaper_index;
             // Prefer immediate updates on this MCU over full-screen fades.
             m.transition_alpha = 255;
@@ -433,6 +452,10 @@ impl Runtime {
     pub fn state(&self) -> i32 {
         self.state
     }
+    pub fn diagnostics_active(&self) -> bool {
+        self.native_app.view().id == crate::apps::DIAGNOSTICS
+    }
+
     pub fn script_stats(&self) -> ScriptStats {
         self.scene_cache.stats
     }
@@ -479,7 +502,7 @@ impl Runtime {
     }
     pub fn preference_config(&self) -> [u8; 12] {
         [
-            3,
+            4,
             self.crown_sensitivity,
             u8::from(self.crown_reverse),
             u8::from(self.high_contrast),
@@ -488,15 +511,15 @@ impl Runtime {
             u8::from(self.launcher_grid),
             u8::from(self.aod_enabled),
             self.wallpaper_index,
-            0,
-            0,
+            self.wallpaper_level,
+            u8::from(self.show_seconds),
             0,
         ]
     }
     pub fn restore_preferences(&mut self, raw: &[u8]) {
         if ((raw.len() == 4 && raw[0] == 1)
             || (raw.len() == 8 && raw[0] == 2)
-            || (raw.len() == 12 && raw[0] == 3))
+            || (raw.len() == 12 && matches!(raw[0], 3 | 4)))
             && raw[1] <= 2
             && raw[2] <= 1
             && raw[3] <= 1
@@ -512,6 +535,10 @@ impl Runtime {
                 self.launcher_grid = raw[6] != 0;
                 self.aod_enabled = raw[7] != 0;
                 self.wallpaper_index = raw[8].min(crate::wallpaper::builtin_count());
+                if raw[0] == 4 {
+                    self.wallpaper_level = raw[9].clamp(40, 100);
+                    self.show_seconds = raw[10] != 0;
+                }
             }
         }
     }
@@ -686,6 +713,7 @@ impl Runtime {
                         _ => None,
                     };
                     if self.power_cursor == 2 && !self.security.locked {
+                        self.native_app.close();
                         self.state = (self.state & !0x1ff) | 1;
                     }
                     self.power_menu = false;
@@ -727,9 +755,45 @@ impl Runtime {
         let screen = (self.state & 0x1f) as u8;
         let was_bt_enabled = self.state & (1 << 22) != 0;
         let cursor = ((self.state >> 5) & 15) as u8;
-        if matches!(screen, 2 | 26) && cursor == 6 && event == RuntimeEvent::Press {
-            self.launcher_grid = screen == 2;
-            self.state = (self.state & !0x1ff) | if self.launcher_grid { 26 } else { 2 };
+        // Native applications share one bounded router; the old SD script ABI stays intact.
+        if self.native_app.active() {
+            if matches!(
+                event,
+                RuntimeEvent::Home | RuntimeEvent::Back | RuntimeEvent::Swipe(2)
+            ) {
+                self.native_app.close();
+                if event == RuntimeEvent::Home {
+                    self.state = (self.state & !0x1ff) | 1;
+                }
+            } else if let Some(index) = self.native_app.event(event) {
+                self.wallpaper_index = index;
+                self.wallpaper_enabled = true;
+            }
+            return self.render();
+        }
+        if matches!(screen, 2 | 26) {
+            match event {
+                RuntimeEvent::Rotate(delta) => {
+                    let count = i32::from(crate::apps::COUNT) + 1;
+                    self.state = (self.state & !0x1e0)
+                        | ((i32::from(cursor) + delta.rem_euclid(count)).rem_euclid(count) << 5);
+                }
+                RuntimeEvent::Press if cursor == crate::apps::COUNT => {
+                    self.launcher_grid = screen == 2;
+                    self.state = (self.state & !0x1ff) | if self.launcher_grid { 26 } else { 2 };
+                }
+                RuntimeEvent::Press => {
+                    if let Some(route) = crate::apps::route(cursor) {
+                        self.state = (self.state & !0x1ff) | i32::from(route);
+                    } else {
+                        self.native_app.open(cursor);
+                    }
+                }
+                RuntimeEvent::Home | RuntimeEvent::Back | RuntimeEvent::Swipe(2) => {
+                    self.state = (self.state & !0x1ff) | 1
+                }
+                _ => {}
+            }
             return self.render();
         }
         if self.name_editor.active {
@@ -750,14 +814,19 @@ impl Runtime {
         if screen == 15 {
             match event {
                 RuntimeEvent::Rotate(delta) => {
-                    self.state =
-                        (self.state & !0x1e0) | ((i32::from(cursor) + delta).rem_euclid(5) << 5)
+                    self.state = (self.state & !0x1e0)
+                        | ((i32::from(cursor) + delta.rem_euclid(7)).rem_euclid(7) << 5)
                 }
                 RuntimeEvent::Press => match cursor {
                     0 => self.state = (self.state & !0x1ff) | 16,
                     1 => self.state = (self.state & !0x1ff) | 8,
                     2 => self.state = (self.state & !0x1ff) | 22,
                     3 => self.name_editor.begin(),
+                    4 => self.native_app.open(crate::apps::DIAGNOSTICS),
+                    5 => {
+                        self.power_menu = true;
+                        self.power_cursor = 0;
+                    }
                     _ => self.state = (self.state & !0x1ff) | 5 | (7 << 5),
                 },
                 RuntimeEvent::Back => self.state = (self.state & !0x1ff) | 5 | (7 << 5),
@@ -769,8 +838,8 @@ impl Runtime {
         if screen == 14 {
             match event {
                 RuntimeEvent::Rotate(d) => {
-                    self.state =
-                        (self.state & !0x1e0) | ((i32::from(cursor) + d).rem_euclid(8) << 5)
+                    self.state = (self.state & !0x1e0)
+                        | ((i32::from(cursor) + d.rem_euclid(10)).rem_euclid(10) << 5)
                 }
                 RuntimeEvent::Press => match cursor {
                     0 => self.state = (self.state & !0x1ff) | 28,
@@ -791,6 +860,16 @@ impl Runtime {
                         self.wallpaper_enabled = true;
                     }
                     6 => self.aod_enabled = !self.aod_enabled,
+                    7 => {
+                        self.wallpaper_level = match self.wallpaper_level {
+                            0..=59 => 60,
+                            60..=74 => 75,
+                            75..=84 => 85,
+                            85..=99 => 100,
+                            _ => 40,
+                        }
+                    }
+                    8 => self.show_seconds = !self.show_seconds,
                     _ => self.state = (self.state & !0x1ff) | 5 | (2 << 5),
                 },
                 RuntimeEvent::Back => self.state = (self.state & !0x1ff) | 5 | (2 << 5),
@@ -1189,6 +1268,9 @@ impl Runtime {
                 line3: "".to_string(),
             }),
         ))
+    }
+    pub fn diagnostics_active(&self) -> bool {
+        false
     }
     pub fn script_stats(&self) -> ScriptStats {
         ScriptStats::default()

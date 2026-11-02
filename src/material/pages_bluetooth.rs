@@ -66,8 +66,11 @@ impl Surface {
             "Обои",
             "Выбор обоев",
             "Always-on display",
+            "Яркость обоев",
+            "Секундная стрелка",
             "BACK",
         ];
+        let wallpaper_level = alloc::format!("{} %", f.wallpaper_level);
         let values = [
             brightness.as_str(),
             theme_name,
@@ -86,10 +89,16 @@ impl Surface {
             } else {
                 "Выключен"
             },
+            wallpaper_level.as_str(),
+            if f.show_seconds {
+                "Включена"
+            } else {
+                "Выключена"
+            },
             "К настройкам",
         ];
-        let cur = f.cursor.min(7);
-        let start = cur.saturating_sub(1).min(5);
+        let cur = f.cursor.min(9);
+        let start = cur.saturating_sub(1).min(7);
         for row in 0..3 {
             let index = (start + row) as usize;
             self.info_card(
@@ -100,7 +109,7 @@ impl Surface {
                 t,
             );
         }
-        self.scroll_indicator(cur, 8, t);
+        self.scroll_indicator(cur, 10, t);
     }
 
     pub(super) fn brightness_editor(&mut self, f: MaterialFrame, t: Theme) {

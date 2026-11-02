@@ -103,15 +103,9 @@ impl Surface {
     }
 
     pub(super) fn launcher(&mut self, f: MaterialFrame, t: Theme) {
-        let labels = [
-            "Clock",
-            "Media",
-            "Settings",
-            "Connectivity",
-            "System info",
-            "Assistant",
-            "List view",
-        ];
+        let count = crate::apps::COUNT as usize;
+        let cur = usize::from(f.cursor).min(count);
+        let page = cur.min(count - 1) / 6;
         let positions = [
             (50, 75),
             (120, 75),
@@ -120,12 +114,13 @@ impl Surface {
             (120, 151),
             (190, 151),
         ];
-        let cur = f.cursor.min(6) as usize;
-        for i in 0..6 {
-            let (x, y) = positions[i];
+        for (cell, (x, y)) in positions.into_iter().enumerate() {
+            let i = page * 6 + cell;
+            if i >= count {
+                break;
+            }
             let selected = i == cur;
-            let radius = 26;
-            self.circle(x, y, radius, Self::focus_fill(t.surface_high, selected));
+            self.circle(x, y, 29, Self::focus_fill(t.surface_high, selected));
             self.app_icon(
                 i as u8,
                 x,
@@ -137,61 +132,59 @@ impl Surface {
                 },
             );
         }
-        self.text_center(206, if cur < 6 { labels[cur] } else { "" }, 1, t.on_surface);
+        self.text_center(
+            199,
+            if cur < count {
+                crate::apps::LABELS[cur]
+            } else {
+                ""
+            },
+            1,
+            t.on_surface,
+        );
+        for p in 0..count.div_ceil(6) {
+            self.circle(
+                115 + p as i32 * 10,
+                222,
+                2,
+                if p == page { t.primary } else { t.outline },
+            );
+        }
         self.round_rect(
             55,
-            232,
+            237,
             130,
-            40,
-            20,
-            if cur == 6 { t.primary } else { t.surface_high },
+            35,
+            17,
+            Self::focus_fill(t.surface_high, cur == count),
         );
-        self.text_center(
-            245,
-            "List view",
-            1,
-            if cur == 6 { t.on_primary } else { t.on_surface },
-        );
+        self.text_center(248, "List view", 1, t.on_surface);
     }
 
     pub(super) fn list_launcher(&mut self, f: MaterialFrame, t: Theme) {
         self.photo_header(f, "Apps", t);
-        let labels = [
-            "Clock",
-            "Media",
-            "Settings",
-            "Connectivity",
-            "System info",
-            "Assistant",
-            "Grid view",
-        ];
-        let cur = f.cursor.min(6) as usize;
-        let start = cur.saturating_sub(1).min(4);
+        let count = crate::apps::COUNT as usize;
+        let cur = usize::from(f.cursor).min(count);
+        let start = cur.saturating_sub(1).min(count - 2);
         for row in 0..3 {
-            let index = (start + row).min(6);
-            if index == 6 {
+            let index = start + row;
+            let y = 62 + row as i32 * 66;
+            if index == count {
                 self.round_rect(
                     55,
-                    208,
+                    y,
                     130,
-                    72,
-                    32,
-                    if cur == 6 { t.primary } else { t.surface_high },
+                    60,
+                    30,
+                    Self::focus_fill(t.surface_high, cur == count),
                 );
-                let color = if cur == 6 { t.on_primary } else { t.on_surface };
-                self.text_center(215, "Grid view", 2, color);
-                self.symbol(Symbol::Grid, 120, 253, color);
-                continue;
+                self.text_center(y + 12, "Grid view", 1, t.on_surface);
+                self.symbol(Symbol::Grid, 120, y + 43, t.on_surface);
+            } else {
+                self.app_row(y, crate::apps::LABELS[index], index == cur, index as u8, t);
             }
-            self.app_row(
-                62 + row as i32 * 66,
-                labels[index],
-                index == cur,
-                index as u8,
-                t,
-            );
         }
-        self.scroll_indicator(cur as u8, 7, t);
+        self.scroll_indicator(cur as u8, crate::apps::COUNT + 1, t);
     }
 
     pub(super) fn assistant_page(&mut self, f: MaterialFrame, t: Theme) {

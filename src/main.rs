@@ -31,6 +31,7 @@ use esp_hal::{ram, timer::timg::TimerGroup};
 mod adb;
 mod android_boot;
 mod android_storage;
+mod apps;
 mod avb;
 mod background;
 #[cfg(feature = "display-st7789")]

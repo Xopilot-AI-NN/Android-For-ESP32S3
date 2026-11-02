@@ -11,6 +11,7 @@ pub const HEIGHT: usize = 280;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MaterialFrame {
+    pub app: crate::apps::View,
     pub device_name: [u8; 32],
     pub device_name_len: u8,
     pub name_editing: bool,
@@ -83,6 +84,8 @@ pub struct MaterialFrame {
     pub wallpaper_enabled: bool,
     pub wallpaper_available: bool,
     pub wallpaper_index: u8,
+    pub wallpaper_level: u8,
+    pub show_seconds: bool,
     pub aod_enabled: bool,
     pub aod: bool,
     pub media_known: bool,
@@ -123,6 +126,7 @@ impl MaterialFrame {
             name_editing: false,
             keyboard: crate::text_input::KeyboardView::default(),
             keyboard_error: 0,
+            app: crate::apps::View::default(),
             name_draft: [0; 32],
             name_draft_len: 0,
             screen,
@@ -186,6 +190,8 @@ impl MaterialFrame {
             wallpaper_enabled: true,
             wallpaper_available: false,
             wallpaper_index: 1,
+            wallpaper_level: 85,
+            show_seconds: true,
             aod_enabled: false,
             aod: false,
             media_known: false,
@@ -401,7 +407,7 @@ impl Surface {
             }
             if let Some(wallpaper) = self.wallpaper.as_ref() {
                 self.pixels.copy_from_slice(wallpaper);
-                self.scale_pixels(85);
+                self.scale_pixels(frame.wallpaper_level);
             }
         }
         if frame.power_menu {
@@ -428,6 +434,10 @@ impl Surface {
         }
         if frame.name_editing {
             self.device_name_page(frame, t);
+            return Rect::FULL;
+        }
+        if frame.app.id != crate::apps::NONE {
+            self.native_application(frame, t);
             return Rect::FULL;
         }
         match frame.screen {
@@ -489,6 +499,8 @@ mod components;
 mod icons;
 #[path = "material/keyboard.rs"]
 mod keyboard;
+#[path = "material/pages_apps.rs"]
+mod pages_apps;
 #[path = "material/pages_bluetooth.rs"]
 mod pages_bluetooth;
 #[path = "material/pages_main.rs"]
