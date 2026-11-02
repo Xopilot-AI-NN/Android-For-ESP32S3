@@ -4,14 +4,16 @@
 **Project release:** 17.2.1  
 **Target:** Waveshare ESP32-S3-Zero-N4R2 + ST7789V3 240×280
 
-17.2.1 keeps the encoder-first Wear UI from 17.2.0, fixes Wi-Fi credential handling and adds a browser remote served directly by the ESP32-S3.
+17.2.1 provides an encoder-first Wear interface with on-watch weather, native
+utilities and ordinary wireless ADB. Browser remote control has been removed.
 
 ```bash
 ./flash pc  # Запуск с образом на ПК, без карты памяти
 ./flash sd  # Запуск с microSD
 ```
 
-After Wi-Fi is online, open `http://<watch-ip>/` from a phone or laptop on the same LAN/hotspot. The URL is also shown by `wifi-status`.
+The watch does not run an HTTP control server. ADB remains available on port
+5555 when enabled; weather uses outgoing public API requests.
 
 ## Logs and background work
 
@@ -66,9 +68,10 @@ when advertising restarts; a connected peer may cache its previous name.
 
 ## Watch utilities and device diagnostics
 
-The launcher has 30 px Material icons and 12 entries. Native utilities add a
+The launcher has 30 px Material icons and 15 entries. Native utilities add a
 calculator, a built-in wallpaper browser, Wi-Fi/ADB transfer instructions,
-device diagnostics, memory/swap controls and a flashlight shortcut. The file browser covers the
+device diagnostics, memory/swap controls, weather, world clock, breathing and a
+flashlight shortcut. The file browser covers the
 built-in PNG assets; it is not a general FAT/ext4 filesystem browser or Android
 Quick Share implementation. The three-column grid scrolls vertically by rows instead of horizontal pages.
 
@@ -199,3 +202,18 @@ reservation; it does not reclaim userdata for a future filesystem.
 ```sh
 adb shell dumpsys swap
 ```
+
+## Startup, larger text and weather
+
+A short startup screen remains visible for at least two seconds while local
+graphics/Bluetooth settle, with an eight-second cap. Network association may
+continue in the background. UI Roboto is now 14/18 px with a separate 36 px
+antialiased atlas; app icons use colored circular backgrounds.
+
+Open **Погода → Город** to search with the on-watch keyboard, **Рядом** for
+approximate IP-based location, or **Обнов.** for the last selected location.
+The watch itself uses Wi-Fi/DNS/HTTP to reach IP-API and Open-Meteo; no PC helper
+is required. These public API calls currently use HTTP, not HTTPS. Location is
+persisted, forecasts are held in RAM, failures are shown explicitly. There is
+no idle automatic weather polling. See [delivery notes](Bootloader/DELIVERY.md)
+for provider links, limits and update instructions.
