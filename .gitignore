@@ -40,3 +40,9 @@ __pycache__/
 /core-dumps/
 /uploads/
 /captures/
+
+# Private provider/device imports
+**/providers.json
+**/provider-keys*.json
+**/*.device.json
+**/*.session.*.json
