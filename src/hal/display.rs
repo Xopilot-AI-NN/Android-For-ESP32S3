@@ -1,0 +1,926 @@
+// Модуль вывода на физический экран.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Ошибки операций компонента вывода на физический экран.
+pub enum DisplayError {
+    Bus,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+/// Структура данных компонента вывода на физический экран.
+pub struct RenderStats {
+    pub drawn: u32,
+    pub skipped: u32,
+    /// Время/интервал last в микросекундах.
+    pub last_us: u64,
+    /// Время/интервал max в микросекундах.
+    pub max_us: u64,
+    /// Предыдущие пиксели для поиска изменившейся области.
+    pub last_pixels: u32,
+    /// Время/интервал raster в микросекундах.
+    pub raster_us: u64,
+    /// Время/интервал compose в микросекундах.
+    pub compose_us: u64,
+    /// Время/интервал transfer в микросекундах.
+    pub transfer_us: u64,
+}
+use crate::runtime::RuntimeFrame;
+/// Структура данных компонента вывода на физический экран.
+pub trait Backlight: embedded_hal::digital::OutputPin {
+    /// Применяет заданную яркость подсветки.
+    fn set_brightness(&mut self, percent: u8) -> Result<(), Self::Error>;
+    /// Сообщает, выполняется ли затемнение программно.
+    fn software_dimming(&self) -> bool {
+        false
+    }
+}
+
+/// Единый интерфейс физических и настольных дисплеев компонента вывода на физический экран.
+pub trait BootDisplay {
+    /// Возвращает статистику последней отрисовки и передачи кадра.
+    fn render_stats(&self) -> RenderStats {
+        RenderStats::default()
+    }
+    /// Принимает подготовленный RGB565-буфер пользовательских обоев.
+    fn set_wallpaper(&mut self, _pixels: alloc::vec::Vec<u16>) {}
+    /// Возвращает доступный снимок экрана в формате RGB565.
+    fn snapshot_rgb565(&self) -> Option<&[u16]> {
+        None
+    }
+    /// Показывает стартовый логотип.
+    fn boot_logo(&mut self) -> Result<(), DisplayError>;
+    /// Показывает этап и прогресс загрузки.
+    fn boot_progress(&mut self, label: &str, phase: u8) -> Result<(), DisplayError>;
+    /// Выводит строку состояния или диагностический статус.
+    fn status(&mut self, title: &str, l1: &str, l2: &str, l3: &str) -> Result<(), DisplayError>;
+    /// Выводит кадр runtime на выбранный backend.
+    fn runtime(&mut self, frame: &RuntimeFrame) -> Result<(), DisplayError> {
+        match frame {
+            RuntimeFrame::Legacy(f) => self.status(&f.title, &f.line1, &f.line2, &f.line3),
+            RuntimeFrame::Material(f) => {
+                let (title, l1, l2, l3) = f.fallback();
+                self.status(title, l1, l2, l3)
+            }
+        }
+    }
+    /// Выводит экран режима fastboot.
+    fn fastboot(&mut self) -> Result<(), DisplayError> {
+        self.status("FASTBOOT MODE", "USB: READY", "PWR: REBOOT", "CMD: HELP")
+    }
+    /// Рисует меню выбора режима загрузки.
+    fn boot_menu(&mut self, kind: u8, _cursor: u8) -> Result<(), DisplayError> {
+        if kind == 1 {
+            self.fastboot()
+        } else {
+            self.status("RECOVERY", "REBOOT", "FASTBOOT", "POWER OFF")
+        }
+    }
+    /// Показывает диагностический экран ошибки.
+    fn error(&mut self, code: &str, detail: &str) -> Result<(), DisplayError>;
+}
+
+// ---------------------------------------------------------------------------
+// SSD1306 128x64 monochrome backend (GPIO5 SDA, GPIO6 SCL)
+// ---------------------------------------------------------------------------
+#[cfg(feature = "display-ssd1306")]
+mod oled {
+    use super::{BootDisplay, DisplayError};
+    use crate::{config, framebuffer::Framebuffer};
+    use embedded_hal::i2c::I2c;
+    /// Структура данных компонента вывода на физический экран.
+    pub type OledFramebuffer = Framebuffer<128, 64, 1024>;
+
+    /// Структура данных компонента вывода на физический экран.
+    pub struct Ssd1306Display<I2C> {
+        /// Выделенный I²C-интерфейс дисплея.
+        i2c: I2C,
+        /// Резервный кадровый буфер дисплея.
+        fb: OledFramebuffer,
+    }
+
+    impl<I2C> Ssd1306Display<I2C>
+    where
+        I2C: I2c,
+    {
+        /// Создаёт экземпляр и подготавливает его начальные буферы и состояние.
+        pub fn new(mut i2c: I2C) -> Result<Self, DisplayError> {
+            let init: [u8; 26] = [
+                0x00, 0xAE, 0xD5, 0x80, 0xA8, 0x3F, 0xD3, 0x00, 0x40, 0x8D, 0x14, 0x20, 0x00, 0xA1,
+                0xC8, 0xDA, 0x12, 0x81, 0x8F, 0xD9, 0xF1, 0xDB, 0x40, 0xA4, 0xA6, 0xAF,
+            ];
+            i2c.write(config::OLED_ADDR, &init)
+                .map_err(|_| DisplayError::Bus)?;
+            Ok(Self {
+                i2c,
+                fb: OledFramebuffer::new(),
+            })
+        }
+
+        /// Завершает отложенную передачу данных.
+        fn flush(&mut self) -> Result<(), DisplayError> {
+            self.command(&[0x21, 0, 127, 0x22, 0, 7])?;
+            for page in 0..8 {
+                let mut packet = [0u8; 129];
+                packet[0] = 0x40;
+                let begin = page * 128;
+                packet[1..].copy_from_slice(&self.fb.as_bytes()[begin..begin + 128]);
+                self.i2c
+                    .write(config::OLED_ADDR, &packet)
+                    .map_err(|_| DisplayError::Bus)?;
+            }
+            Ok(())
+        }
+
+        /// Передаёт команду контроллеру и проверяет транспортный результат.
+        fn command(&mut self, bytes: &[u8]) -> Result<(), DisplayError> {
+            let mut packet = [0u8; 16];
+            if bytes.len() + 1 > packet.len() {
+                return Err(DisplayError::Bus);
+            }
+            packet[0] = 0x00;
+            packet[1..1 + bytes.len()].copy_from_slice(bytes);
+            self.i2c
+                .write(config::OLED_ADDR, &packet[..1 + bytes.len()])
+                .map_err(|_| DisplayError::Bus)
+        }
+    }
+
+    impl<I2C> BootDisplay for Ssd1306Display<I2C>
+    where
+        I2C: I2c,
+    {
+        /// Показывает стартовый логотип.
+        fn boot_logo(&mut self) -> Result<(), DisplayError> {
+            self.fb.clear();
+            self.fb.draw_aosp_mark();
+            self.fb.draw_text_centered(49, "ANDROID", 1, true);
+            self.flush()
+        }
+
+        /// Показывает этап и прогресс загрузки.
+        fn boot_progress(&mut self, label: &str, phase: u8) -> Result<(), DisplayError> {
+            self.fb.clear();
+            self.fb.draw_aosp_mark();
+            self.fb.draw_text_centered(45, label, 1, true);
+            self.fb.draw_spinner(phase);
+            self.flush()
+        }
+
+        /// Выводит строку состояния или диагностический статус.
+        fn status(
+            &mut self,
+            title: &str,
+            l1: &str,
+            l2: &str,
+            l3: &str,
+        ) -> Result<(), DisplayError> {
+            self.fb.clear();
+            self.fb.draw_text_centered(2, title, 1, true);
+            self.fb.draw_hline(5, 12, 118, true);
+            self.fb.draw_text(4, 20, l1, 1, true);
+            self.fb.draw_text(4, 32, l2, 1, true);
+            self.fb.draw_text(4, 44, l3, 1, true);
+            self.flush()
+        }
+
+        /// Показывает диагностический экран ошибки.
+        fn error(&mut self, code: &str, detail: &str) -> Result<(), DisplayError> {
+            self.fb.clear();
+            self.fb.draw_rect(2, 2, 124, 60, true);
+            self.fb.draw_text_centered(8, "BOOT FAILED", 1, true);
+            self.fb.draw_text_centered(25, code, 1, true);
+            self.fb.draw_text_centered(42, detail, 1, true);
+            self.flush()
+        }
+    }
+
+    pub use Ssd1306Display as Display;
+}
+
+#[cfg(feature = "display-ssd1306")]
+pub use oled::Display as Ssd1306Display;
+
+// ---------------------------------------------------------------------------
+// ST7789V3 240x280 RGB565 backend (GPIO1..6). No framebuffer allocation:
+// boot UI is rendered directly so it fits comfortably on ESP32-S3 internal RAM.
+// ---------------------------------------------------------------------------
+#[cfg(feature = "display-st7789")]
+mod tft {
+    use super::{Backlight, BootDisplay, DisplayError};
+    use crate::{
+        config,
+        font::glyph,
+        material::{MaterialFrame, Rect, Surface},
+        runtime::RuntimeFrame,
+    };
+    use alloc::{vec, vec::Vec};
+    use embedded_hal::{delay::DelayNs, digital::OutputPin, spi::SpiBus};
+
+    /// Параметр W компонента вывода на физический экран.
+    const W: i32 = 240;
+    /// Параметр H компонента вывода на физический экран.
+    const H: i32 = 280;
+    /// Параметр BLACK компонента вывода на физический экран.
+    const BLACK: u16 = 0x0000;
+    /// Параметр WHITE компонента вывода на физический экран.
+    const WHITE: u16 = 0xFFFF;
+    #[cfg(feature = "display-diagnostic")]
+    /// Параметр BLUE компонента вывода на физический экран.
+    const BLUE: u16 = 0x249F;
+    #[cfg(feature = "display-diagnostic")]
+    /// Параметр GREEN компонента вывода на физический экран.
+    const GREEN: u16 = 0x3E08;
+    /// Параметр RED компонента вывода на физический экран.
+    const RED: u16 = 0xF986;
+    /// Параметр DIM компонента вывода на физический экран.
+    const DIM: u16 = 0x7BEF;
+
+    /// Структура данных компонента вывода на физический экран.
+    pub struct St7789Display<SPI, CS, DC, RST, BL> {
+        /// Выделенная SPI-шина устройства.
+        spi: SPI,
+        /// Линия выбора SPI-устройства.
+        cs: CS,
+        /// Линия выбора команды/данных дисплея.
+        dc: DC,
+        _rst: RST,
+        /// Управление подсветкой.
+        bl: BL,
+        /// Программная поверхность основного Material-рендерера.
+        material_surface: Surface,
+        awake: bool,
+        displayed: Vec<u16>,
+        /// Кэш предыдущего кадра заполнен и пригоден для сравнения.
+        frame_valid: bool,
+        /// Последний визуальный ключ кадра.
+        last_scene: Option<MaterialFrame>,
+        /// Счётчики вызовов, попаданий кэша и времени обработки.
+        stats: super::RenderStats,
+    }
+
+    impl<SPI, CS, DC, RST, BL> St7789Display<SPI, CS, DC, RST, BL>
+    where
+        SPI: SpiBus<u8>,
+        CS: OutputPin,
+        DC: OutputPin,
+        RST: OutputPin,
+        BL: Backlight,
+    {
+        /// Создаёт экземпляр и подготавливает его начальные буферы и состояние.
+        pub fn new<D: DelayNs>(
+            spi: SPI,
+            mut cs: CS,
+            mut dc: DC,
+            mut rst: RST,
+            mut bl: BL,
+            delay: &mut D,
+        ) -> Result<Self, DisplayError> {
+            cs.set_high().map_err(|_| DisplayError::Bus)?;
+            dc.set_low().map_err(|_| DisplayError::Bus)?;
+            bl.set_low().map_err(|_| DisplayError::Bus)?;
+            rst.set_low().map_err(|_| DisplayError::Bus)?;
+            delay.delay_ms(20);
+            rst.set_high().map_err(|_| DisplayError::Bus)?;
+            delay.delay_ms(120);
+            let mut s = Self {
+                spi,
+                cs,
+                dc,
+                _rst: rst,
+                bl,
+                material_surface: Surface::new(),
+                awake: true,
+                displayed: vec![0; 240 * 280],
+                frame_valid: false,
+                last_scene: None,
+                stats: super::RenderStats::default(),
+            };
+            s.cmd(0x01, &[])?; // SWRESET
+            delay.delay_ms(120);
+            s.cmd(0x11, &[])?; // SLPOUT
+            delay.delay_ms(120);
+            s.cmd(0x13, &[])?; // NORON
+            s.cmd(0x3A, &[0x55])?; // RGB565
+            s.cmd(0x36, &[config::TFT_MADCTL])?; // MADCTL
+            s.cmd(0xB2, &[0x0C, 0x0C, 0x00, 0x33, 0x33])?;
+            s.cmd(0xB7, &[0x35])?;
+            s.cmd(0xBB, &[0x28])?;
+            s.cmd(0xC0, &[0x0C])?;
+            s.cmd(0xC2, &[0x01, 0xFF])?;
+            s.cmd(0xC3, &[0x10])?;
+            s.cmd(0xC4, &[0x20])?;
+            s.cmd(0xC6, &[0x0F])?;
+            s.cmd(0xD0, &[0xA4, 0xA1])?;
+            s.cmd(
+                0xE0,
+                &[
+                    0xD0, 0x00, 0x02, 0x07, 0x0A, 0x28, 0x32, 0x44, 0x42, 0x06, 0x0E, 0x12, 0x14,
+                    0x17,
+                ],
+            )?;
+            s.cmd(
+                0xE1,
+                &[
+                    0xD0, 0x00, 0x02, 0x07, 0x0A, 0x28, 0x31, 0x54, 0x47, 0x0E, 0x1C, 0x17, 0x1B,
+                    0x1E,
+                ],
+            )?;
+            s.cmd(0x21, &[])?; // INVON (IPS panels commonly require inversion)
+            s.cmd(0x29, &[])?; // DISPON
+            delay.delay_ms(120);
+            // Keep the backlight off until the first complete black frame is sent.
+            // This avoids a visible gray/uninitialized flash at power-on.
+            s.clear(BLACK)?;
+            s.bl.set_high().map_err(|_| DisplayError::Bus)?;
+            #[cfg(feature = "display-diagnostic")]
+            {
+                // RGB hardware test after ST7789 init, before normal boot drawing.
+                // Does not rely on Rhai, SD, Material UI, Wi-Fi or BLE.
+                crate::watch_println!("ST7789 DIAG: BLK GPIO6 OFF for 1 s (screen should go dark)");
+                s.bl.set_low().map_err(|_| DisplayError::Bus)?;
+                delay.delay_ms(1000);
+                crate::watch_println!("ST7789 DIAG: BLK GPIO6 ON");
+                s.bl.set_high().map_err(|_| DisplayError::Bus)?;
+                delay.delay_ms(300);
+                crate::watch_println!(
+                    "ST7789 DIAG: RED (GPIO1 SCK, GPIO2 MOSI, GPIO3 RST, GPIO4 DC, GPIO5 CS, GPIO6 BLK)"
+                );
+                s.clear(RED)?;
+                delay.delay_ms(750);
+                crate::watch_println!("ST7789 DIAG: GREEN");
+                s.clear(GREEN)?;
+                delay.delay_ms(750);
+                crate::watch_println!("ST7789 DIAG: BLUE");
+                s.clear(BLUE)?;
+                delay.delay_ms(750);
+                s.clear(BLACK)?;
+                crate::watch_println!("ST7789 DIAG: complete; normal boot resumes");
+            }
+            Ok(s)
+        }
+
+        /// Отправляет команду дисплея с параметрами.
+        fn cmd(&mut self, cmd: u8, data: &[u8]) -> Result<(), DisplayError> {
+            self.cs.set_low().map_err(|_| DisplayError::Bus)?;
+            self.dc.set_low().map_err(|_| DisplayError::Bus)?;
+            self.spi.write(&[cmd]).map_err(|_| DisplayError::Bus)?;
+            // SpiBus::write may return with the final byte still on the wire.
+            // DC must remain command-low until that byte has completed.
+            self.spi.flush().map_err(|_| DisplayError::Bus)?;
+            if !data.is_empty() {
+                self.dc.set_high().map_err(|_| DisplayError::Bus)?;
+                self.spi.write(data).map_err(|_| DisplayError::Bus)?;
+                self.spi.flush().map_err(|_| DisplayError::Bus)?;
+            }
+            self.cs.set_high().map_err(|_| DisplayError::Bus)
+        }
+
+        /// Задаёт прямоугольник записи пикселей контроллера дисплея.
+        fn set_window(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) -> Result<(), DisplayError> {
+            let x0 = x0.clamp(0, W - 1) as u16;
+            let y0 = y0.clamp(0, H - 1) as u16 + config::TFT_Y_OFFSET;
+            let x1 = x1.clamp(0, W - 1) as u16;
+            let y1 = y1.clamp(0, H - 1) as u16 + config::TFT_Y_OFFSET;
+            self.cmd(
+                0x2A,
+                &[(x0 >> 8) as u8, x0 as u8, (x1 >> 8) as u8, x1 as u8],
+            )?;
+            self.cmd(
+                0x2B,
+                &[(y0 >> 8) as u8, y0 as u8, (y1 >> 8) as u8, y1 as u8],
+            )?;
+            self.cs.set_low().map_err(|_| DisplayError::Bus)?;
+            self.dc.set_low().map_err(|_| DisplayError::Bus)?;
+            self.spi.write(&[0x2C]).map_err(|_| DisplayError::Bus)?;
+            self.spi.flush().map_err(|_| DisplayError::Bus)?;
+            self.dc.set_high().map_err(|_| DisplayError::Bus)
+        }
+
+        /// Заполняет прямоугольник заданным цветом с учётом границ.
+        fn fill_rect(
+            &mut self,
+            x: i32,
+            y: i32,
+            w: i32,
+            h: i32,
+            color: u16,
+        ) -> Result<(), DisplayError> {
+            if w <= 0 || h <= 0 || x >= W || y >= H || x + w <= 0 || y + h <= 0 {
+                return Ok(());
+            }
+            let x0 = x.max(0);
+            let y0 = y.max(0);
+            let x1 = (x + w - 1).min(W - 1);
+            let y1 = (y + h - 1).min(H - 1);
+            self.set_window(x0, y0, x1, y1)?;
+            let count = ((x1 - x0 + 1) * (y1 - y0 + 1)) as usize;
+            let px = [(color >> 8) as u8, color as u8];
+            let mut buf = [0u8; 128];
+            for p in buf.chunks_exact_mut(2) {
+                p.copy_from_slice(&px);
+            }
+            let mut left = count;
+            while left != 0 {
+                let pixels = left.min(buf.len() / 2);
+                self.spi
+                    .write(&buf[..pixels * 2])
+                    .map_err(|_| DisplayError::Bus)?;
+                left -= pixels;
+            }
+            self.spi.flush().map_err(|_| DisplayError::Bus)?;
+            self.cs.set_high().map_err(|_| DisplayError::Bus)
+        }
+
+        /// Очищает временное состояние или буфер компонента.
+        fn clear(&mut self, color: u16) -> Result<(), DisplayError> {
+            self.frame_valid = false;
+            self.fill_rect(0, 0, W, H, color)
+        }
+
+        /// Передаёт только изменившуюся область Material-кадра.
+        fn flush_material_rect(&mut self, rect: Rect) -> Result<(), DisplayError> {
+            let x0 = rect.x.max(0);
+            let y0 = rect.y.max(0);
+            let x1 = rect.x1().min(W - 1);
+            let y1 = rect.y1().min(H - 1);
+            if x1 < x0 || y1 < y0 {
+                return Ok(());
+            }
+            self.set_window(x0, y0, x1, y1)?;
+            let pixels = self.material_surface.pixels();
+            // Carry the buffer across row boundaries: full chunks match SPI FIFO
+            // sizing and avoid two short writes for every 240-pixel row.
+            let mut buf = [0u8; 1024];
+            let mut used = 0;
+            for y in y0..=y1 {
+                let row = &pixels[y as usize * W as usize + x0 as usize
+                    ..y as usize * W as usize + x1 as usize + 1];
+                for &px in row {
+                    buf[used] = (px >> 8) as u8;
+                    buf[used + 1] = px as u8;
+                    used += 2;
+                    if used == buf.len() {
+                        self.spi.write(&buf).map_err(|_| DisplayError::Bus)?;
+                        used = 0;
+                    }
+                }
+            }
+            if used != 0 {
+                self.spi
+                    .write(&buf[..used])
+                    .map_err(|_| DisplayError::Bus)?;
+            }
+            self.spi.flush().map_err(|_| DisplayError::Bus)?;
+            self.cs.set_high().map_err(|_| DisplayError::Bus)
+        }
+
+        /// Рисует один символ выбранного шрифта.
+        fn glyph(
+            &mut self,
+            x: i32,
+            y: i32,
+            ch: u8,
+            scale: i32,
+            color: u16,
+        ) -> Result<(), DisplayError> {
+            let g = glyph(ch.to_ascii_uppercase());
+            for (col, bits) in g.iter().enumerate() {
+                for row in 0..7 {
+                    if (bits >> row) & 1 != 0 {
+                        self.fill_rect(
+                            x + col as i32 * scale,
+                            y + row * scale,
+                            scale,
+                            scale,
+                            color,
+                        )?;
+                    }
+                }
+            }
+            Ok(())
+        }
+
+        /// Вычисляет ширину строки в пикселях выбранного шрифта.
+        fn text_width(text: &str, scale: i32) -> i32 {
+            if text.is_empty() {
+                0
+            } else {
+                (text.len() as i32 * 6 - 1) * scale
+            }
+        }
+
+        /// Возвращает или выводит текст согласно назначению текущего компонента.
+        fn text(
+            &mut self,
+            x: i32,
+            y: i32,
+            text: &str,
+            scale: i32,
+            color: u16,
+        ) -> Result<(), DisplayError> {
+            let mut cx = x;
+            for c in text.bytes() {
+                self.glyph(cx, y, c, scale, color)?;
+                cx += 6 * scale;
+            }
+            Ok(())
+        }
+
+        /// Рисует строку с горизонтальным центрированием.
+        fn text_center(
+            &mut self,
+            y: i32,
+            text: &str,
+            scale: i32,
+            color: u16,
+        ) -> Result<(), DisplayError> {
+            let x = (W - Self::text_width(text, scale)) / 2;
+            self.text(x, y, text, scale, color)
+        }
+    }
+
+    impl<SPI, CS, DC, RST, BL> BootDisplay for St7789Display<SPI, CS, DC, RST, BL>
+    where
+        SPI: SpiBus<u8>,
+        CS: OutputPin,
+        DC: OutputPin,
+        RST: OutputPin,
+        BL: Backlight,
+    {
+        /// Возвращает статистику последней отрисовки и передачи кадра.
+        fn render_stats(&self) -> super::RenderStats {
+            self.stats
+        }
+        /// Принимает подготовленный RGB565-буфер пользовательских обоев.
+        fn set_wallpaper(&mut self, pixels: Vec<u16>) {
+            self.material_surface.set_wallpaper(pixels);
+            self.frame_valid = false;
+        }
+        /// Возвращает доступный снимок экрана в формате RGB565.
+        fn snapshot_rgb565(&self) -> Option<&[u16]> {
+            if self.frame_valid {
+                Some(&self.displayed)
+            } else {
+                None
+            }
+        }
+        /// Показывает стартовый логотип.
+        fn boot_logo(&mut self) -> Result<(), DisplayError> {
+            self.frame_valid = false;
+            self.material_surface.boot_frame(255);
+            self.flush_material_rect(Rect::FULL)
+        }
+        /// Показывает этап и прогресс загрузки.
+        fn boot_progress(&mut self, label: &str, phase: u8) -> Result<(), DisplayError> {
+            self.frame_valid = false;
+            self.material_surface.boot_progress_frame(label, phase);
+            self.flush_material_rect(Rect::FULL)
+        }
+        /// Рисует меню выбора режима загрузки.
+        fn boot_menu(&mut self, kind: u8, cursor: u8) -> Result<(), DisplayError> {
+            self.frame_valid = false;
+            self.material_surface.boot_menu_frame(kind, cursor);
+            self.flush_material_rect(Rect::FULL)
+        }
+        /// Выводит строку состояния или диагностический статус.
+        fn status(
+            &mut self,
+            title: &str,
+            l1: &str,
+            l2: &str,
+            l3: &str,
+        ) -> Result<(), DisplayError> {
+            self.clear(BLACK)?;
+            self.text_center(35, title, 3, WHITE)?;
+            self.fill_rect(25, 72, 190, 2, DIM)?;
+            self.text(24, 104, l1, 2, WHITE)?;
+            self.text(24, 142, l2, 2, WHITE)?;
+            self.text(24, 180, l3, 2, WHITE)
+        }
+        /// Выводит кадр runtime на выбранный backend.
+        fn runtime(&mut self, frame: &RuntimeFrame) -> Result<(), DisplayError> {
+            match frame {
+                RuntimeFrame::Material(scene) => {
+                    if scene.display_sleep {
+                        self.bl.set_brightness(0).map_err(|_| DisplayError::Bus)?;
+                        if self.awake {
+                            self.cmd(0x28, &[])?;
+                            self.awake = false;
+                        }
+                        return Ok(());
+                    }
+                    if !self.awake {
+                        self.cmd(0x29, &[])?;
+                        self.awake = true;
+                        self.frame_valid = false;
+                    }
+                    let key = scene.visual_key();
+                    if self.frame_valid
+                        && scene.transition_alpha == 255
+                        && self.last_scene == Some(key)
+                    {
+                        self.stats.skipped = self.stats.skipped.saturating_add(1);
+                        return Ok(());
+                    }
+                    let began = esp_hal::time::Instant::now()
+                        .duration_since_epoch()
+                        .as_micros() as u64;
+                    self.material_surface.render(*scene);
+                    let raster_end = esp_hal::time::Instant::now()
+                        .duration_since_epoch()
+                        .as_micros() as u64;
+                    let brightness = scene
+                        .display_brightness
+                        .unwrap_or(scene.brightness)
+                        .clamp(5, 100);
+                    if self.bl.software_dimming() {
+                        self.material_surface.scale_pixels(brightness);
+                    }
+                    if self.frame_valid && scene.screen != 0 && scene.security_view == 0 {
+                        self.material_surface
+                            .blend_from(&self.displayed, scene.transition_alpha.max(64));
+                    }
+                    let dirty = if self.frame_valid {
+                        self.material_surface.changes_from(&self.displayed)
+                    } else {
+                        Some(Rect::FULL)
+                    };
+                    self.stats.last_pixels = dirty.map(|r| (r.w * r.h) as u32).unwrap_or(0);
+                    let compose_end = esp_hal::time::Instant::now()
+                        .duration_since_epoch()
+                        .as_micros() as u64;
+                    if let Some(dirty) = dirty {
+                        self.flush_material_rect(dirty)?;
+                        self.displayed
+                            .copy_from_slice(self.material_surface.pixels());
+                        self.frame_valid = true;
+                    }
+                    self.last_scene = Some(key);
+                    self.stats.drawn = self.stats.drawn.saturating_add(1);
+                    self.stats.last_us = (esp_hal::time::Instant::now()
+                        .duration_since_epoch()
+                        .as_micros() as u64)
+                        .saturating_sub(began);
+                    self.stats.max_us = self.stats.max_us.max(self.stats.last_us);
+                    self.stats.raster_us = raster_end.saturating_sub(began);
+                    self.stats.compose_us = compose_end.saturating_sub(raster_end);
+                    self.stats.transfer_us = self
+                        .stats
+                        .last_us
+                        .saturating_sub(compose_end.saturating_sub(began));
+                    // On wake, show the PIN frame before enabling the backlight.
+                    self.bl
+                        .set_brightness(if scene.screen == 29 { 100 } else { brightness })
+                        .map_err(|_| DisplayError::Bus)
+                }
+                RuntimeFrame::Legacy(f) => self.status(&f.title, &f.line1, &f.line2, &f.line3),
+            }
+        }
+        /// Показывает диагностический экран ошибки.
+        fn error(&mut self, code: &str, detail: &str) -> Result<(), DisplayError> {
+            self.clear(BLACK)?;
+            self.text_center(55, "BOOT FAILED", 3, RED)?;
+            self.text_center(125, code, 2, WHITE)?;
+            self.text_center(165, detail, 2, DIM)
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use core::convert::Infallible;
+        use embedded_hal::{digital::ErrorType as PinErrorType, spi::ErrorType as SpiErrorType};
+        use std::{cell::RefCell, rc::Rc};
+
+        #[derive(Default)]
+        /// Модель уровней сигнальных линий для проверки SPI компонента вывода на физический экран.
+        struct Wire {
+            /// Признак ещё выполняющейся операции.
+            busy: bool,
+            cs_high: bool,
+            dc_high: bool,
+            /// Текущее количество байтов пользовательского ввода.
+            bytes: usize,
+            writes: usize,
+            ram: Vec<u8>,
+            /// Пользовательское значение яркости.
+            brightness: u8,
+            /// Код команды протокола.
+            command: u8,
+            /// Регистр порядка цветов/ориентации контроллера дисплея.
+            madctl: u8,
+        }
+        /// Структура данных компонента вывода на физический экран.
+        struct Bus(Rc<RefCell<Wire>>);
+        impl SpiErrorType for Bus {
+            /// Причины отказа операций компонента вывода на физический экран.
+            type Error = Infallible;
+        }
+        impl SpiBus for Bus {
+            /// Считывает запрошенные данные через интерфейс текущего транспорта.
+            fn read(&mut self, _: &mut [u8]) -> Result<(), Infallible> {
+                unreachable!()
+            }
+            /// Передаёт данные через интерфейс текущего транспорта.
+            fn write(&mut self, bytes: &[u8]) -> Result<(), Infallible> {
+                let mut wire = self.0.borrow_mut();
+                assert!(!wire.cs_high, "writing with CS deasserted");
+                wire.bytes += bytes.len();
+                wire.writes += 1;
+                if !wire.dc_high {
+                    wire.command = bytes[0];
+                    if wire.command == 0x2c {
+                        wire.ram.clear();
+                    }
+                } else if wire.command == 0x36 {
+                    wire.madctl = bytes[0];
+                }
+                if wire.dc_high && wire.command == 0x2c {
+                    wire.ram.extend_from_slice(bytes);
+                }
+                // Model esp-hal: the final transfer remains active on return.
+                wire.busy = true;
+                Ok(())
+            }
+            /// Передаёт выходные байты и одновременно считывает входные.
+            fn transfer(&mut self, _: &mut [u8], _: &[u8]) -> Result<(), Infallible> {
+                unreachable!()
+            }
+            /// Выполняет полнодуплексный обмен, заменяя исходный буфер принятыми байтами.
+            fn transfer_in_place(&mut self, _: &mut [u8]) -> Result<(), Infallible> {
+                unreachable!()
+            }
+            /// Завершает отложенную передачу данных.
+            fn flush(&mut self) -> Result<(), Infallible> {
+                self.0.borrow_mut().busy = false;
+                Ok(())
+            }
+        }
+        /// Структура данных компонента вывода на физический экран.
+        struct Pin {
+            /// Общее состояние моделируемых сигналов SPI.
+            wire: Rc<RefCell<Wire>>,
+            /// Вид записи или пакета; допустимые значения определяет формат компонента.
+            kind: u8,
+        }
+        impl PinErrorType for Pin {
+            /// Причины отказа операций компонента вывода на физический экран.
+            type Error = Infallible;
+        }
+        impl Pin {
+            /// Применяет новое значение с проверками текущего компонента.
+            fn set(&mut self, high: bool) {
+                let mut wire = self.wire.borrow_mut();
+                if self.kind < 2 {
+                    assert!(!wire.busy, "DC/CS changed before SPI finished");
+                    if self.kind == 0 {
+                        wire.cs_high = high;
+                    } else {
+                        wire.dc_high = high;
+                    }
+                }
+            }
+        }
+        impl OutputPin for Pin {
+            /// Устанавливает низкий уровень цифрового выхода.
+            fn set_low(&mut self) -> Result<(), Infallible> {
+                self.set(false);
+                Ok(())
+            }
+            /// Устанавливает высокий уровень цифрового выхода.
+            fn set_high(&mut self) -> Result<(), Infallible> {
+                self.set(true);
+                Ok(())
+            }
+        }
+        impl Backlight for Pin {
+            /// Применяет заданную яркость подсветки.
+            fn set_brightness(&mut self, percent: u8) -> Result<(), Infallible> {
+                assert!(percent <= 100);
+                self.wire.borrow_mut().brightness = percent;
+                Ok(())
+            }
+        }
+        /// Структура данных компонента вывода на физический экран.
+        struct NoDelay;
+        impl DelayNs for NoDelay {
+            /// Выполняет задержку, заданную в наносекундах.
+            fn delay_ns(&mut self, _: u32) {}
+        }
+
+        #[test]
+        /// Проверяет пропуск неизменных кадров и порядок строк при передаче прямоугольника.
+        fn static_frames_skip_rasterization_and_cropped_transfers_keep_row_order() {
+            let wire = Rc::new(RefCell::new(Wire::default()));
+            let pin = |kind| Pin {
+                wire: wire.clone(),
+                kind,
+            };
+            let mut display = St7789Display::new(
+                Bus(wire.clone()),
+                pin(0),
+                pin(1),
+                pin(2),
+                pin(3),
+                &mut NoDelay,
+            )
+            .unwrap();
+            let mut frame =
+                crate::material::MaterialFrame::parse("M3|5|0|70|0|0|0|0|1|1|0|0|600|0|0|0|1|1|3")
+                    .unwrap();
+            let before = wire.borrow().writes;
+            display.runtime(&RuntimeFrame::Material(frame)).unwrap();
+            assert!(
+                wire.borrow().writes - before < 180,
+                "full frame should use batched SPI writes"
+            );
+            let drawn = display.stats.drawn;
+            let calls = wire.borrow().writes;
+            frame.animation_phase = 120;
+            frame.time_seconds = 37;
+            display.runtime(&RuntimeFrame::Material(frame)).unwrap();
+            assert_eq!(display.stats.drawn, drawn);
+            assert_eq!(display.stats.skipped, 1);
+            assert_eq!(wire.borrow().writes, calls);
+            let rect = Rect {
+                x: 7,
+                y: 8,
+                w: 200,
+                h: 4,
+            };
+            let expected: Vec<u8> = (8..12)
+                .flat_map(|y| {
+                    display.material_surface.pixels()[y * 240 + 7..y * 240 + 207]
+                        .iter()
+                        .flat_map(|p| p.to_be_bytes())
+                        .collect::<Vec<_>>()
+                })
+                .collect();
+            display.flush_material_rect(rect).unwrap();
+            assert_eq!(
+                wire.borrow().ram,
+                expected,
+                "cropped rows and partial chunks must retain RGB565 byte order"
+            );
+            frame.brightness = 25;
+            display.runtime(&RuntimeFrame::Material(frame)).unwrap();
+            assert_eq!(display.stats.drawn, drawn + 1);
+        }
+
+        #[test]
+        /// Проверяет завершение SPI-передачи до переключения управляющих выводов ST7789.
+        fn st7789_waits_for_wire_before_changing_control_pins() {
+            let wire = Rc::new(RefCell::new(Wire::default()));
+            let pin = |kind| Pin {
+                wire: wire.clone(),
+                kind,
+            };
+            let mut display = St7789Display::new(
+                Bus(wire.clone()),
+                pin(0),
+                pin(1),
+                pin(2),
+                pin(3),
+                &mut NoDelay,
+            )
+            .unwrap();
+            assert_eq!(wire.borrow().madctl, 0x08);
+            display.cmd(0x29, &[]).unwrap();
+            display.cmd(0x3a, &[0x55]).unwrap();
+            display.fill_rect(0, 0, 3, 1, WHITE).unwrap(); // Short trailing pixel write.
+            let frame =
+                crate::material::MaterialFrame::parse("M3|1|0|70|0|0|0|0|0|0|0|0|131|0|0|0|1|1|3")
+                    .unwrap();
+            display.runtime(&RuntimeFrame::Material(frame)).unwrap();
+            assert_eq!(wire.borrow().brightness, 70);
+            let mut dim = frame;
+            dim.brightness = 25;
+            display.runtime(&RuntimeFrame::Material(dim)).unwrap();
+            assert_eq!(wire.borrow().brightness, 25);
+            dim.display_sleep = true;
+            display.runtime(&RuntimeFrame::Material(dim)).unwrap();
+            assert_eq!(wire.borrow().brightness, 0);
+            assert_eq!(wire.borrow().command, 0x28);
+            let sent = wire.borrow().bytes;
+            display.runtime(&RuntimeFrame::Material(dim)).unwrap();
+            assert_eq!(wire.borrow().bytes, sent);
+            dim.display_sleep = false;
+            display.runtime(&RuntimeFrame::Material(dim)).unwrap();
+            assert_eq!(wire.borrow().brightness, 25);
+            dim.screen = 29;
+            display.runtime(&RuntimeFrame::Material(dim)).unwrap();
+            assert_eq!(wire.borrow().brightness, 100);
+            dim.screen = 1;
+            display.runtime(&RuntimeFrame::Material(dim)).unwrap();
+            assert_eq!(wire.borrow().brightness, 25);
+            let wire = wire.borrow();
+            assert!(!wire.busy);
+            assert!(wire.cs_high);
+            assert!(wire.bytes > 240 * 280 * 4); // Initial clear and actual UI frame.
+        }
+    }
+
+    pub use St7789Display as Display;
+}
+
+#[cfg(feature = "display-st7789")]
+pub use tft::Display as St7789Display;

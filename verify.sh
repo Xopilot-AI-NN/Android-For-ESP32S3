@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Модуль проверок проекта.
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,13 +24,13 @@ fi
 
 # Verify that the runtime components expected by Bootloader v1.4 exist in source.
 for f in \
+  ../App/src/packages.rhai \
+  ../App/system/priv-app/SystemUI/30_activity_manager.rhai \
+  ../App/system/priv-app/SystemUI/40_input_manager.rhai \
+  ../App/system/priv-app/SystemUI/50_surfaceflinger_systemui.rhai \
   ramdisk/init.rhai \
   system/framework/src/00_core.rhai \
   system/framework/src/10_servicemanager.rhai \
-  system/framework/src/20_package_manager.rhai \
-  system/framework/src/30_activity_manager.rhai \
-  system/framework/src/40_input_manager.rhai \
-  system/framework/src/50_surfaceflinger_systemui.rhai \
   system/framework/src/60_system_server.rhai \
   vendor/etc/aosp_wear/vendor_runtime.rhai \
   odm/etc/aosp_wear/odm_runtime.rhai \

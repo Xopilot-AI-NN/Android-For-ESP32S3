@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
+# Модуль проверки структуры super.img.
 from __future__ import annotations
 import argparse, hashlib, struct
 from pathlib import Path
 
+# Параметр LP_RESERVED компонента проверки структуры super.img.
 LP_RESERVED=4096; GEO_SIZE=4096; META_MAX=65536; HEADER=128; SECTOR=512
 
+# Извлекает файл из CPIO-образа для проверки.
 def cpio_extract(blob: bytes, wanted: str) -> bytes:
     cur=0
     while cur+110 <= len(blob):
@@ -19,6 +22,7 @@ def cpio_extract(blob: bytes, wanted: str) -> bytes:
         cur=(do+fs+3)&~3
     raise KeyError(wanted)
 
+# Разбирает параметры запуска и выполняет основной сценарий утилиты.
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('image'); a=ap.parse_args()
     data=Path(a.image).read_bytes()

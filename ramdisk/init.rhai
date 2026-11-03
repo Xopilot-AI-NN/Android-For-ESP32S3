@@ -1,3 +1,4 @@
+// Модуль init.
 // AOSP Wear-compatible Android 17 QPR1 first-stage init.
 // With no screen lock configured, Wear boots to the watch face. Absolute wall
 // time remains invalid until supplied by the paired companion or set manually.

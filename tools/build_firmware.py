@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Модуль сборки системных образов и сохранения userdata.
 """Build AOSP Wear OS Android 17 QPR1 firmware for ESP32-S3.
 
 Outputs Android-style boot images, AOSP liblp `super.img`, logical partition
@@ -10,6 +11,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import struct
 import tempfile
@@ -23,29 +25,50 @@ try:
 except ImportError:
     fcntl = None
 
+# Параметр ROOT компонента сборки системных образов и сохранения userdata.
 ROOT = Path(__file__).resolve().parents[1]
+APP_ROOT = ROOT.parent / "App"
+# Размер логического сектора, байт.
 SECTOR = 512
+# Количество байтов в одном МиБ.
 MIB = 1024 * 1024
+# Параметр ALIGN компонента сборки системных образов и сохранения userdata.
 ALIGN = MIB
+# Параметр ALIGN_LBA компонента сборки системных образов и сохранения userdata.
 ALIGN_LBA = ALIGN // SECTOR
+# Параметр GPT_ENTRIES компонента сборки системных образов и сохранения userdata.
 GPT_ENTRIES = 128
+# Параметр GPT_ENTRY_SIZE компонента сборки системных образов и сохранения userdata.
 GPT_ENTRY_SIZE = 128
+# Параметр GPT_ENTRIES_SECTORS компонента сборки системных образов и сохранения userdata.
 GPT_ENTRIES_SECTORS = GPT_ENTRIES * GPT_ENTRY_SIZE // SECTOR
+# Параметр BASIC_DATA_GUID компонента сборки системных образов и сохранения userdata.
 BASIC_DATA_GUID = uuid.UUID("EBD0A0A2-B9E5-4433-87C0-68B6B72699C7")
+# Параметр DISK_NAMESPACE компонента сборки системных образов и сохранения userdata.
 DISK_NAMESPACE = uuid.UUID("5fb6384f-e56b-4b7b-bfea-77c29f89971c")
+# Сигнатура формата BOOT_CTRL для проверки заголовка.
 BOOT_CTRL_MAGIC = 0x42414342
 
 # Android liblp constants from system/core/fs_mgr/liblp/metadata_format.h.
 LP_GEOMETRY_MAGIC = 0x616C4467
+# Сигнатура формата LP_HEADER для проверки заголовка.
 LP_HEADER_MAGIC = 0x414C5030
+# Параметр LP_GEOMETRY_SIZE компонента сборки системных образов и сохранения userdata.
 LP_GEOMETRY_SIZE = 4096
+# Параметр LP_RESERVED_BYTES компонента сборки системных образов и сохранения userdata.
 LP_RESERVED_BYTES = 4096
+# Ограниченный рабочий буфер/метаданные LP_METADATA_MAX компонента сборки системных образов и сохранения userdata.
 LP_METADATA_MAX = 65536
+# Ограниченный рабочий буфер/метаданные LP_METADATA_SLOTS компонента сборки системных образов и сохранения userdata.
 LP_METADATA_SLOTS = 2
+# Параметр LP_HEADER_SIZE компонента сборки системных образов и сохранения userdata.
 LP_HEADER_SIZE = 128
+# Параметр LP_PARTITION_ATTR_READONLY компонента сборки системных образов и сохранения userdata.
 LP_PARTITION_ATTR_READONLY = 1
 
+# Параметр SUPER_SIZE компонента сборки системных образов и сохранения userdata.
 SUPER_SIZE = 128 * MIB
+# Параметр LOGICAL_LAYOUT компонента сборки системных образов и сохранения userdata.
 LOGICAL_LAYOUT = [
     ("system_a", 16, 0), ("system_b", 16, 1),
     ("system_ext_a", 4, 0), ("system_ext_b", 4, 1),
@@ -55,10 +78,12 @@ LOGICAL_LAYOUT = [
 ]
 
 
+# Округляет размер вверх до заданного выравнивания.
 def align_up(v: int, a: int) -> int:
     return (v + a - 1) // a * a
 
 
+# Собирает архив в формате CPIO newc с нужным выравниванием.
 def cpio_newc(files: dict[str, bytes]) -> bytes:
     out = bytearray()
     ino = 1
@@ -80,6 +105,7 @@ def cpio_newc(files: dict[str, bytes]) -> bytes:
     return bytes(out)
 
 
+# Перечисляет файлы подготовленного дерева для упаковки.
 def tree_files(root: Path) -> dict[str, bytes]:
     result: dict[str, bytes] = {}
     for p in sorted(root.rglob("*")):
@@ -88,13 +114,59 @@ def tree_files(root: Path) -> dict[str, bytes]:
     return result
 
 
+# Объединяет исходники системного Rhai в детерминированном порядке.
 def bundle_framework(system_root: Path) -> bytes:
     chunks = []
     for p in sorted((system_root / "framework" / "src").glob("*.rhai")):
         chunks.append(f"\n// ===== {p.name} =====\n".encode())
         chunks.append(p.read_bytes())
         chunks.append(b"\n")
+    # SystemUI owns navigation and rendering policy; the OS owns the VM/services.
+    sources = [APP_ROOT / "src" / "packages.rhai"]
+    sources.extend(sorted((APP_ROOT / "system" / "priv-app" / "SystemUI").glob("*.rhai")))
+    for p in sources:
+        chunks.extend([b"\n", p.read_bytes(), b"\n"])
     return b"".join(chunks)
+
+
+def validate_app_packages() -> list[dict]:
+    """Reject incomplete/duplicate native packages before producing an image."""
+    catalog = json.loads((APP_ROOT / "catalog.json").read_text())
+    packages = set()
+    launcher_ids = []
+    for entry in catalog:
+        directory = APP_ROOT / entry["directory"]
+        manifest = json.loads((directory / "manifest.json").read_text())
+        if manifest["package"] != entry["package"] or entry["package"] in packages:
+            raise ValueError(f"Invalid/duplicate package: {directory}")
+        packages.add(entry["package"])
+        if manifest["runtime"] != "native-rust" or manifest["entry"] not in manifest["sources"]:
+            raise ValueError(f"Missing native entry: {directory}")
+        actual_sources = {p.name for p in directory.iterdir() if p.suffix in (".rs", ".rhai")}
+        if set(manifest["sources"]) != actual_sources:
+            raise ValueError(f"Unlisted application sources: {directory}")
+        for source in manifest["sources"] + manifest.get("sharedSources", []):
+            path = (directory / source).resolve()
+            if not path.is_relative_to(APP_ROOT.resolve()) or not path.is_file():
+                raise ValueError(f"Missing application source: {path}")
+        if entry.get("launcher"):
+            if manifest.get("nativeApp") != entry["id"]:
+                raise ValueError(f"Native ID mismatch: {directory}")
+            launcher_ids.append(entry["id"])
+    if len(launcher_ids) != 18 or len(set(launcher_ids)) != 18:
+        raise ValueError("The launcher must contain all 18 distinct applications")
+    actual = {p.parent.resolve() for p in (APP_ROOT / "system").glob("*/*/manifest.json")}
+    expected = {(APP_ROOT / e["directory"]).resolve() for e in catalog}
+    if actual != expected:
+        raise ValueError("Application catalog differs from installed package directories")
+    native = (APP_ROOT / "src" / "catalog.rs").read_text()
+    declared_ids = re.search(r"pub const LAUNCHER:.*?= \[([^]]+)\]", native).group(1)
+    if [int(value.strip()) for value in declared_ids.split(",") if value.strip()] != launcher_ids:
+        raise ValueError("Native launcher differs from application manifests")
+    declared_packages = re.search(r'pub const PACKAGES: &str = ("[^"]*");', native).group(1)
+    if json.loads(declared_packages).split() != [entry["package"] for entry in catalog]:
+        raise ValueError("Native package manager differs from application manifests")
+    return catalog
 
 
 def ui_resource_package() -> bytes:
@@ -105,7 +177,7 @@ def ui_resource_package() -> bytes:
         raise ValueError("UI resource ABI v1 requires 16 default wallpapers")
     payloads = [(icons / "atlas.bin").read_bytes(),
                 (icons / "launcher.bin").read_bytes()]
-    if len(payloads[0]) != 35 * 24 * 24 // 2 or len(payloads[1]) != 35 * 30 * 30 // 2:
+    if len(payloads[0]) != 40 * 24 * 24 // 2 or len(payloads[1]) != 40 * 30 * 30 // 2:
         raise ValueError("Material icon atlas does not match UI resource ABI v1")
     payloads.extend((ROOT / "walp" / item["file"]).read_bytes() for item in manifest)
     header = bytearray(512)
@@ -121,11 +193,16 @@ def ui_resource_package() -> bytes:
     return bytes(header) + b"".join(payloads)
 
 
+# Готовит дерево раздела во временном каталоге перед упаковкой.
 def prepare_partition_tree(partition: str, staging: Path) -> Path:
     src = ROOT / partition
     dst = staging / partition
     shutil.copytree(src, dst)
     if partition == "system":
+        validate_app_packages()
+        for name in ("app", "priv-app"):
+            shutil.copytree(APP_ROOT / "system" / name, dst / name)
+        shutil.copyfile(APP_ROOT / "catalog.json", dst / "etc" / "app-catalog.json")
         bundle = bundle_framework(src)
         (dst / "framework" / "aosp-wear-framework.rhai").write_bytes(bundle)
         shutil.rmtree(dst / "framework" / "src")
@@ -135,6 +212,7 @@ def prepare_partition_tree(partition: str, staging: Path) -> Path:
     return dst
 
 
+# Создаёт заголовок Android boot v4 и выровненный ramdisk.
 def android_boot_v4(ramdisk: bytes, version: str) -> bytes:
     header = bytearray(4096)
     header[0:8] = b"ANDROID!"
@@ -153,6 +231,7 @@ def android_boot_v4(ramdisk: bytes, version: str) -> bytes:
     return image + bytes((-len(image)) % 4096)
 
 
+# Создаёт Android vendor_boot v4 с данными проекта.
 def vendor_boot_v4(version: str) -> bytes:
     header = bytearray(4096)
     header[0:8] = b"VNDRBOOT"
@@ -166,6 +245,7 @@ def vendor_boot_v4(version: str) -> bytes:
     return bytes(header)
 
 
+# Формирует AVB-дескриптор хеша раздела.
 def avb_hash_descriptor(partition_name: str, image: bytes, salt: bytes) -> bytes:
     name = partition_name.encode()
     digest = hashlib.sha256(salt + image).digest()
@@ -180,6 +260,7 @@ def avb_hash_descriptor(partition_name: str, image: bytes, salt: bytes) -> bytes
     return struct.pack(">QQ", 2, len(payload)) + payload
 
 
+# Собирает vbmeta с хешами разделов и метаданными AVB.
 def vbmeta_image(images: dict[str, bytes], rollback_index: int = 0) -> bytes:
     descriptors = bytearray()
     for name, image in images.items():
@@ -202,6 +283,7 @@ def vbmeta_image(images: dict[str, bytes], rollback_index: int = 0) -> bytes:
     return bytes(header) + aux
 
 
+# Создаёт начальную структуру управления слотами A/B.
 def boot_control() -> bytes:
     raw = bytearray(32)
     raw[0:3] = b"_a\0"
@@ -214,6 +296,7 @@ def boot_control() -> bytes:
     return bytes(raw)
 
 
+# Собирает геометрию логических разделов super.
 def lp_geometry() -> bytes:
     raw = bytearray(52)
     struct.pack_into("<II", raw, 0, LP_GEOMETRY_MAGIC, 52)
@@ -223,6 +306,7 @@ def lp_geometry() -> bytes:
     return bytes(raw) + bytes(LP_GEOMETRY_SIZE - len(raw))
 
 
+# Кодирует имя фиксированной длины с нулевым дополнением.
 def fixed_name(name: str, size: int) -> bytes:
     b = name.encode("ascii")
     if len(b) >= size:
@@ -230,6 +314,7 @@ def fixed_name(name: str, size: int) -> bytes:
     return b + bytes(size - len(b))
 
 
+# Собирает таблицы и контрольные суммы liblp.
 def lp_metadata(entries: list[dict], super_size: int) -> bytes:
     partitions = bytearray()
     extents = bytearray()
@@ -287,6 +372,7 @@ def lp_metadata(entries: list[dict], super_size: int) -> bytes:
     return blob + bytes(LP_METADATA_MAX - len(blob))
 
 
+# Создаёт super.img с логическими разделами A/B.
 def make_super(output: Path, logical_images: dict[str, bytes]) -> None:
     entries = []
     cursor = ALIGN
@@ -329,6 +415,7 @@ def make_super(output: Path, logical_images: dict[str, bytes]) -> None:
             f.write(image)
 
 
+# Создаёт защитный MBR для GPT-носителя.
 def protective_mbr(total_lba: int) -> bytes:
     mbr = bytearray(512)
     entry = bytearray(16)
@@ -340,10 +427,12 @@ def protective_mbr(total_lba: int) -> bytes:
     return bytes(mbr)
 
 
+# Кодирует GUID в формате записи GPT.
 def guid_le(g: uuid.UUID) -> bytes:
     return g.bytes_le
 
 
+# Собирает одну запись раздела GPT.
 def partition_entry(name: str, first: int, last: int, disk_guid: uuid.UUID) -> bytes:
     e = bytearray(128)
     e[0:16] = guid_le(BASIC_DATA_GUID)
@@ -355,6 +444,7 @@ def partition_entry(name: str, first: int, last: int, disk_guid: uuid.UUID) -> b
     return bytes(e)
 
 
+# Готовит основные и резервные таблицы GPT с их CRC.
 def gpt_headers(total_lba: int, parts: list[tuple[str, int, int]], disk_guid: uuid.UUID):
     entries = bytearray(GPT_ENTRIES * GPT_ENTRY_SIZE)
     for i, (name, first, last) in enumerate(parts):
@@ -363,6 +453,7 @@ def gpt_headers(total_lba: int, parts: list[tuple[str, int, int]], disk_guid: uu
     first_usable = 2 + GPT_ENTRIES_SECTORS
     last_usable = total_lba - GPT_ENTRIES_SECTORS - 2
 
+    # Собирает один заголовок GPT для указанного положения таблиц.
     def hdr(current, backup, entries_lba):
         h = bytearray(512)
         h[0:8] = b"EFI PART"
@@ -421,6 +512,7 @@ def validate_existing_layout(output: Path, expected: dict[str, tuple[int, int]],
 
 
 @contextmanager
+# Удерживает блокировку образа, чтобы не пересобирать используемый файл.
 def image_build_lock(output: Path):
     with output.with_suffix(output.suffix + ".lock").open("a+b") as lock:
         if fcntl is not None:
@@ -431,6 +523,7 @@ def image_build_lock(output: Path):
         yield
 
 
+# Создаёт образ атомарно, сохраняя поддерживаемые пользовательские области.
 def write_sd_image(output: Path, size_mib: int, blobs: dict[str, bytes], version: str) -> None:
     layout = [
         ("misc", 4), ("metadata", 16),
@@ -479,6 +572,7 @@ def write_sd_image(output: Path, size_mib: int, blobs: dict[str, bytes], version
         print("  preserved        : metadata, swap (PIN/settings/bonds), userdata")
 
 
+# Записывает системные области временного образа и переносит сохранённые данные.
 def _write_sd_image_file(output: Path, previous: Path | None, total_bytes: int, total_lba: int,
                          primary: bytes, entries: bytes, backup: bytes, backup_entries: int,
                          by_name: dict[str, tuple[int, int]], blobs: dict[str, bytes]) -> None:
@@ -490,6 +584,7 @@ def _write_sd_image_file(output: Path, previous: Path | None, total_bytes: int, 
         f.seek(backup_entries * SECTOR); f.write(entries)
         f.seek((total_lba - 1) * SECTOR); f.write(backup)
 
+        # Записывает подготовленные байты в рассчитанную область образа.
         def put(name: str, data: bytes, offset: int = 0):
             first, last = by_name[name]
             cap = (last - first + 1) * SECTOR
@@ -525,6 +620,7 @@ def _write_sd_image_file(output: Path, previous: Path | None, total_bytes: int, 
         os.fsync(f.fileno())
 
 
+# Проверяет таблицы и контрольные суммы созданного super.img.
 def verify_super(super_path: Path) -> None:
     data = super_path.read_bytes()
     geo = data[LP_RESERVED_BYTES:LP_RESERVED_BYTES + 52]
@@ -548,6 +644,7 @@ def verify_super(super_path: Path) -> None:
         raise RuntimeError("super tables checksum")
 
 
+# Разбирает параметры запуска и выполняет основной сценарий утилиты.
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--output", default=str(ROOT / "out" / "target" / "product" / "zero"))

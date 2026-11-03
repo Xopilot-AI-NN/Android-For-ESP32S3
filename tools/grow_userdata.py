@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Модуль расширения userdata без перемещения остальных разделов.
 """Grow the final raw userdata partition, keeping all existing partition starts/data.
 
 Defaults to a read-only plan. --apply saves GPT sectors before writing metadata.
@@ -17,11 +18,14 @@ import struct
 import sys
 import zlib
 
+# Размер логического сектора, байт.
 SECTOR = 512
+# Параметр EXPECTED компонента расширения userdata без перемещения остальных разделов.
 EXPECTED = ["misc", "metadata", "boot_a", "boot_b", "init_boot_a", "init_boot_b",
             "vendor_boot_a", "vendor_boot_b", "vbmeta_a", "vbmeta_b", "super", "swap", "userdata"]
 
 
+# Читает заданный диапазон файла/устройства и проверяет полноту чтения.
 def read_at(disk, offset: int, size: int) -> bytes:
     disk.seek(offset)
     data = disk.read(size)
@@ -30,6 +34,7 @@ def read_at(disk, offset: int, size: int) -> bytes:
     return data
 
 
+# Проверяет структуру и CRC заголовка GPT.
 def check_header(header: bytes) -> None:
     if header[:8] != b"EFI PART" or len(header) != SECTOR:
         raise ValueError("no GPT signature")
@@ -43,6 +48,7 @@ def check_header(header: bytes) -> None:
         raise ValueError("GPT header checksum mismatch; repair the GPT first")
 
 
+# Собирает новый GPT-заголовок с актуальными границами и CRC.
 def make_header(original: bytes, current: int, backup: int, last: int,
                 entries_lba: int, entries_crc: int) -> bytes:
     result = bytearray(original)
@@ -56,6 +62,7 @@ def make_header(original: bytes, current: int, backup: int, last: int,
     return bytes(result)
 
 
+# Отказывает в работе с устройством, которое уже используется системой.
 def refuse_in_use(path: Path, mode: int) -> None:
     if not stat.S_ISBLK(mode):
         return
@@ -78,6 +85,7 @@ def refuse_in_use(path: Path, mode: int) -> None:
                 raise ValueError("card is used as swap")
 
 
+# Рассчитывает изменения разметки без немедленной записи на устройство.
 def plan(disk, total: int) -> tuple[list[tuple[int, bytes]], int, int]:
     if total % SECTOR:
         raise ValueError("device size is not a whole number of 512-byte sectors")
@@ -138,6 +146,7 @@ def plan(disk, total: int) -> tuple[list[tuple[int, bytes]], int, int]:
     return writes, old_end - start + 1, new_last - start + 1
 
 
+# Разбирает параметры запуска и выполняет основной сценарий утилиты.
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device", required=True, type=Path)

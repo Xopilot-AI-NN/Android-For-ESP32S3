@@ -1,3 +1,5 @@
+// Модуль 60_system_server.
+// Формирует результат проверки системных сервисов.
 fn system_server_health(){
     if service_state("package")!=1{return 0;}
     if service_state("activity")!=1{return 0;}

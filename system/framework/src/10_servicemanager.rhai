@@ -1,3 +1,4 @@
+// Модуль 10_servicemanager.
 // Minimal Android/Wear service registry exported by the Rhai system_server.
 fn service_state(name) {
     if name=="servicemanager" {return 1;}

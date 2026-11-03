@@ -1,3 +1,4 @@
+# Модуль проверок image_preservation.
 """Regression checks for retaining watch preferences during firmware rebuilds."""
 import struct
 import tempfile
@@ -7,7 +8,9 @@ from pathlib import Path
 import build_firmware as build
 
 
+# Структура данных компонента проверок image_preservation.
 class ImagePreservation(unittest.TestCase):
+    # Готовит независимое временное окружение перед каждым тестом.
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -34,12 +37,14 @@ class ImagePreservation(unittest.TestCase):
                     disk.write(data)
                     self.markers[offset] = data
 
+    # Сверяет сохранённые пользовательские области с исходным содержимым.
     def assert_saved(self):
         with self.image.open("rb") as disk:
             for offset, data in self.markers.items():
                 disk.seek(offset)
                 self.assertEqual(disk.read(len(data)), data)
 
+    # Проверяет обновление системы с сохранением пользовательских разделов.
     def test_rebuild_updates_system_and_retains_persistent_ranges(self):
         newer = {name: b"new-system" for name in self.blobs}
         build.write_sd_image(self.image, 256, newer, "updated")
@@ -48,6 +53,7 @@ class ImagePreservation(unittest.TestCase):
             disk.seek(self.parts["super"][0] * build.SECTOR)
             self.assertEqual(disk.read(10), b"new-system")
 
+    # Проверяет сохранность исходного образа при несовместимом размере и неудачной сборке.
     def test_size_change_and_failed_build_leave_original_intact(self):
         with self.assertRaises(RuntimeError):
             build.write_sd_image(self.image, 512, self.blobs, "test")
@@ -59,6 +65,7 @@ class ImagePreservation(unittest.TestCase):
         self.assertFalse(list(self.image.parent.glob(".watch.img.*")))
 
     @unittest.skipIf(build.fcntl is None, "POSIX image locks")
+    # Проверяет отказ пересборки образа, занятого действующим сервером.
     def test_active_image_owner_prevents_rebuild(self):
         lock_path = self.image.with_suffix(".img.lock")
         with lock_path.open("a+b") as lock:

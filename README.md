@@ -1,20 +1,18 @@
-# AOSP Wear OS Firmware 0.7
+# Прошивка часов 17.2.1
 
-AOSP/Wear-shaped Rhai userspace for ESP32-S3-Zero-N4R2.
+Исполняемая прошивка ESP32-S3: [точка входа](src/main.rs),
+[инициализация](src/init.rs), [HAL](src/hal), [службы](src/services),
+[framework/runtime](src/runtime.rs) и [рендерер](src/material.rs).
 
-The build emits Android-style boot images, GPT/A-B metadata, AVB development descriptors,
-liblp `super`, system/vendor/product/odm/system_ext logical partitions, and the complete
-raw disk image used by both microSD and USB-PC block boot.
+Загрузочная библиотека подключена отдельной зависимостью из Bootloader.
+Код приложений и SystemUI берётся из App. [Полная архитектура](../ARCHITECTURE.md).
 
-The runtime includes an expanded Wear Material 3 Expressive SystemUI, launcher, notifications,
-Quick Settings, Settings/Display/Connectivity/System pages, widgets, media and clock surfaces.
-Native Wi-Fi/BLE and wireless ADB are driven by the Rust boot/runtime layer.
-
-Build and verify:
-
-```bash
-./build.sh
-./verify.sh
+```sh
+cargo +esp build --release --offline  # firmware ELF для PC-режима
+./build.sh                           # системный GPT-образ SD/PC
 ```
 
-Output is written to `out/target/product/zero/`.
+Исполняемый файл: target/xtensa-esp32s3-none-elf/release/firmware.
+Дисковый образ: out/target/product/zero/aosp-wear-sd.img.
+Это прошивка ESP32, без ядра Linux и ART. Нативные приложения пока связаны
+с ней статически. Системные образы используют Android-подобные GPT/A-B/AVB/liblp.
