@@ -27,6 +27,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS pairings(id TEXT PRIMARY KEY,device TEXT NOT NULL REFERENCES devices(id),expires INTEGER NOT NULL,status TEXT NOT NULL,services TEXT NOT NULL,state_hash TEXT,cookie_hash TEXT,verifier TEXT,pending TEXT);
       CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY,device TEXT NOT NULL REFERENCES devices(id),expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS audit(time INTEGER NOT NULL,event TEXT NOT NULL,device TEXT);
+      CREATE TABLE IF NOT EXISTS provider_usage(day INTEGER NOT NULL,device TEXT NOT NULL,service TEXT NOT NULL,spent INTEGER NOT NULL,PRIMARY KEY(day,device,service));
     `);
   }
   // AEAD binds ciphertext to its device. Moving a DB cell cannot change account ownership.

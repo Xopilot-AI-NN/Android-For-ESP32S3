@@ -103,3 +103,65 @@ test("gmail extracts plain text and pages Unicode without fetching attachments",
     globalThis.fetch = original;
   }
 });
+
+test("calendar month/pagination and Gmail charset/attachment handling use readonly endpoints", async () => {
+  const original = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    calls.push(new URL(url));
+    if (url.includes("/calendar/"))
+      return Response.json({
+        timeZone: "Europe/Moscow",
+        nextPageToken: "next-token",
+        items: [],
+      });
+    return Response.json({
+      payload: {
+        mimeType: "multipart/mixed",
+        parts: [
+          {
+            mimeType: "text/plain",
+            headers: [
+              {
+                name: "Content-Type",
+                value: "text/plain; charset=windows-1251",
+              },
+            ],
+            body: {
+              data: Buffer.from([0xcf, 0xf0, 0xe8, 0xe2, 0xe5, 0xf2]).toString(
+                "base64url",
+              ),
+            },
+          },
+          {
+            mimeType: "text/plain",
+            filename: "attachment.txt",
+            body: {
+              data: Buffer.from("must not render").toString("base64url"),
+            },
+          },
+        ],
+      },
+    });
+  };
+  try {
+    const google = new Google({});
+    const events = await google.events(
+      "synthetic",
+      new URLSearchParams({ month: "2026-11", page: "page-token" }),
+    );
+    assert.equal(events.next_page, "next-token");
+    assert.equal(calls[0].searchParams.get("pageToken"), "page-token");
+    assert.equal(
+      calls[0].searchParams.get("timeMin"),
+      "2026-10-31T00:00:00.000Z",
+    );
+    assert.equal(
+      (await google.message("synthetic", "fixture", new URLSearchParams()))
+        .body,
+      "Привет",
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});

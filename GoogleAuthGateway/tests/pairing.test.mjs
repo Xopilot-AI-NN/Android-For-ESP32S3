@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createGateway } from "../src/server.mjs";
 import { Store } from "../src/store.mjs";
-import { SCOPES } from "../src/google.mjs";
+import { SCOPES, ApiError } from "../src/google.mjs";
 const mockGoogle = {
   async exchange() {
     return {
@@ -36,7 +36,7 @@ const mockGoogle = {
   },
   async revoke() {},
 };
-async function setup(t) {
+async function setup(t, google = mockGoogle) {
   let time = 1000000;
   const store = new Store(":memory:", "12".repeat(32));
   const device = store.register("Fixture Watch"),
@@ -49,7 +49,7 @@ async function setup(t) {
       clientSecret: "fixture-secret",
     },
     store,
-    google: mockGoogle,
+    google,
     now: () => time,
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -79,6 +79,11 @@ async function setup(t) {
       redirect: "manual",
     });
     assert.equal(start.status, 303);
+    assert.ok(
+      start.headers
+        .get("content-security-policy")
+        .includes("https://accounts.google.com"),
+    );
     const state = new URL(start.headers.get("location")).searchParams.get(
       "state",
     );
@@ -98,6 +103,162 @@ async function setup(t) {
     },
   };
 }
+
+test("cancelling during OAuth exchange cannot resurrect a pairing", async (t) => {
+  let unblock, started;
+  const began = new Promise((resolve) => {
+    started = resolve;
+  });
+  const s = await setup(t, {
+    ...mockGoogle,
+    async exchange() {
+      started();
+      await new Promise((resolve) => {
+        unblock = resolve;
+      });
+      return mockGoogle.exchange();
+    },
+  });
+  const pair = await s.create(),
+    login = await s.login(pair);
+  const callback = fetch(
+    s.base + "/oauth/callback?state=" + login.state + "&code=fixture",
+    { headers: { Cookie: login.cookie } },
+  );
+  await began;
+  const cancelled = await fetch(
+    s.base + "/api/v1/google/pairings/" + pair.pairing_id,
+    { method: "DELETE", headers: s.auth(s.device) },
+  );
+  assert.equal(cancelled.status, 200);
+  unblock();
+  assert.equal((await callback).status, 409);
+  assert.equal(s.store.account(s.device.device_id), null);
+  const row = s.store.db
+    .prepare("SELECT * FROM pairings WHERE id=?")
+    .get(pair.pairing_id);
+  assert.equal(row.status, "cancelled");
+  assert.equal(row.pending, null);
+});
+
+test("account replacement revokes old sessions; device logout also works after session expiry", async (t) => {
+  const s = await setup(t);
+  async function bind() {
+    const pair = await s.create(),
+      login = await s.login(pair);
+    assert.equal(
+      (
+        await fetch(
+          s.base + "/oauth/callback?state=" + login.state + "&code=fixture",
+          { headers: { Cookie: login.cookie } },
+        )
+      ).status,
+      200,
+    );
+    const response = await fetch(
+      s.base + "/api/v1/google/pairings/" + pair.pairing_id + "/confirm",
+      { method: "POST", headers: s.auth(s.device) },
+    );
+    assert.equal(response.status, 200);
+    return (await response.json()).session;
+  }
+  const old = await bind(),
+    current = await bind();
+  const bearer = (token) => ({
+    "X-Device-ID": s.device.device_id,
+    Authorization: "Bearer " + token,
+  });
+  assert.equal(
+    (await fetch(s.base + "/api/v1/google/me", { headers: bearer(old) }))
+      .status,
+    401,
+  );
+  assert.equal(
+    (await fetch(s.base + "/api/v1/google/me", { headers: bearer(current) }))
+      .status,
+    200,
+  );
+  s.advance(3600001);
+  assert.equal(
+    (
+      await fetch(s.base + "/api/v1/google/account", {
+        method: "DELETE",
+        headers: s.auth(s.device),
+      })
+    ).status,
+    200,
+  );
+  assert.equal(s.store.account(s.device.device_id), null);
+  assert.equal(
+    (
+      await fetch(s.base + "/api/v1/google/session", {
+        method: "POST",
+        headers: s.auth(s.device),
+      })
+    ).status,
+    401,
+  );
+});
+
+test("a late refresh cannot overwrite or delete a new binding, even for the same identity", async (t) => {
+  for (const invalidGrant of [false, true]) {
+    let consent = 0,
+      unblock,
+      started;
+    const began = new Promise((resolve) => {
+      started = resolve;
+    });
+    const s = await setup(t, {
+      ...mockGoogle,
+      async exchange() {
+        const token = await mockGoogle.exchange();
+        return {
+          ...token,
+          access_token: "fixture-consent-" + ++consent,
+          expires_in: 60,
+        };
+      },
+      async refresh() {
+        started();
+        await new Promise((resolve) => {
+          unblock = resolve;
+        });
+        if (invalidGrant) throw new ApiError("REAUTH_REQUIRED", 401);
+        return { access_token: "fixture-stale-refresh", expires_in: 3600 };
+      },
+    });
+    async function bind() {
+      const pair = await s.create(),
+        login = await s.login(pair);
+      await fetch(
+        s.base + "/oauth/callback?state=" + login.state + "&code=fixture",
+        { headers: { Cookie: login.cookie } },
+      );
+      const response = await fetch(
+        s.base + "/api/v1/google/pairings/" + pair.pairing_id + "/confirm",
+        { method: "POST", headers: s.auth(s.device) },
+      );
+      assert.equal(response.status, 200);
+      return (await response.json()).session;
+    }
+    const token = await bind();
+    s.advance(61000);
+    const old = fetch(s.base + "/api/v1/google/calendar/events", {
+      headers: {
+        "X-Device-ID": s.device.device_id,
+        Authorization: "Bearer " + token,
+      },
+    });
+    await began;
+    await bind();
+    unblock();
+    assert.equal((await old).status, 401);
+    assert.equal(
+      s.store.account(s.device.device_id).tokens.access_token,
+      "fixture-consent-2",
+    );
+  }
+});
 
 test("browser login needs separate device confirmation; tokens never reach the watch", async (t) => {
   const s = await setup(t),

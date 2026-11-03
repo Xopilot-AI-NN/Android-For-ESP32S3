@@ -31,6 +31,10 @@ test("only explicit localhost development permits HTTP", () => {
 });
 
 test("check rejects a missing encryption key and checkout-local account storage", () => {
+  assert.throws(
+    () => config({ ...environment(), NODE_TLS_REJECT_UNAUTHORIZED: "0" }),
+    /Insecure/,
+  );
   assert.throws(() => config({ ...environment(), STORE_KEY: "" }), /STORE_KEY/);
   const checkout = fileURLToPath(new URL("../private-state", import.meta.url));
   assert.throws(

@@ -35,6 +35,19 @@ async function json(url, options = {}, limit = 1024 * 1024) {
     throw new ApiError("UPSTREAM_INVALID_RESPONSE");
   }
   if (!response.ok) {
+    const reasons = (data.error?.errors || []).map((item) => item.reason);
+    if (
+      reasons.some((reason) =>
+        [
+          "rateLimitExceeded",
+          "userRateLimitExceeded",
+          "quotaExceeded",
+        ].includes(reason),
+      )
+    )
+      throw new ApiError("RATE_LIMITED", 429);
+    if (reasons.includes("insufficientPermissions"))
+      throw new ApiError("SCOPE_MISSING", 403);
     if (data.error === "invalid_grant")
       throw new ApiError("REAUTH_REQUIRED", 401);
     if (response.status === 429) throw new ApiError("RATE_LIMITED", 429);
@@ -96,9 +109,17 @@ export class Google {
     }
   }
   async events(token, query) {
-    const start = query.get("from") || new Date().toISOString(),
+    let start = query.get("from") || new Date().toISOString(),
       end =
         query.get("to") || new Date(Date.now() + 14 * 86400000).toISOString();
+    const month = query.get("month");
+    if (month) {
+      if (!/^(19|20)\d{2}-(0[1-9]|1[0-2])$/.test(month))
+        throw new ApiError("INVALID_MONTH", 400);
+      const [y, m] = month.split("-").map(Number);
+      start = new Date(Date.UTC(y, m - 1, 0)).toISOString();
+      end = new Date(Date.UTC(y, m, 2)).toISOString();
+    }
     const from = Date.parse(start),
       to = Date.parse(end);
     if (
@@ -117,6 +138,10 @@ export class Google {
       orderBy: "startTime",
       maxResults: String(limit),
     });
+    const page = query.get("page") || "";
+    if (page.length > 512 || !/^[\w+/=-]*$/.test(page))
+      throw new ApiError("INVALID_PAGE", 400);
+    if (page) params.set("pageToken", page);
     const data = await json(
       "https://www.googleapis.com/calendar/v3/calendars/primary/events?" +
         params,
@@ -124,15 +149,25 @@ export class Google {
     );
     return {
       time_zone: data.timeZone,
-      events: (data.items || [])
-        .slice(0, limit)
-        .map((e) => ({
-          id: e.id,
-          title: String(e.summary || "Без названия").slice(0, 160),
-          start: e.start,
-          end: e.end,
-          location: String(e.location || "").slice(0, 160),
-        })),
+      next_page: data.nextPageToken || null,
+      events: (data.items || []).slice(0, limit).map((e) => ({
+        id: e.id,
+        title: String(e.summary || "Без названия").slice(0, 160),
+        start: e.start,
+        end: e.end,
+        location: String(e.location || "").slice(0, 160),
+        reminders: e.reminders
+          ? {
+              use_default: Boolean(e.reminders.useDefault),
+              overrides: (e.reminders.overrides || [])
+                .slice(0, 5)
+                .map((value) => ({
+                  method: String(value.method || "").slice(0, 16),
+                  minutes: value.minutes,
+                })),
+            }
+          : null,
+      })),
     };
   }
   async messages(token, query) {
@@ -192,8 +227,29 @@ export class Google {
       html = [];
     function visit(part, depth = 0) {
       if (depth > 10 || !part) return;
+      const headers = part.headers || [];
+      if (
+        part.filename ||
+        headers.some(
+          (h) =>
+            String(h.name).toLowerCase() === "content-disposition" &&
+            /^attachment\b/i.test(h.value || ""),
+        )
+      )
+        return;
       if (part.body?.data) {
-        const text = Buffer.from(part.body.data, "base64url").toString("utf8");
+        const raw = Buffer.from(part.body.data, "base64url");
+        const contentType =
+          headers.find((h) => String(h.name).toLowerCase() === "content-type")
+            ?.value || "";
+        const charset =
+          /charset\s*=\s*["']?([\w-]+)/i.exec(contentType)?.[1] || "utf-8";
+        let text;
+        try {
+          text = new TextDecoder(charset).decode(raw);
+        } catch {
+          text = raw.toString("utf8");
+        }
         if (part.mimeType === "text/plain") plain.push(text);
         else if (part.mimeType === "text/html") html.push(text);
       }

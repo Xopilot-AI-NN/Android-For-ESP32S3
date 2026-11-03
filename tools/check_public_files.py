@@ -30,6 +30,8 @@ def inspect(name: str, data: bytes) -> list[str]:
         found.append("personal photo/capture filename")
     if name.lower().endswith((".img", ".elf", ".log")):
         found.append("private disk/debug output")
+    if name.lower().endswith('.json') and re.search(rb'"(?:device_credential|brave_search_api_key|google_translate_api_key)"\s*:\s*"[^"\r\n]{8,}"',data):
+        found.append('private device/provider credentials')
     # Large staged files are no exemption: a disk/log can contain credentials too.
     found += [label for label, pattern in SECRET if pattern.search(data)]
     return found

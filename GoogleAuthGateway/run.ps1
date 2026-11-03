@@ -4,10 +4,11 @@ $ErrorActionPreference = "Stop"
 $GatewayRoot = $PSScriptRoot
 $ConfigRoot = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path $HOME ".config" }
 $ConfigFile = Join-Path $ConfigRoot "aosp-wear-gateway/config.env"
-if ($Action -eq "init") {
+if ($Action -in @("init","provision")) {
     $PythonCommand = Get-Command python3, python -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $PythonCommand) { throw "Install Python 3 first" }
-    & $PythonCommand.Source (Join-Path $GatewayRoot "configure.py") @Arguments
+    $Script = if ($Action -eq "init") { "configure.py" } else { "provision_watch.py" }
+    & $PythonCommand.Source (Join-Path $GatewayRoot $Script) @Arguments
     exit $LASTEXITCODE
 }
 if ($Action -eq "test") {
@@ -16,14 +17,18 @@ if ($Action -eq "test") {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     $PythonCommand = Get-Command python3, python -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $PythonCommand) { throw "Install Python 3 first" }
-    & $PythonCommand.Source (Join-Path $GatewayRoot "tests/test_configure.py")
+    & $PythonCommand.Source -m unittest discover -s (Join-Path $GatewayRoot "tests") -p "test_*.py"
     exit $LASTEXITCODE
 }
 if (-not (Test-Path $ConfigFile)) { throw "Run init OAUTH_JSON first; never paste secrets into source" }
 $NodeCheck = "const [major,minor]=process.versions.node.split('.').map(Number);if(major<22||(major===22&&minor<13))throw Error('Node.js 22.13+ required');require('node:sqlite')"
 & node -e $NodeCheck
 if ($LASTEXITCODE -ne 0) { throw "Node.js 22.13+ with node:sqlite is required" }
-if ($Action -eq "check") {
+if ($Action -eq "ca") {
+    & node "--env-file=$ConfigFile" (Join-Path $GatewayRoot "src/export-ca.mjs")
+} elseif ($Action -eq "providers") {
+    & node (Join-Path $GatewayRoot "src/configure-providers.mjs") @Arguments
+} elseif ($Action -eq "check") {
     & node "--env-file=$ConfigFile" (Join-Path $GatewayRoot "src/check.mjs")
 } elseif ($Action -eq "start") {
     & node "--env-file=$ConfigFile" (Join-Path $GatewayRoot "src/server.mjs")

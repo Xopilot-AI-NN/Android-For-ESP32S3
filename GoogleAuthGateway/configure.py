@@ -36,13 +36,18 @@ def main():
     target = directory / "config.env"
     # Preserve the encryption key on reconfiguration; changing it would orphan stored tokens.
     key = None
+    provider_settings = {}
     if target.exists():
         for line in target.read_text().splitlines():
             if line.startswith("STORE_KEY="):
                 key = json.loads(line.split("=", 1)[1])
+            if line.split('=', 1)[0] in {"BRAVE_SEARCH_API_KEY", "GOOGLE_TRANSLATE_API_KEY"}:
+                name, value = line.split('=', 1)
+                provider_settings[name] = json.loads(value)
     settings = {"PUBLIC_BASE_URL": base, "DEV_LOCALHOST": "1" if local else "0",
                 "GOOGLE_CLIENT_ID": client["client_id"], "GOOGLE_CLIENT_SECRET": client["client_secret"],
                 "STORE_KEY": key or secrets.token_hex(32), "PORT": str((uri.port or 80) if local else 8080)}
+    settings.update(provider_settings)
     if any("\n" in value or "\r" in value for value in settings.values()):
         parser.error("invalid multiline credential value")
     # A unique, exclusively created file avoids following a stale temporary symlink.

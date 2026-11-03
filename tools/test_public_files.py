@@ -15,6 +15,9 @@ class CredentialGuardTests(unittest.TestCase):
 
     def test_clean_example_is_publishable(self):
         self.assertEqual(inspect(".env.example", b"GOOGLE_CLIENT_SECRET=\nSTORE_KEY=\n"), [])
+    def test_private_json_is_blocked_even_after_renaming(self):
+        self.assertIn('private device/provider credentials',inspect('renamed.json',b'{"device_credential":"synthetic-device-only"}'))
+        self.assertEqual(inspect('example.json',b'{"brave_search_api_key":""}'),[])
 
     def test_large_debug_files_are_not_exempt(self):
         synthetic = ("GO" + "CSPX-" + "x" * 32).encode()

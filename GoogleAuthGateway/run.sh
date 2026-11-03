@@ -10,14 +10,20 @@ case "$ACTION" in
     # Python imports the downloaded Web OAuth JSON into a mode-0600 file outside Git.
     exec python3 "$GATEWAY_ROOT/configure.py" "$@"
     ;;
+  provision)
+    exec python3 "$GATEWAY_ROOT/provision_watch.py" "$@"
+    ;;
   test)
     node --test "$GATEWAY_ROOT"/tests/*.test.mjs
-    exec python3 "$GATEWAY_ROOT/tests/test_configure.py"
+    exec python3 -m unittest discover -s "$GATEWAY_ROOT/tests" -p 'test_*.py'
     ;;
   help|-h|--help)
     echo 'Usage: bash run.sh init OAUTH_JSON [--base-url HTTPS_ORIGIN]'
     echo '       bash run.sh start | check | test'
     echo '       bash run.sh register [name]'
+    echo '       bash run.sh providers PRIVATE_KEYS_JSON'
+    echo '       bash run.sh ca'
+    echo '       bash run.sh provision DEVICE_JSON CA_PEM DISK_IMAGE --base-url HTTPS_ORIGIN'
     echo '       bash run.sh pair DEVICE_JSON [calendar,gmail]'
     echo '       bash run.sh poll DEVICE_JSON PAIR_ID'
     echo '       bash run.sh confirm DEVICE_JSON PAIR_ID'
@@ -32,6 +38,12 @@ case "$ACTION" in
   check)
     # Do not dump process.env or print OAuth values; verify only that config can be loaded.
     node --env-file="$CONFIG_FILE" "$GATEWAY_ROOT/src/check.mjs"
+    ;;
+  providers)
+    exec node "$GATEWAY_ROOT/src/configure-providers.mjs" "$@"
+    ;;
+  ca)
+    exec node --env-file="$CONFIG_FILE" "$GATEWAY_ROOT/src/export-ca.mjs"
     ;;
   start)
     # Android may otherwise suspend a long-lived terminal server when the screen sleeps.

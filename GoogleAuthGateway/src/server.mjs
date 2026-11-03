@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { Store, opaque, hash } from "./store.mjs";
 import { Google, ApiError, SCOPES } from "./google.mjs";
+import { Providers } from "./providers.mjs";
 import { config as loadConfig } from "./config.mjs";
 const equal = (a, b) =>
   typeof a === "string" &&
@@ -21,16 +22,18 @@ const escape = (value) =>
       ],
   );
 function send(res, status, data, headers = {}) {
+  const payload = typeof data === "string" ? data : JSON.stringify(data);
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
+    "Content-Length": Buffer.byteLength(payload),
     "Cache-Control": "no-store",
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
     "Content-Security-Policy":
-      "default-src 'none'; form-action 'self'; frame-ancestors 'none'",
+      "default-src 'none'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; base-uri 'none'",
     ...headers,
   });
-  res.end(typeof data === "string" ? data : JSON.stringify(data));
+  res.end(payload);
 }
 function page(res, title, body, status = 200) {
   send(
@@ -45,7 +48,7 @@ async function body(req) {
   const parts = [];
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 2048) throw new ApiError("BODY_TOO_LARGE", 413);
+    if (size > 8192) throw new ApiError("BODY_TOO_LARGE", 413);
     parts.push(chunk);
   }
   try {
@@ -58,8 +61,10 @@ export function createGateway({
   config,
   store,
   google = new Google(config),
+  providers,
   now = () => Date.now(),
 }) {
+  providers ||= new Providers(config, { now, store });
   const limits = new Map(),
     refreshing = new Map();
   function rate(key, max) {
@@ -128,16 +133,23 @@ export function createGateway({
       throw new ApiError("SCOPE_MISSING", 403);
     if (account.tokens.expires_at > now() + 60000)
       return account.tokens.access_token;
-    if (!refreshing.has(id)) {
+    const refreshKey = id + ":" + (account.binding || account.profile.sub);
+    if (!refreshing.has(refreshKey)) {
       refreshing.set(
-        id,
+        refreshKey,
         (async () => {
           try {
             const tokens = await google.refresh(account.tokens.refresh_token);
             if (typeof tokens.access_token !== "string")
               throw new ApiError("UPSTREAM_INVALID_RESPONSE");
             const current = store.account(id);
-            if (!current) throw new ApiError("UNAUTHORIZED", 401);
+            if (
+              !current ||
+              current.profile.sub !== account.profile.sub ||
+              current.binding !== account.binding ||
+              current.tokens.refresh_token !== account.tokens.refresh_token
+            )
+              throw new ApiError("UNAUTHORIZED", 401);
             current.tokens = {
               ...current.tokens,
               ...tokens,
@@ -147,18 +159,51 @@ export function createGateway({
                 now() +
                 Math.min(Number(tokens.expires_in) || 3600, 86400) * 1000,
             };
+            if (typeof tokens.scope === "string") {
+              const granted = new Set(tokens.scope.split(" "));
+              current.services = current.services.filter((service) =>
+                granted.has(SCOPES[service]),
+              );
+            }
             store.saveAccount(id, current);
             return current.tokens.access_token;
           } catch (error) {
-            if (error.code === "REAUTH_REQUIRED") store.unlink(id);
+            const current = store.account(id);
+            if (
+              error.code === "REAUTH_REQUIRED" &&
+              current?.binding === account.binding &&
+              current?.profile.sub === account.profile.sub &&
+              current?.tokens.refresh_token === account.tokens.refresh_token
+            )
+              store.unlink(id);
             throw error;
           } finally {
-            refreshing.delete(id);
+            refreshing.delete(refreshKey);
           }
         })(),
       );
     }
-    return refreshing.get(id);
+    const token = await refreshing.get(refreshKey);
+    if (!store.account(id)?.services.includes(service))
+      throw new ApiError("SCOPE_MISSING", 403);
+    return token;
+  }
+  async function readService(id, service, read) {
+    const binding = store.account(id)?.binding;
+    try {
+      return await read(await access(id, service));
+    } catch (error) {
+      if (error.code === "SCOPE_MISSING") {
+        const current = store.account(id);
+        if (current && current.binding === binding) {
+          current.services = current.services.filter(
+            (value) => value !== service,
+          );
+          store.saveAccount(id, current);
+        }
+      }
+      throw error;
+    }
   }
   const server = http.createServer(async (req, res) => {
     const requestId = opaque(6);
@@ -297,7 +342,7 @@ export function createGateway({
       }
       if (path === "/oauth/callback" && method === "GET") {
         const state = url.searchParams.get("state") || "",
-          browser = /watch_oauth=([A-Za-z0-9_-]+)/.exec(
+          browser = /(?:^|;\s*)watch_oauth=([A-Za-z0-9_-]+)/.exec(
             req.headers.cookie || "",
           )?.[1];
         const row = store.db
@@ -354,6 +399,7 @@ export function createGateway({
           granted.has(SCOPES[s]),
         );
         const account = {
+          binding: opaque(16),
           profile: {
             sub: profile.sub,
             email: String(profile.email).slice(0, 254),
@@ -368,7 +414,8 @@ export function createGateway({
         };
         delete account.tokens.id_token;
         // A valid Google login is still only pending. Device confirmation is mandatory.
-        pairing(pair.id);
+        if (pairing(pair.id).status !== "exchanging")
+          throw new ApiError("PAIRING_ALREADY_USED", 409);
         store.db
           .prepare(
             "UPDATE pairings SET status='awaiting_watch_confirmation',pending=?,verifier=NULL WHERE id=?",
@@ -389,6 +436,17 @@ export function createGateway({
       if (pairRoute) {
         const owner = device(req),
           pair = pairing(pairRoute[1], owner.id);
+        if (method === "DELETE" && !pairRoute[2]) {
+          if (pair.status === "linked")
+            throw new ApiError("PAIRING_ALREADY_USED", 409);
+          store.db
+            .prepare(
+              "UPDATE pairings SET status='cancelled',pending=NULL,verifier=NULL,state_hash=NULL,cookie_hash=NULL WHERE id=?",
+            )
+            .run(pair.id);
+          send(res, 200, { status: "cancelled" });
+          return;
+        }
         if (method === "GET" && !pairRoute[2]) {
           const pending = pair.pending
             ? store.open(owner.id, pair.pending)
@@ -408,6 +466,15 @@ export function createGateway({
           store.db.exec("BEGIN IMMEDIATE");
           let session;
           try {
+            // Replacing an account invalidates sessions issued for the previous identity.
+            store.db
+              .prepare("DELETE FROM sessions WHERE device=?")
+              .run(owner.id);
+            store.db
+              .prepare(
+                "UPDATE pairings SET status='cancelled',pending=NULL,verifier=NULL,state_hash=NULL,cookie_hash=NULL WHERE device=? AND id<>? AND status<>'linked'",
+              )
+              .run(owner.id, pair.id);
             store.saveAccount(owner.id, account);
             session = issue(owner.id);
             store.db
@@ -424,6 +491,49 @@ export function createGateway({
           send(res, 200, { status: "linked", ...session });
           return;
         }
+      }
+      // Independent search/translation require device auth, not a personal Google login.
+      if (path === "/api/v1/search" && method === "GET") {
+        const owner = device(req);
+        rate("provider:" + owner.id, 20);
+        send(
+          res,
+          200,
+          await providers.search(owner.id, url.searchParams.get("q")),
+        );
+        return;
+      }
+      const searchPage =
+        /^\/api\/v1\/search\/pages\/([A-Za-z0-9_-]{16,64})$/.exec(path);
+      if (searchPage && method === "GET") {
+        const owner = device(req);
+        rate("provider:" + owner.id, 20);
+        send(
+          res,
+          200,
+          await providers.page(
+            owner.id,
+            searchPage[1],
+            Number(url.searchParams.get("page") || 0),
+          ),
+        );
+        return;
+      }
+      if (path === "/api/v1/translate" && method === "POST") {
+        const owner = device(req);
+        rate("provider:" + owner.id, 20);
+        send(res, 200, await providers.translate(owner.id, await body(req)));
+        return;
+      }
+      // Logout by the private device credential works even after the short session expires.
+      if (path === "/api/v1/google/account" && method === "DELETE") {
+        const owner = device(req);
+        const account = store.account(owner.id);
+        store.unlink(owner.id);
+        if (account) await google.revoke(account.tokens.refresh_token);
+        store.audit("account.unlinked", owner.id, now());
+        send(res, 200, { status: "not_connected" });
+        return;
       }
       // A provisioned device can renew its short session without logging in on a phone again.
       if (path === "/api/v1/google/session" && method === "POST") {
@@ -454,42 +564,39 @@ export function createGateway({
         }
         let result;
         if (path === "/api/v1/google/calendar/events" && method === "GET")
-          result = await google.events(
-            await access(active.device, "calendar"),
-            url.searchParams,
+          result = await readService(active.device, "calendar", (token) =>
+            google.events(token, url.searchParams),
           );
         else if (path === "/api/v1/google/gmail/messages" && method === "GET")
-          result = await google.messages(
-            await access(active.device, "gmail"),
-            url.searchParams,
+          result = await readService(active.device, "gmail", (token) =>
+            google.messages(token, url.searchParams),
           );
         else if (
           /^\/api\/v1\/google\/gmail\/messages\/[\w-]+$/.test(path) &&
           method === "GET"
         )
-          result = await google.message(
-            await access(active.device, "gmail"),
-            path.split("/").at(-1),
-            url.searchParams,
+          result = await readService(active.device, "gmail", (token) =>
+            google.message(token, path.split("/").at(-1), url.searchParams),
           );
         else if (path === "/api/v1/google/sync" && method === "POST") {
           result = {};
           if (account.services.includes("calendar"))
-            result.calendar = await google.events(
-              await access(active.device, "calendar"),
-              new URLSearchParams({ limit: "3" }),
+            result.calendar = await readService(
+              active.device,
+              "calendar",
+              (token) =>
+                google.events(token, new URLSearchParams({ limit: "3" })),
             );
           if (account.services.includes("gmail"))
-            result.gmail = await google.messages(
-              await access(active.device, "gmail"),
-              new URLSearchParams({ limit: "3" }),
+            result.gmail = await readService(active.device, "gmail", (token) =>
+              google.messages(token, new URLSearchParams({ limit: "3" })),
             );
         } else throw new ApiError("NOT_FOUND", 404);
         session(req);
         const current = store.account(active.device);
         current.last_sync = new Date(now()).toISOString();
         store.saveAccount(active.device, current);
-        send(res, 200, result);
+        send(res, 200, { ...result, synced_at: current.last_sync });
         return;
       }
       throw new ApiError("NOT_FOUND", 404);

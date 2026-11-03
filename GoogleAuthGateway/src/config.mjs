@@ -23,6 +23,8 @@ function repository() {
   return resolve(dirname(fileURLToPath(import.meta.url)), "..");
 }
 export function config(env = process.env) {
+  if (env.NODE_TLS_REJECT_UNAUTHORIZED === "0")
+    throw new Error("Insecure Node TLS configuration is not supported");
   const base = (env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
   let url;
   try {
@@ -74,5 +76,7 @@ export function config(env = process.env) {
     clientSecret: env.GOOGLE_CLIENT_SECRET,
     key: env.STORE_KEY || "",
     data: destination,
+    searchKey: env.BRAVE_SEARCH_API_KEY || "",
+    translationKey: env.GOOGLE_TRANSLATE_API_KEY || "",
   };
 }

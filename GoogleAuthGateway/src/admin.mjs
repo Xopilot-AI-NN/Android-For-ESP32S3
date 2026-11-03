@@ -35,7 +35,11 @@ try {
     const store = new Store(join(cfg.data, "gateway.sqlite"), cfg.key);
     try {
       const credential = store.register(args[0] || "AOSP Watch");
-      const file = join(cfg.data, "devices", credential.device_id + ".json");
+      const file = join(
+        cfg.data,
+        "devices",
+        credential.device_id + ".device.json",
+      );
       save(file, credential);
       console.log("Private device file (keep outside Git):", file);
     } finally {
