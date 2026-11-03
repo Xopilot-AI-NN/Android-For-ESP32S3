@@ -727,3 +727,8 @@ mod app_gallery_view;
 mod app_keyboard_view;
 #[path = "../../App/shared/remote_view.rs"]
 mod app_remote_view;
+
+/// Text layout uses the same glyph advances as painting, including Unicode fallback.
+pub(crate) fn body_character_width(character: char) -> i32 {
+    Surface::character_width(character, 1)
+}

@@ -79,6 +79,12 @@ fn main() {
         ("google-calendar", 1, 0),
         ("gmail", 1, 0),
         ("translator", 1, 0),
+        ("google-qr", 1, 0),
+        ("google-confirm", 1, 0),
+        ("google-month", 1, 0),
+        ("gmail-list", 1, 0),
+        ("gmail-body", 1, 0),
+        ("google-results", 1, 0),
         ("new-apps", 2, 11),
         ("calculator", 1, 0),
         ("files", 1, 0),
@@ -201,6 +207,116 @@ fn main() {
         }
         if name == "phone" {
             frame.app.id = apps::PHONE;
+        }
+        if name.starts_with("google-")
+            && matches!(
+                name,
+                "google-qr" | "google-confirm" | "google-month" | "google-results"
+            )
+            || name.starts_with("gmail-")
+        {
+            use watch_runtime_check::google_gateway::Phase;
+            frame.app.id = if name.starts_with("gmail-") {
+                apps::GMAIL
+            } else if name == "google-month" {
+                apps::GOOGLE_CALENDAR
+            } else {
+                apps::GOOGLE
+            };
+            let v = &mut frame.app.remote;
+            v.kind = if name.starts_with("gmail-") {
+                2
+            } else if name == "google-month" {
+                1
+            } else {
+                0
+            };
+            v.online = true;
+            v.message = "Обновлено";
+            if name == "google-qr" {
+                v.mode = 3;
+                v.phase = Phase::Waiting as u8;
+                use qrcodegen_no_heap::{QrCode, QrCodeEcc, Version};
+                let mut temp = [0; 512];
+                let mut out = [0; 512];
+                let qr = QrCode::encode_text(
+                    "https://gateway.example.org/p/fixture-pairing-identifier",
+                    &mut temp,
+                    &mut out,
+                    QrCodeEcc::Medium,
+                    Version::MIN,
+                    Version::new(10),
+                    None,
+                    true,
+                )
+                .unwrap();
+                let n = qr.size() as usize;
+                v.qr_size = n as u8;
+                for y in 0..n {
+                    for x in 0..n {
+                        if qr.get_module(x as i32, y as i32) {
+                            let b = y * n + x;
+                            v.qr[b / 8] |= 1 << (b % 8);
+                        }
+                    }
+                }
+            }
+            if name == "google-confirm" {
+                v.mode = 3;
+                v.phase = Phase::Confirm as u8;
+                v.services = 3;
+                let email = "f***@example.invalid";
+                v.email[..email.len()].copy_from_slice(email.as_bytes());
+                v.email_len = email.len() as u8;
+            }
+            if name == "google-month" {
+                v.mode = 5;
+                v.month_valid = true;
+                v.month = 2026 * 12 + 10;
+                v.days = (1 << 2) | (1 << 18);
+            }
+            if matches!(name, "gmail-list" | "google-results") {
+                v.mode = 2;
+                v.count = 3;
+                for (i, line) in [
+                    "Проверка интеграции",
+                    "fixture@example.invalid",
+                    "Длинная тема письма",
+                    "Только синтетические данные",
+                    "События проекта",
+                    "Без личной информации",
+                ]
+                .iter()
+                .enumerate()
+                {
+                    let n = line.len();
+                    v.lines[i][..n].copy_from_slice(line.as_bytes());
+                    v.lengths[i] = n as u8;
+                }
+                if name == "google-results" {
+                    let label = "Brave Search";
+                    v.provider[..label.len()].copy_from_slice(label.as_bytes());
+                    v.provider_len = label.len() as u8;
+                }
+            }
+            if name == "gmail-body" {
+                v.mode = 4;
+                let sample=[
+                    "Тема тестового письма",
+                    "fixture@example.invalid",
+                    "2026-11-03",
+                    "Текст читается постранично.",
+                    "Сеть не блокирует колёсико.",
+                    "HTML не выполняется.",
+                    "Это тестовые данные.",
+                ].join("\n");
+                let lines=watch_runtime_check::apps::remote::wrap(&sample);v.total_lines=lines.len()as u16;
+                for (i,line) in lines.iter().take(7).enumerate(){
+                    let n = line.len();
+                    v.lines[i][..n].copy_from_slice(line.as_bytes());
+                    v.lengths[i] = n as u8;
+                }
+            }
         }
         if name == "minimal" {
             frame.watch_face = 3;

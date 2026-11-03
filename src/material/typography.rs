@@ -3,21 +3,43 @@
 use super::*;
 
 /// Параметр BODY компонента растровых шрифтов и размещения текста.
-const BODY: &[u8; 43824] = include_bytes!("fonts/body.bin");
+const BODY: &[u8] = include_bytes!("fonts/body.bin");
 /// Параметр LABEL компонента растровых шрифтов и размещения текста.
-const LABEL: &[u8; 43824] = include_bytes!("fonts/label.bin");
+const LABEL: &[u8] = include_bytes!("fonts/label.bin");
 /// Параметр BODY_WIDTHS компонента растровых шрифтов и размещения текста.
-const BODY_WIDTHS: &[u8; 166] = include_bytes!("fonts/body-widths.bin");
+const BODY_WIDTHS: &[u8] = include_bytes!("fonts/body-widths.bin");
 /// Параметр DISPLAY компонента растровых шрифтов и размещения текста.
-const DISPLAY: &[u8; 175296] = include_bytes!("fonts/display.bin");
+const DISPLAY: &[u8] = include_bytes!("fonts/display.bin");
 /// Параметр DISPLAY_WIDTHS компонента растровых шрифтов и размещения текста.
-const DISPLAY_WIDTHS: &[u8; 166] = include_bytes!("fonts/display-widths.bin");
+const DISPLAY_WIDTHS: &[u8] = include_bytes!("fonts/display-widths.bin");
 /// Параметр LABEL_WIDTHS компонента растровых шрифтов и размещения текста.
-const LABEL_WIDTHS: &[u8; 166] = include_bytes!("fonts/label-widths.bin");
+const LABEL_WIDTHS: &[u8] = include_bytes!("fonts/label-widths.bin");
 
 impl Surface {
     /// Рисует один символ выбранного шрифта.
     pub(super) fn glyph(&mut self, x: i32, y: i32, ch: char, scale: i32, c: u16) {
+        // Roboto's bundled subset lacks these symbols. Draw them at the same
+        // advances declared in the atlas builder rather than showing '?' or a blank.
+        if matches!(ch, '✓' | '→' | '←' | '↔') {
+            let w = Self::character_width(ch, scale);
+            let mid = y + w / 2;
+            let stroke = (w / 9).max(1);
+            if ch == '✓' {
+                self.line(x + 2, mid, x + w / 3, y + w - 3, stroke, c);
+                self.line(x + w / 3, y + w - 3, x + w - 2, y + 2, stroke, c);
+            } else {
+                self.line(x + 2, mid, x + w - 2, mid, stroke, c);
+                if ch != '→' {
+                    self.line(x + 2, mid, x + w / 3, y + w / 5, stroke, c);
+                    self.line(x + 2, mid, x + w / 3, y + w * 4 / 5, stroke, c);
+                }
+                if ch != '←' {
+                    self.line(x + w - 2, mid, x + w * 2 / 3, y + w / 5, stroke, c);
+                    self.line(x + w - 2, mid, x + w * 2 / 3, y + w * 4 / 5, stroke, c);
+                }
+            }
+            return;
+        }
         let index = Self::font_index(ch);
         let (atlas, width, height, zoom, baseline): (&[u8], usize, usize, i32, i32) = if scale == 3
         {
@@ -36,7 +58,9 @@ impl Surface {
                 } else {
                     packed & 15
                 };
-                if alpha == 0 { continue; }
+                if alpha == 0 {
+                    continue;
+                }
                 for dy in 0..zoom {
                     for dx in 0..zoom {
                         self.coverage_pixel(
@@ -85,7 +109,9 @@ impl Surface {
                     } else {
                         packed & 15
                     };
-                    if alpha == 0 { continue; }
+                    if alpha == 0 {
+                        continue;
+                    }
                     self.coverage_pixel(x + col as i32, y + row as i32 - 14, color, alpha);
                 }
             }
@@ -207,12 +233,20 @@ impl Surface {
             0x2026 => 163,
             0x2014 => 164,
             0x2212 => 165,
+            0xc0..=0xff => 166 + ch as usize - 0xc0,
+            0x152 => 230,
+            0x153 => 231,
+            0x2013 => 232,
+            0x2713 => 233,
+            0x2192 => 234,
+            0x2190 => 235,
+            0x2194 => 236,
             _ => (b'?' - 32) as usize,
         }
     }
 
     /// Возвращает реальную ширину символа для выбранного шрифта.
-    fn character_width(ch: char, scale: i32) -> i32 {
+    pub(super) fn character_width(ch: char, scale: i32) -> i32 {
         let index = Self::font_index(ch);
         if scale == 3 {
             return i32::from(DISPLAY_WIDTHS[index]);
@@ -286,6 +320,13 @@ mod tests {
     /// Проверяет кириллические глифы, пропорциональную ширину и перевод только системного текста.
     fn russian_ui_uses_cyrillic_glyphs_and_proportional_widths() {
         assert_eq!(DEFAULT_LOCALE, "ru-RU");
+        for ch in "éàçñüßŒœ✓→↔".chars() {
+            let index = Surface::font_index(ch);
+            assert_ne!(index, Surface::font_index('?'));
+            if !matches!(ch, '✓' | '→' | '←' | '↔') {
+                assert!(BODY[index * 264..(index + 1) * 264].iter().any(|b| *b != 0));
+            }
+        }
         assert_eq!(localization::label("Settings"), "Настройки");
         for ch in "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя".chars()
         {

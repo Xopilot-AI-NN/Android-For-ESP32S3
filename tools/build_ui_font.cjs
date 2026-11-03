@@ -10,6 +10,9 @@ const uiChars = [
     ...Array.from({length: 95}, (_, i) => String.fromCharCode(i + 32)),
     ...Array.from({length: 64}, (_, i) => String.fromCharCode(i + 0x410)),
     'Ё', 'ё', '°', '·', '…', '—', '−',
+    // Western European mail/translation text and common action symbols.
+    ...Array.from({length:64},(_,i)=>String.fromCharCode(i+0xc0)),
+    'Œ','œ','–','✓','→','←','↔',
 ];
 for (const [name, size, cellW, cellH, chars, font] of [
     ['body', 14, 22, 24, uiChars, 'Roboto-Regular.ttf'],
@@ -20,6 +23,10 @@ for (const [name, size, cellW, cellH, chars, font] of [
     const data = [], widths = [];
     for (const ch of chars) {
         const code = ch.charCodeAt(0);
+        // These actions are drawn as small vectors by typography.rs, not by Roboto.
+        if(['✓','→','←','↔'].includes(ch)){
+            widths.push(size);data.push(...Array(cellW*cellH/2).fill(0));continue;
+        }
         if (code === 32) {
             widths.push(Math.ceil(size / 3));
             data.push(...Array(cellW * cellH / 2).fill(0));

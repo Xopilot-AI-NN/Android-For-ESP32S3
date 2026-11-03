@@ -154,3 +154,8 @@ mod persistent_log;
 
 #[path = "services/google_gateway.rs"]
 mod google_gateway;
+#[path = "services/google_http.rs"]
+mod google_http;
+#[cfg(feature = "radio-services")]
+#[path = "services/google_tls.rs"]
+mod google_tls;

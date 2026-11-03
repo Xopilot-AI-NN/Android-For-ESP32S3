@@ -667,4 +667,8 @@ mod persistent_log;
 mod clicks;
 
 #[path = "../../../../Firmware/src/services/google_gateway.rs"]
-mod google_gateway;
+pub mod google_gateway;
+#[path = "../../../../Firmware/src/services/google_http.rs"]
+mod google_http;
+#[path = "../../../../Firmware/src/services/google_tls.rs"]
+mod google_tls;

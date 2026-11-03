@@ -21,6 +21,8 @@ To rebuild from the checked-in font:
 node tools/build_ui_font.cjs
 ```
 
-The UI atlas now includes 166 glyphs: ASCII, Russian Cyrillic, degree, middle
-dot, ellipsis, em dash and minus. The 36 px atlas is rasterized directly from
+The UI atlas now includes 237 entries: ASCII, Russian Cyrillic, degree, middle
+dot, ellipsis, em dash, minus, Latin-1 letters, Œ/œ and en dash. Checkmark and
+three arrow entries use project vector drawing (the bundled Roboto subset has
+no glyphs for them), with matching advances in the atlas. The 36 px atlas is rasterized directly from
 Roboto Regular rather than magnifying an 18 px bitmap.

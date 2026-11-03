@@ -9,6 +9,7 @@ pub(crate) fn service_disk_requests<D: BlockDevice, B: BootDisplay>(
     os: &mut runtime::Runtime,
 ) {
     crate::persistent_log::service(dev);
+    crate::google_gateway::service_storage(dev);
     if crate::file_store::service(dev) {
         if let Ok(frame) = os.render() {
             let _ = display.runtime(&frame);

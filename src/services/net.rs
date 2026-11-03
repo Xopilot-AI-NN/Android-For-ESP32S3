@@ -9,6 +9,8 @@
 extern crate alloc;
 
 use crate::watch_println as println;
+#[path = "net/google_client.rs"]
+mod google_client;
 #[path = "net/weather_client.rs"]
 mod weather_client;
 use alloc::vec;
@@ -282,6 +284,7 @@ pub struct NetworkService {
     ntp_handle: SocketHandle,
     /// Последний проверенный погодный снимок.
     weather: Option<weather_client::WeatherClient>,
+    google: Option<google_client::GoogleClient>,
     /// Накопитель входящего ADB-пакета.
     adb_rx: AdbRx,
     /// Состояние единственного текущего ADB-потока.
@@ -352,9 +355,11 @@ impl NetworkService {
         let ntp_handle = sockets.add(ntp_socket);
 
         let weather = weather_client::WeatherClient::new(&mut sockets);
+        let google = google_client::GoogleClient::new(&mut sockets);
         Self {
             iface,
             weather,
+            google,
             sockets,
             dhcp_handle,
             adb_handle,
@@ -447,11 +452,17 @@ impl NetworkService {
             self.poll_dhcp();
             self.poll_wadb(wadb_enabled);
             self.poll_ntp();
+            if let Some(google) = self.google.as_mut() {
+                google.poll(&mut self.iface, &mut self.sockets, self.ip.is_some());
+            }
             if let Some(weather) = self.weather.as_mut() {
                 weather.poll(&mut self.iface, &mut self.sockets, self.ip.is_some());
             }
         } else {
             self.poll_wadb(false);
+            if let Some(google) = self.google.as_mut() {
+                google.poll(&mut self.iface, &mut self.sockets, false);
+            }
             if let Some(weather) = self.weather.as_mut() {
                 weather.poll(&mut self.iface, &mut self.sockets, false);
             }
@@ -559,6 +570,9 @@ impl NetworkService {
                     .collect();
                 if let Some(weather) = self.weather.as_mut() {
                     weather.servers(&mut self.sockets, &servers);
+                }
+                if let Some(google) = self.google.as_mut() {
+                    google.servers(&mut self.sockets, &servers);
                 }
                 self.ip = Some(address);
                 self.link = LinkState::Online;

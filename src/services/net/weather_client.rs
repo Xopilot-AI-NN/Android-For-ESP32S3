@@ -41,7 +41,7 @@ pub struct WeatherClient {
     info: Snapshot,
 }
 /// Выделяет ограниченный буфер во внешней памяти PSRAM.
-fn external(capacity: usize) -> Option<Vec<u8>> {
+pub(super) fn external(capacity: usize) -> Option<Vec<u8>> {
     let layout = core::alloc::Layout::array::<u8>(capacity).ok()?;
     // SAFETY: the global allocator is HEAP; Vec owns exactly this allocation/layout.
     let pointer =

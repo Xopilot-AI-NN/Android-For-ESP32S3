@@ -42,6 +42,11 @@ fn unix_seconds_raw() -> i32 {
 pub fn valid() -> bool {
     VALID.load(Ordering::Relaxed)
 }
+/// UTC epoch for certificate validation; an unset/implausible RTC must reject TLS.
+pub fn unix_seconds() -> Option<u32> {
+    let seconds = unix_seconds_raw();
+    (valid() && seconds >= 1_577_836_800).then_some(seconds as u32)
+}
 /// Возвращает признак автоматической синхронизации часов.
 pub fn automatic() -> bool {
     AUTOMATIC.load(Ordering::Relaxed)
