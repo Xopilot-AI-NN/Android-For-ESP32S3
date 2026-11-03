@@ -20,7 +20,7 @@ pub struct Row {
     /// Вид записи или пакета; допустимые значения определяет формат компонента.
     pub kind: u8,
     /// Размер содержимого в байтах.
-    pub size: u16,
+    pub size: u32,
     /// Выбранный элемент либо признак его выделения.
     pub selected: bool,
 }
@@ -46,7 +46,7 @@ pub struct View {
     /// Число значащих байтов буфера title.
     pub title_len: u8,
     /// Подготовленные видимые строки списка.
-    pub rows: [Row; 3],
+    pub rows: [Row; 6],
     /// Количество элементов или выполненных действий в текущем контексте.
     pub count: u16,
     /// Индекс текущей цели навигации.
@@ -56,9 +56,9 @@ pub struct View {
     /// Число значащих байтов буфера input.
     pub input_len: u8,
     /// Текущее количество байтов пользовательского ввода.
-    pub bytes: u16,
+    pub bytes: u32,
     /// Действующее ограничение размера ввода.
-    pub limit: u16,
+    pub limit: u32,
     /// Состояние общей RU/EN-клавиатуры.
     pub keyboard: KeyboardView,
     /// Ошибка последней операции или признак ошибки.
@@ -77,6 +77,8 @@ pub struct View {
     pub selected_name: [u8; 64],
     /// Число значащих байтов буфера selected.
     pub selected_len: u8,
+    pub selected_size: u32,
+    pub first_row: u16,
     /// Содержимое или признак доступности буфера копирования/перемещения.
     pub clipboard: bool,
     /// Признак наличия родительской папки.
@@ -89,7 +91,7 @@ impl Default for View {
             mode: 0,
             title: [0; 80],
             title_len: 0,
-            rows: [Row::default(); 3],
+            rows: [Row::default(); 6],
             count: 0,
             cursor: 0,
             input: [0; 96],
@@ -101,8 +103,14 @@ impl Default for View {
             message: "",
             busy: false,
             dirty: false,
-            items: 0, toolbar: 255, selected_name: [0; 64], selected_len: 0,
-            clipboard: false, can_up: false,
+            items: 0,
+            toolbar: 255,
+            selected_size: 0,
+            first_row: 0,
+            selected_name: [0; 64],
+            selected_len: 0,
+            clipboard: false,
+            can_up: false,
         }
     }
 }
@@ -163,6 +171,7 @@ pub struct Controller {
     error: u8,
     /// Признак открытия нового документа через отдельный редактор.
     editor_launch: bool,
+    menu_line: usize,
     /// Последняя учтённая ревизия данных для обновления кэша.
     revision: u32,
 }
@@ -188,6 +197,7 @@ impl Default for Controller {
             message: "",
             error: 0,
             editor_launch: false,
+            menu_line: 0,
             revision: 0,
         }
     }
@@ -241,8 +251,16 @@ impl Controller {
             self.listing
                 .sort_by(|a, b| b.kind.cmp(&a.kind).then_with(|| a.path.cmp(&b.path)));
         }
-        if !self.listing.iter().any(|e| e.path.as_str() == self.selected) {
-            self.selected = self.listing.first().map(|e| e.path.to_string()).unwrap_or_default();
+        if !self
+            .listing
+            .iter()
+            .any(|e| e.path.as_str() == self.selected)
+        {
+            self.selected = self
+                .listing
+                .first()
+                .map(|e| e.path.to_string())
+                .unwrap_or_default();
         }
     }
     /// Выполняет очередной неблокирующий шаг обработки и проверяет готовые результаты.
@@ -278,7 +296,8 @@ impl Controller {
                                 .any(|c| c.is_control() && c != '\n' && c != '\r' && c != '\t') =>
                         {
                             self.document = text;
-                            self.crc = Some(crate::file_store::content_crc(self.document.as_bytes()));
+                            self.crc =
+                                Some(crate::file_store::content_crc(self.document.as_bytes()));
                             self.dirty = false;
                             self.mode = 3;
                             self.cursor = 0;
@@ -302,7 +321,11 @@ impl Controller {
                         self.message = "Сохранено";
                     }
                     Purpose::Mutation | Purpose::Paste => {
-                        if matches!(purpose, Purpose::Paste) && self.clipboard.as_ref().is_some_and(|(_, cut)| *cut) { self.clipboard = None; }
+                        if matches!(purpose, Purpose::Paste)
+                            && self.clipboard.as_ref().is_some_and(|(_, cut)| *cut)
+                        {
+                            self.clipboard = None;
+                        }
                         self.browse_again();
                     }
                     _ => {}
@@ -324,11 +347,17 @@ impl Controller {
         self.error = 0;
     }
 
-
-
-
     /// Возвращается на предыдущий экран; сообщает, был ли переход обработан.
     pub fn back(&mut self) -> bool {
+        if self.mode == 9 {
+            self.mode = 3;
+            self.cursor = 0;
+            return true;
+        }
+        if self.mode == 10 {
+            self.browse_again();
+            return true;
+        }
         if self.pending.is_some() {
             return true;
         }
@@ -363,9 +392,43 @@ impl Controller {
     /// Обрабатывает событие интерфейса и выполняет соответствующий переход состояния.
     pub fn event(&mut self, event: RuntimeEvent) {
         self.poll();
+        // A physical multi-click must obey the same I/O gate as ordinary input.
         if self.pending.is_some() {
             return;
         }
+        let event = match event {
+            RuntimeEvent::Click(n) if self.mode == 0 => {
+                if self.cursor >= self.listing.len() {
+                    self.browse_press();
+                } else {
+                    self.selected = self.listing[self.cursor].path.to_string();
+                    match n {
+                        2 => self.browse_press(),
+                        3 => {
+                            self.mode = 1;
+                            self.cursor = 0;
+                        }
+                        _ => {}
+                    }
+                }
+                return;
+            }
+            RuntimeEvent::Click(_) if self.mode == 3 && self.cursor >= self.lines() => {
+                RuntimeEvent::Press
+            }
+            RuntimeEvent::Click(n) if self.mode == 3 => {
+                if n == 2 {
+                    self.edit_line(self.cursor.min(self.lines()));
+                } else if n == 3 {
+                    self.menu_line = self.cursor.min(self.lines());
+                    self.mode = 9;
+                    self.cursor = 0;
+                }
+                return;
+            }
+            RuntimeEvent::Click(_) => RuntimeEvent::Press,
+            other => other,
+        };
         if self.mode == 2 || self.mode == 4 {
             match event {
                 RuntimeEvent::Rotate(d) => self.keyboard.rotate(d),
@@ -427,13 +490,37 @@ impl Controller {
                 self.cursor = (self.cursor as i32 + d.rem_euclid(count as i32))
                     .rem_euclid(count as i32) as usize;
                 if self.mode == 0 {
-                    if let Some(e) = self.listing.get(self.cursor) { self.selected = e.path.to_string(); }
+                    if let Some(e) = self.listing.get(self.cursor) {
+                        self.selected = e.path.to_string();
+                    }
                 }
             }
             RuntimeEvent::Press => match self.mode {
                 0 => self.browse_press(),
                 1 => self.context_press(),
-                8 => match self.cursor { 0 => self.name(0), 1 => self.name(1), _ => self.browse_again() },
+                9 => match self.cursor {
+                    0 => self.edit_line(self.menu_line),
+                    1 => self.edit_line(self.lines()),
+                    2 => self.save(),
+                    _ => {
+                        self.mode = 3;
+                        self.cursor = 0;
+                    }
+                },
+                10 => self.browse_again(),
+                8 => match self.cursor {
+                    0 => self.name(1),
+                    1 => self.name(0),
+                    2 => {
+                        self.name(0);
+                        self.draft = "note.txt".into();
+                    }
+                    3 => {
+                        self.name(0);
+                        self.draft = "config.json".into();
+                    }
+                    _ => self.browse_again(),
+                },
                 3 if self.cursor < self.lines() => self.edit_line(self.cursor),
                 3 if self.cursor == self.lines() => self.edit_line(self.lines()),
                 3 if self.cursor == self.lines() + 1 => self.save(),
@@ -484,7 +571,7 @@ impl Controller {
             self.cursor = self.line.min(self.lines());
         } else {
             let name = self.draft.trim();
-            let name = if self.name_action == 0 && !name.ends_with(".txt") {
+            let name = if self.name_action == 0 && !name.contains('.') {
                 alloc::format!("{}.txt", name)
             } else {
                 name.to_string()
@@ -504,7 +591,12 @@ impl Controller {
             match self.name_action {
                 0 => {
                     self.file = target.clone();
-                    self.queue(Op::Create(target, Vec::new()), Purpose::New);
+                    let initial = if target.ends_with(".json") {
+                        b"{}\n".to_vec()
+                    } else {
+                        Vec::new()
+                    };
+                    self.queue(Op::Create(target, initial), Purpose::New);
                 }
                 1 => self.queue(Op::Mkdir(target), Purpose::Mutation),
                 _ => self.queue(Op::Rename(self.selected.clone(), target), Purpose::Mutation),
@@ -519,11 +611,18 @@ impl Controller {
             self.context_press();
         } else {
             match self.cursor.saturating_sub(self.listing.len()) {
-                0 => { self.mode = 8; self.cursor = 0; },
+                0 => {
+                    self.mode = 8;
+                    self.cursor = 0;
+                }
                 1 => {
-                    if self.selected.is_empty() { self.message = "Сначала выберите файл или папку"; }
-                    else { self.mode = 1; self.cursor = 1; }
-                },
+                    if self.selected.is_empty() {
+                        self.message = "Сначала выберите файл или папку";
+                    } else {
+                        self.mode = 1;
+                        self.cursor = 1;
+                    }
+                }
                 2 => {
                     if let Some((from, cut)) = self.clipboard.clone() {
                         match fs::join(&self.dir, fs::basename(&from)) {
@@ -544,7 +643,9 @@ impl Controller {
                     }
                 }
                 _ => {
-                    if !self.back() { self.message = "Вы в корне документов"; }
+                    if !self.back() {
+                        self.message = "Вы в корне документов";
+                    }
                 }
             }
         }
@@ -564,7 +665,11 @@ impl Controller {
                     self.refresh();
                 } else {
                     self.file = self.selected.clone();
-                    self.queue(Op::Read(self.file.clone()), Purpose::Read);
+                    if crate::apps::gallery::is_image(&self.file) {
+                        crate::apps::gallery::request_open(&self.file);
+                    } else {
+                        self.queue(Op::Read(self.file.clone()), Purpose::Read);
+                    }
                 }
             }
             1 => self.name(2),
@@ -572,6 +677,11 @@ impl Controller {
                 self.clipboard = Some((self.selected.clone(), self.cursor == 3));
                 self.browse_again();
                 self.message = "Выберите папку и Вставить";
+            }
+            5 => {
+                self.mode = 10;
+                self.cursor = 0;
+                self.message = "Свойства файла";
             }
             4 => {
                 self.mode = 6;
@@ -585,16 +695,22 @@ impl Controller {
     /// Возвращает фокус к тому же элементу, чтобы панель не действовала на другой файл.
     fn browse_again(&mut self) {
         self.mode = 0;
-        self.cursor = self.listing.iter().position(|e| e.path.as_str() == self.selected).unwrap_or(0);
+        self.cursor = self
+            .listing
+            .iter()
+            .position(|e| e.path.as_str() == self.selected)
+            .unwrap_or(0);
     }
     /// Возвращает число доступных целей навигации.
     fn count(&self) -> usize {
         match self.mode {
-            1 => 6,
+            1 => 7,
+            9 => 4,
+            10 => 1,
             3 => self.lines() + 3,
             5 => 3,
             6 => 2,
-            8 => 3,
+            8 => 5,
             _ => self.listing.len() + 4,
         }
     }
@@ -605,11 +721,15 @@ impl Controller {
             cursor: self.cursor as u16,
             count: self.count() as u16,
             keyboard: self.keyboard.view,
-            bytes: self.draft.len() as u16,
-            limit: if self.mode == 2 {
-                fs::MAX_PATH as u16
+            bytes: if self.mode == 3 {
+                self.document.len()
             } else {
-                fs::MAX_FILE as u16
+                self.draft.len()
+            } as u32,
+            limit: if self.mode == 2 {
+                fs::MAX_PATH as u32
+            } else {
+                fs::MAX_FILE as u32
             },
             error: self.error,
             message: self.message,
@@ -634,20 +754,41 @@ impl Controller {
         };
         v.title_len = copy_text(&mut v.title, title);
         v.items = self.listing.len() as u8;
-        v.clipboard = self.clipboard.is_some(); v.can_up = self.dir != "/";
+        v.clipboard = self.clipboard.is_some();
+        v.can_up = self.dir != "/";
+        v.selected_size = self
+            .listing
+            .iter()
+            .find(|e| e.path.as_str() == self.selected)
+            .map_or(0, |e| e.size);
         v.selected_len = copy_text(&mut v.selected_name, fs::basename(&self.selected));
-        if self.mode == 0 && self.cursor >= self.listing.len() { v.toolbar = (self.cursor - self.listing.len()) as u8; }
+        if self.mode == 0 && self.cursor >= self.listing.len() {
+            v.toolbar = (self.cursor - self.listing.len()) as u8;
+        }
         let mut start = self.draft.len().saturating_sub(v.input.len());
         while !self.draft.is_char_boundary(start) {
             start += 1;
         }
         v.input_len = copy_text(&mut v.input, &self.draft[start..]);
         let list_cursor = if self.mode == 0 && self.cursor >= self.listing.len() {
-            self.listing.iter().position(|e| e.path.as_str() == self.selected).unwrap_or(0)
-        } else { self.cursor };
-        let visible_count = if self.mode == 0 { self.listing.len() } else { self.count() };
-        let start = list_cursor.saturating_sub(1).min(visible_count.saturating_sub(3));
-        for (row, target) in v.rows.iter_mut().zip(start..start + 3) {
+            self.listing
+                .iter()
+                .position(|e| e.path.as_str() == self.selected)
+                .unwrap_or(0)
+        } else {
+            self.cursor
+        };
+        let visible_count = if self.mode == 0 {
+            self.listing.len()
+        } else {
+            self.count()
+        };
+        let window = if self.mode == 0 { 4 } else { 6 };
+        let start = list_cursor
+            .saturating_sub(1)
+            .min(visible_count.saturating_sub(window));
+        v.first_row = start as u16;
+        for (row, target) in v.rows.iter_mut().zip(start..start + window) {
             if target >= visible_count {
                 break;
             }
@@ -659,11 +800,20 @@ impl Controller {
                     "Копировать",
                     "Вырезать",
                     "Удалить",
+                    "Свойства",
                     "Назад",
                 ][target],
                 5 => ["Сохранить", "Не сохранять", "Отмена"][target],
                 6 => ["Удалить навсегда", "Отмена"][target],
-                8 => ["Текстовый файл", "Папка", "Отмена"][target],
+                9 => ["Изменить строку", "Добавить строку", "Сохранить", "Назад"][target],
+                10 => "Назад",
+                8 => [
+                    "Папку",
+                    "Файл",
+                    "Текстовый файл (.txt)",
+                    "JSON файл (.json)",
+                    "Назад",
+                ][target],
                 3 => {
                     if target < self.lines() {
                         self.document
@@ -713,21 +863,41 @@ mod tests {
     fn browser_opens_directly_and_toolbar_keeps_selected_file() {
         fs::reset_for_test();
         let disk = crate::file_store::tests::fixture();
-        let mut c = Controller::default(); c.open(false); serve(&mut c, &disk);
-        for operation in [Op::Mkdir("/Folder".into()), Op::Create("/n.txt".into(), b"note".to_vec())] {
-            let token = fs::request(operation).unwrap(); fs::service(&disk); fs::take_reply(token).unwrap(); c.poll();
+        let mut c = Controller::default();
+        c.open(false);
+        serve(&mut c, &disk);
+        for operation in [
+            Op::Mkdir("/Folder".into()),
+            Op::Create("/n.txt".into(), b"note".to_vec()),
+        ] {
+            let token = fs::request(operation).unwrap();
+            fs::service(&disk);
+            fs::take_reply(token).unwrap();
+            c.poll();
         }
-        c.event(RuntimeEvent::Press); assert_eq!(c.dir, "/Folder");
+        c.event(RuntimeEvent::Press);
+        assert_eq!(c.dir, "/Folder");
         assert!(c.back());
-        c.event(RuntimeEvent::Rotate(1)); assert_eq!(c.selected, "/n.txt");
-        c.event(RuntimeEvent::Rotate(2)); assert_eq!(c.view().toolbar, 1);
-        c.event(RuntimeEvent::Press); assert_eq!(c.mode, 1);
-        c.event(RuntimeEvent::Rotate(1)); c.event(RuntimeEvent::Press); // Копировать.
-        c.event(RuntimeEvent::Rotate(-1)); c.event(RuntimeEvent::Press); assert_eq!(c.dir, "/Folder");
-        c.event(RuntimeEvent::Rotate(2)); c.event(RuntimeEvent::Press); serve(&mut c, &disk);
+        c.event(RuntimeEvent::Rotate(1));
+        assert_eq!(c.selected, "/n.txt");
+        c.event(RuntimeEvent::Rotate(2));
+        assert_eq!(c.view().toolbar, 1);
+        c.event(RuntimeEvent::Press);
+        assert_eq!(c.mode, 1);
+        c.event(RuntimeEvent::Rotate(1));
+        c.event(RuntimeEvent::Press); // Копировать.
+        c.event(RuntimeEvent::Rotate(-1));
+        c.event(RuntimeEvent::Press);
+        assert_eq!(c.dir, "/Folder");
+        c.event(RuntimeEvent::Rotate(2));
+        c.event(RuntimeEvent::Press);
+        serve(&mut c, &disk);
         assert!(c.listing.iter().any(|e| e.path == "/Folder/n.txt"));
-        c.cursor = c.listing.len(); c.event(RuntimeEvent::Press);
-        assert_eq!(c.mode, 8); c.event(RuntimeEvent::Press); assert_eq!(c.mode, 2);
+        c.cursor = c.listing.len();
+        c.event(RuntimeEvent::Press);
+        assert_eq!(c.mode, 8);
+        c.event(RuntimeEvent::Press);
+        assert_eq!(c.mode, 2);
     }
     #[test]
     /// Проверяет сохранение нескольких UTF-8-строк и чтение после повторного открытия хранилища.
@@ -755,6 +925,56 @@ mod tests {
         assert_eq!(
             restored.read(&disk, "/Заметка.txt").unwrap(),
             "Привет\nмир".as_bytes()
+        );
+    }
+    #[test]
+    fn physical_clicks_select_open_and_show_document_menu() {
+        fs::reset_for_test();
+        let disk = crate::file_store::tests::fixture();
+        let token = fs::request(Op::Create("/n.txt".into(), b"line\nnext".to_vec())).unwrap();
+        fs::service(&disk);
+        fs::take_reply(token).unwrap();
+        let mut c = Controller::default();
+        c.open(false);
+        serve(&mut c, &disk);
+        c.event(RuntimeEvent::Click(1));
+        assert_eq!(c.mode, 0);
+        c.event(RuntimeEvent::Click(3));
+        assert_eq!(c.mode, 1);
+        c.back();
+        c.event(RuntimeEvent::Click(2));
+        serve(&mut c, &disk);
+        assert_eq!(c.mode, 3);
+        c.event(RuntimeEvent::Click(1));
+        assert_eq!(c.mode, 3);
+        c.event(RuntimeEvent::Click(3));
+        assert_eq!(c.mode, 9);
+        c.back();
+        c.event(RuntimeEvent::Click(2));
+        assert_eq!(c.mode, 4);
+        drop(c);
+        fs::reset_for_test();
+    }
+    #[test]
+    fn json_creation_preserves_extension_and_starts_with_valid_json() {
+        fs::reset_for_test();
+        let disk = crate::file_store::tests::fixture();
+        let mut c = Controller::default();
+        c.open(false);
+        serve(&mut c, &disk);
+        c.name(0);
+        c.draft = "config.json".into();
+        c.submit();
+        serve(&mut c, &disk);
+        assert_eq!(c.file, "/config.json");
+        drop(c);
+        fs::reset_for_test();
+        assert_eq!(
+            fs::Fs::mount(&disk)
+                .unwrap()
+                .read(&disk, "/config.json")
+                .unwrap(),
+            b"{}\n"
         );
     }
 }

@@ -3,7 +3,6 @@
 use super::*;
 
 impl Surface {
-
     /// Рисует циферблат с реальными таймером, секундомером и системными индикаторами.
     pub(super) fn complication_face(&mut self, f: MaterialFrame, t: Theme) {
         let accent = t.primary;
@@ -99,22 +98,80 @@ impl Surface {
 
     /// Рисует общий раздел таймера, секундомера, будильника и мирового времени.
     pub(super) fn clock(&mut self, f: MaterialFrame, t: Theme) {
-        self.photo_header(f, "Clock", t);
-        let labels = ["TIMER", "STOPWATCH", "ALARM", "Мировое время", "Back"];
-        let cursor = usize::from(f.cursor.min(4));
-        let start = cursor.saturating_sub(1).min(2);
-        for row in 0..3 {
-            let index = start + row;
-            self.wear_row(63 + row as i32 * 67, labels[index], index == cursor, t);
+        self.photo_header(f, "Часы", t);
+        let time = Self::time_text(f.time_minutes);
+        self.text_center_raw(
+            61,
+            if f.time_valid {
+                core::str::from_utf8(&time).unwrap_or("--:--")
+            } else {
+                "--:--"
+            },
+            3,
+            t.primary,
+        );
+        self.text_center_raw(
+            105,
+            &alloc::format!("{:02}.{:02}", f.date_day, f.date_month),
+            1,
+            t.on_surface_variant,
+        );
+        let weather = crate::weather::snapshot();
+        if weather.valid {
+            self.text_center_raw(
+                126,
+                &alloc::format!("{} °C", weather.temp / 10),
+                1,
+                t.on_surface_variant,
+            );
         }
-        self.scroll_indicator(cursor as u8, 5, t);
+        let labels = ["Будильник", "Таймер", "Секундомер", "Мировые часы", "Назад"];
+        let icons = [
+            Symbol::Alarm,
+            Symbol::Timer,
+            Symbol::Clock,
+            Symbol::World,
+            Symbol::Back,
+        ];
+        let start = if f.cursor == 4 { 1 } else { 0 };
+        for row in 0..4 {
+            let i = start + row;
+            let y = 149 + row as i32 * 30;
+            let selected = f.cursor as usize == i;
+            let ink = Self::focus_ink(t, selected);
+            self.round_rect(
+                10,
+                y,
+                220,
+                27,
+                12,
+                if selected { t.primary } else { t.surface_high },
+            );
+            self.symbol(icons[i], 28, y + 13, ink);
+            self.text_fitted_raw(48, y + 5, labels[i], 1, 171, ink);
+        }
     }
 
     /// Рисует экран секундомера с актуальным состоянием и фокусом.
     pub(super) fn stopwatch_page(&mut self, f: MaterialFrame, t: Theme) {
-        self.photo_header(f, "Stopwatch", t);
-        let time = Self::mmss_text(f.stopwatch_secs);
-        self.clock_text(99, &time, t.primary);
+        self.photo_header(f, "Секундомер", t);
+        let text = Self::mmss_text(f.stopwatch_secs);
+        self.text_center_raw(
+            100,
+            core::str::from_utf8(&text).unwrap_or("00:00"),
+            3,
+            t.on_surface,
+        );
+        self.text_center_raw(
+            157,
+            if f.stopwatch_running {
+                "Работает"
+            } else {
+                "На паузе"
+            },
+            1,
+            t.on_surface_variant,
+        );
         let labels = [
             if f.stopwatch_running {
                 "Пауза"
@@ -122,79 +179,107 @@ impl Surface {
                 "Пуск"
             },
             "Сброс",
-            "BACK",
+            "Назад",
         ];
         for (i, label) in labels.iter().enumerate() {
+            let x = 8 + i as i32 * 77;
+            let selected = f.cursor as usize == i;
             self.round_rect(
-                32,
-                178 + i as i32 * 31,
-                176,
-                28,
-                14,
-                Self::focus_fill(t.surface_high, f.cursor as usize == i),
+                x,
+                228,
+                72,
+                39,
+                18,
+                if selected { t.primary } else { t.surface_high },
             );
-            self.text_center(187 + i as i32 * 31, label, 1, Self::focus_ink(t, f.cursor as usize == i));
+            self.text_fitted_raw(x + 5, 240, label, 1, 62, Self::focus_ink(t, selected));
         }
     }
 
     /// Рисует предустановки или редактирование длительности таймера.
     pub(super) fn timer_presets(&mut self, f: MaterialFrame, t: Theme) {
-        let lavender = t.primary_container;
-        let lime = t.primary;
-        let ink = t.on_primary_container;
-        self.photo_header(f, "Timer", t);
+        self.photo_header(f, "Таймер", t);
+        let duration = if f.timer_secs > 0 {
+            f.timer_secs
+        } else {
+            f.timer_duration_secs
+        };
+        let text = Self::mmss_text(duration);
         if f.timer_editor == 2 {
-            let duration = Self::mmss_text(f.timer_duration_secs);
-            self.clock_text(104, &duration, t.primary);
-            self.text_center(188, "Crown: adjust minutes", 1, t.on_surface_variant);
-            self.round_rect(55, 229, 130, 38, 19, lime);
-            self.text_center(242, "Start timer", 1, t.on_primary);
+            self.text_center_raw(
+                102,
+                core::str::from_utf8(&text).unwrap_or("05:00"),
+                3,
+                t.primary,
+            );
+            self.text_center_raw(172, "Колесо: минуты", 1, t.on_surface_variant);
+            self.round_rect(15, 229, 210, 40, 20, t.primary);
+            self.text_center_raw(242, "Запустить", 1, t.on_primary);
             return;
         }
-        if f.timer_secs > 0 {
-            let time = Self::mmss_text(f.timer_secs);
-            self.text_center(71, core::str::from_utf8(&time).unwrap_or("00:00"), 1, lime);
+        let progress = if f.timer_secs > 0 {
+            (u32::from(f.timer_secs) * 60 / u32::from(f.timer_duration_secs.max(1))).min(60)
+        } else {
+            60
+        };
+        for tick in 0..60 {
+            let p = super::dial::point(tick * 60, 62);
+            let q = super::dial::point(((tick + 1) % 60) * 60, 62);
+            self.line(
+                120 + p.0,
+                121 + p.1,
+                120 + q.0,
+                121 + q.1,
+                6,
+                if u32::from(tick) < progress {
+                    t.primary
+                } else {
+                    t.surface_high
+                },
+            );
         }
-        for (i, label) in ["5", "10", "15", "30"].iter().enumerate() {
-            let x = 18 + (i % 2) as i32 * 105;
-            let y = 90 + (i / 2) as i32 * 67;
+        self.text_center_raw(
+            105,
+            core::str::from_utf8(&text).unwrap_or("05:00"),
+            3,
+            t.on_surface,
+        );
+        for (i, label) in ["5 м", "10 м", "15 м", "30 м"].iter().enumerate() {
+            let x = 9 + i as i32 * 57;
+            let selected = f.cursor as usize == i;
             self.round_rect(
                 x,
-                y,
-                99,
-                61,
-                29,
-                Self::focus_fill(lavender, f.cursor as usize == i),
+                197,
+                51,
+                27,
+                11,
+                if selected { t.primary } else { t.surface_high },
             );
-            self.text_center_x(
-                x + 49,
-                y + 12,
-                label,
-                2,
-                if f.cursor as usize == i { Self::focus_ink(t, true) } else { ink },
-            );
-            self.text_center_x(
-                x + 49,
-                y + 39,
-                "Min",
-                1,
-                if f.cursor as usize == i { Self::focus_ink(t, true) } else { ink },
-            );
+            self.text_fitted_raw(x + 5, 204, label, 1, 41, Self::focus_ink(t, selected));
         }
-        self.round_rect(
-            63,
-            235,
-            114,
-            35,
-            17,
-            Self::focus_fill(lime, f.cursor == 4),
-        );
-        self.text_center(
-            244,
-            "+",
-            2,
-            t.on_primary,
-        );
+        for (i, label) in [
+            "Другое",
+            if f.timer_secs > 0 {
+                "Стоп"
+            } else {
+                "Пуск"
+            },
+        ]
+        .iter()
+        .enumerate()
+        {
+            let x = 10 + i as i32 * 114;
+            let selected = f.cursor as usize == 4 + i;
+            self.round_rect(
+                x,
+                237,
+                106,
+                35,
+                17,
+                if selected { t.primary } else { t.surface_high },
+            );
+            self.text_center_x(x + 53, 247, label, 1, Self::focus_ink(t, selected));
+        }
     }
 
     /// Выбирает экран инструмента часов и рисует его актуальное состояние.
@@ -225,7 +310,13 @@ impl Surface {
             match i {
                 0 => self.info_card(y, labels[i], timer_s, i == cur, t),
                 1 => self.info_card(y, labels[i], stopwatch_s, i == cur, t),
-                2 => self.info_card(y, labels[i], if f.alarm_enabled { "ON" } else { "OFF" }, i == cur, t),
+                2 => self.info_card(
+                    y,
+                    labels[i],
+                    if f.alarm_enabled { "ON" } else { "OFF" },
+                    i == cur,
+                    t,
+                ),
                 _ => self.wear_row(y, labels[i], i == cur, t),
             }
         }
@@ -233,34 +324,71 @@ impl Surface {
 
     /// Рисует экран alarm с актуальным состоянием и фокусом.
     pub(super) fn alarm_editor(&mut self, f: MaterialFrame, t: Theme) {
-        self.photo_header(f, "Alarm", t);
-        let time = Self::time_text(f.alarm_minutes);
-        self.text_center(
-            68,
-            core::str::from_utf8(&time).unwrap_or("07:00"),
-            2,
-            t.primary,
-        );
-        let labels = [
-            if f.alarm_enabled {
-                "Alarm on"
-            } else {
-                "Alarm off"
-            },
-            "Hour +",
-            "Minute +",
-            "Back",
-        ];
-        for (i, label) in labels.iter().enumerate() {
+        self.photo_header(f, "Будильник", t);
+        self.round_rect(10, 65, 220, 89, 20, t.surface);
+        let hour = alloc::format!("{:02}", f.alarm_minutes / 60);
+        let minute = alloc::format!("{:02}", f.alarm_minutes % 60);
+        for (i, text) in [&hour, &minute].iter().enumerate() {
+            let x = 33 + i as i32 * 103;
+            let selected = f.cursor as usize == i + 1;
             self.round_rect(
-                22,
-                103 + i as i32 * 39,
-                196,
-                34,
-                17,
-                Self::focus_fill(t.surface_high, f.cursor as usize == i),
+                x,
+                86,
+                70,
+                43,
+                11,
+                if selected { t.primary } else { t.surface_high },
             );
-            self.text_center(114 + i as i32 * 39, label, 1, Self::focus_ink(t, f.cursor as usize == i));
+            self.text_center_x(x + 35, 92, text, 3, Self::focus_ink(t, selected));
+            self.line(x + 29, 76, x + 35, 71, 2, t.primary);
+            self.line(x + 35, 71, x + 41, 76, 2, t.primary);
+            self.line(x + 29, 140, x + 35, 145, 2, t.primary);
+            self.line(x + 35, 145, x + 41, 140, 2, t.primary);
         }
+        self.text_center_raw(95, ":", 3, t.on_surface);
+        self.round_rect(
+            10,
+            171,
+            220,
+            35,
+            15,
+            if f.cursor == 0 {
+                t.primary
+            } else {
+                t.surface_high
+            },
+        );
+        self.text_raw(22, 180, "Включён", 1, Self::focus_ink(t, f.cursor == 0));
+        self.round_rect(
+            176,
+            179,
+            40,
+            19,
+            9,
+            if f.alarm_enabled {
+                t.primary
+            } else {
+                t.outline
+            },
+        );
+        self.circle(
+            if f.alarm_enabled { 207 } else { 185 },
+            188,
+            7,
+            t.on_surface,
+        );
+        self.round_rect(
+            10,
+            234,
+            220,
+            37,
+            18,
+            if f.cursor == 3 {
+                t.primary
+            } else {
+                t.surface_high
+            },
+        );
+        self.text_center_raw(245, "Сохранить", 1, Self::focus_ink(t, f.cursor == 3));
     }
 }

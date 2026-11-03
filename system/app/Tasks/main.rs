@@ -126,8 +126,6 @@ impl Default for Ledger {
     }
 }
 impl Ledger {
-
-
     /// Открывает выбранный режим и подготавливает его состояние.
     pub fn open(&mut self) {
         if !self.loaded && self.pending.is_none() {
@@ -538,5 +536,8 @@ impl Drop for Ledger {
     }
 }
 
-#[path = "../Expenses/main.rs"]
-mod expenses;
+impl Ledger {
+    fn path(&self) -> &str {
+        "/tasks.txt"
+    }
+}

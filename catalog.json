@@ -24,14 +24,6 @@
     "launcher": true
   },
   {
-    "directory": "system/app/WearAssistant",
-    "package": "com.android.wear.assistant",
-    "label": "Ассистент",
-    "id": 5,
-    "screen": 27,
-    "launcher": true
-  },
-  {
     "directory": "system/app/Calculator",
     "package": "com.xopilot.calculator",
     "label": "Калькулятор",
@@ -72,34 +64,10 @@
     "launcher": true
   },
   {
-    "directory": "system/app/Breathing",
-    "package": "com.xopilot.breathing",
-    "label": "Дыхание",
-    "id": 14,
-    "screen": null,
-    "launcher": true
-  },
-  {
     "directory": "system/app/Calendar",
     "package": "com.xopilot.calendar",
     "label": "Календарь",
     "id": 15,
-    "screen": null,
-    "launcher": true
-  },
-  {
-    "directory": "system/app/Converter",
-    "package": "com.xopilot.converter",
-    "label": "Конвертер",
-    "id": 16,
-    "screen": null,
-    "launcher": true
-  },
-  {
-    "directory": "system/app/Counter",
-    "package": "com.xopilot.counter",
-    "label": "Счётчик",
-    "id": 17,
     "screen": null,
     "launcher": true
   },
@@ -120,14 +88,6 @@
     "launcher": true
   },
   {
-    "directory": "system/app/Expenses",
-    "package": "com.xopilot.expenses",
-    "label": "Расходы",
-    "id": 20,
-    "screen": null,
-    "launcher": true
-  },
-  {
     "directory": "system/app/Focus",
     "package": "com.xopilot.focus",
     "label": "Фокус",
@@ -140,6 +100,54 @@
     "package": "com.xopilot.phone",
     "label": "Телефон",
     "id": 22,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Gallery",
+    "package": "com.xopilot.gallery",
+    "label": "Галерея",
+    "id": 23,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/BluetoothKeyboard",
+    "package": "com.xopilot.btkeyboard",
+    "label": "BT-клавиатура",
+    "id": 24,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/GoogleSearch",
+    "package": "com.xopilot.google",
+    "label": "Google",
+    "id": 25,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/GoogleCalendar",
+    "package": "com.xopilot.googlecalendar",
+    "label": "Google Calendar",
+    "id": 26,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Gmail",
+    "package": "com.xopilot.gmail",
+    "label": "Gmail",
+    "id": 27,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Translator",
+    "package": "com.xopilot.translator",
+    "label": "Переводчик",
+    "id": 28,
     "screen": null,
     "launcher": true
   },

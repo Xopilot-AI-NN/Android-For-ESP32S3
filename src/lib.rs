@@ -1,19 +1,39 @@
 #[path = "catalog.rs"]
 pub mod catalog;
+#[path = "../system/app/Gallery/main.rs"]
+pub mod gallery;
+#[path = "../system/app/Gmail/main.rs"]
+pub mod gmail;
+#[path = "../system/app/GoogleCalendar/main.rs"]
+pub mod google_calendar;
+#[path = "../system/app/GoogleSearch/main.rs"]
+pub mod google_search;
+#[path = "../system/app/BluetoothKeyboard/main.rs"]
+pub mod keyboard_app;
+#[path = "../shared/remote.rs"]
+pub mod remote;
+#[path = "../system/app/Translator/main.rs"]
+pub mod translator;
 // Модуль нативных приложений.
 // Native utilities use an overlay, preserving the on-card framework screen ABI.
 #[path = "../system/app/Calculator/main.rs"]
 pub mod calculator;
 pub use crate::storage_info as storage;
-#[path = "../shared/tools.rs"]
-pub mod utilities;
 #[path = "../system/app/Files/main.rs"]
 pub mod files;
 #[path = "../system/app/Tasks/main.rs"]
 pub mod organizer;
+#[path = "../shared/tools.rs"]
+pub mod utilities;
 use crate::runtime::RuntimeEvent;
 /// Стабильный ID приложения NONE; сохраняется при перестановке меню.
 pub const NONE: u8 = 255;
+pub const GALLERY: u8 = 23;
+pub const BT_KEYBOARD: u8 = 24;
+pub const GOOGLE: u8 = 25;
+pub const GOOGLE_CALENDAR: u8 = 26;
+pub const GMAIL: u8 = 27;
+pub const TRANSLATOR: u8 = 28;
 /// Стабильный ID приложения CALCULATOR; сохраняется при перестановке меню.
 pub const CALCULATOR: u8 = 6;
 /// Стабильный ID приложения FILES; сохраняется при перестановке меню.
@@ -28,8 +48,7 @@ pub const MEMORY: u8 = 11;
 pub const WEATHER: u8 = 12;
 /// Стабильный ID приложения WORLD; сохраняется при перестановке меню.
 pub const WORLD: u8 = 13;
-/// Стабильный ID приложения BREATHING; сохраняется при перестановке меню.
-pub const BREATHING: u8 = 14;
+// ID 14 зарезервирован после удаления «Дыхание»; новые приложения его не занимают.
 /// Стабильный ID приложения CALENDAR; сохраняется при перестановке меню.
 pub const CALENDAR: u8 = 15;
 /// Стабильный ID приложения CONVERTER; сохраняется при перестановке меню.
@@ -47,7 +66,7 @@ pub const FOCUS: u8 = 21;
 /// Стабильный ID приложения PHONE; сохраняется при перестановке меню.
 pub const PHONE: u8 = 22;
 /// Количество элементов соответствующей таблицы/меню.
-pub const COUNT: u8 = 18;
+pub const COUNT: u8 = 19;
 /// Stable IDs survive launcher reordering and saved system images.
 pub const LAUNCHER: [u8; COUNT as usize] = catalog::LAUNCHER;
 /// Преобразует позицию меню в стабильный идентификатор приложения.
@@ -55,13 +74,21 @@ pub fn launcher_id(index: u8) -> u8 {
     LAUNCHER.get(usize::from(index)).copied().unwrap_or(NONE)
 }
 /// Названия приложений по их стабильным ID.
-pub const LABELS: [&str; 23] = catalog::LABELS;
+pub const LABELS: [&str; 29] = catalog::LABELS;
 /// Возвращает системный экран для приложения, если оно использует старый ABI.
-pub fn route(index: u8) -> Option<u8> { catalog::COMPONENTS.get(usize::from(index)).filter(|entry| entry.id == index && !entry.package.is_empty()).and_then(|entry| entry.screen) }
+pub fn route(index: u8) -> Option<u8> {
+    catalog::COMPONENTS
+        .get(usize::from(index))
+        .filter(|entry| entry.id == index && !entry.package.is_empty())
+        .and_then(|entry| entry.screen)
+}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 /// Снимок данных для отображения компонента нативных приложений.
 pub struct View {
     pub id: u8,
+    pub gallery: gallery::View,
+    pub keyboard_app: keyboard_app::View,
+    pub remote: remote::View,
     /// Индекс текущей цели навигации.
     pub cursor: u8,
     /// Текстовое содержимое в ограниченном буфере.
@@ -108,6 +135,9 @@ impl Default for View {
     fn default() -> Self {
         Self {
             id: NONE,
+            gallery: gallery::View::default(),
+            keyboard_app: keyboard_app::View::default(),
+            remote: remote::View::default(),
             cursor: 0,
             text: [0; 32],
             len: 0,
@@ -141,7 +171,7 @@ pub struct State {
     weather: crate::weather::Controller,
     /// Выбранный часовой пояс мирового времени, часы относительно UTC.
     world_offset: i8,
-    breathe_started: Option<u64>,
+
     /// Состояния календаря, конвертера и счётчика.
     tools: utilities::Tools,
     /// Состояние проводника и текстового редактора.
@@ -149,9 +179,16 @@ pub struct State {
     /// Контроллер списка задач с отдельным файлом.
     tasks: organizer::Ledger,
     /// Выбор журнала расходов вместо списка задач.
-    expenses: organizer::Ledger,
+
     /// Индекс выбранной клавиши.
     focus: organizer::Focus,
+    gallery: gallery::Controller,
+    keyboard_app: keyboard_app::Controller,
+    google: google_search::Controller,
+    google_calendar: google_calendar::Controller,
+    gmail: gmail::Controller,
+    translator: translator::Controller,
+    gallery_from_files: bool,
 }
 impl Default for State {
     /// Задаёт исходное состояние нового экземпляра.
@@ -161,28 +198,30 @@ impl Default for State {
             calculator: calculator::Calculator::default(),
             weather: crate::weather::Controller::default(),
             world_offset: 3,
-            breathe_started: None,
+
             tools: utilities::Tools::default(),
             files: files::Controller::default(),
             tasks: organizer::Ledger::default(),
-            expenses: organizer::Ledger::expenses(),
+
             focus: organizer::Focus::default(),
+            gallery: gallery::Controller::default(),
+            keyboard_app: keyboard_app::Controller::default(),
+            google: google_search::Controller::default(),
+            google_calendar: google_calendar::Controller::default(),
+            gmail: gmail::Controller::default(),
+            translator: translator::Controller::default(),
+            gallery_from_files: false,
         }
     }
 }
 impl State {
     /// Возвращает идентификатор активного приложения без построения снимка.
-    pub fn id(&self) -> u8 { self.view.id }
+    pub fn id(&self) -> u8 {
+        self.view.id
+    }
     /// Определяет, требует ли текущее состояние удержать экран включённым.
     pub fn keep_awake(&self) -> bool {
-        self.focus.keep_awake() || (self.view.id == BREATHING
-            && self.breathe_started.is_some_and(|start| {
-                esp_hal::time::Instant::now()
-                    .duration_since_epoch()
-                    .as_secs()
-                    .saturating_sub(start)
-                    < 125
-            }))
+        self.focus.keep_awake()
     }
     /// Сообщает, активен ли соответствующий режим.
     pub fn active(&self) -> bool {
@@ -190,22 +229,39 @@ impl State {
     }
     /// Закрывает активный режим и освобождает связанные временные состояния.
     pub fn close(&mut self) {
+        if self.view.id == GALLERY {
+            self.gallery.close();
+        }
         self.view.id = NONE;
         self.weather.cancel();
-        self.breathe_started = None;
     }
     /// Открывает выбранный режим и подготавливает его состояние.
     pub fn open(&mut self, id: u8) {
-        if !(CALCULATOR..=PHONE).contains(&id) {
+        if !catalog::LAUNCHER.contains(&id) && !matches!(id, DIAGNOSTICS | MEMORY | WORLD) {
             return;
         }
         self.view.id = id;
-        if matches!(id, FILES | EDITOR) { self.files.open(id == EDITOR); }
-        if id == TASKS { self.tasks.open(); }
-        if id == EXPENSES { self.expenses.open(); }
-        if id == CALENDAR { self.tools.calendar_open(); }
-        self.tools.reset_armed = false;
-        self.tools.editing_amount = false;
+        self.gallery_from_files = false;
+        match id {
+            GALLERY => self.gallery.open(),
+            BT_KEYBOARD => self.keyboard_app.open(),
+            GOOGLE => self.google.open(),
+            GOOGLE_CALENDAR => self.google_calendar.open(),
+            GMAIL => self.gmail.open(),
+            TRANSLATOR => self.translator.open(),
+            _ => {}
+        }
+        if matches!(id, FILES | EDITOR) {
+            self.files.open(id == EDITOR);
+        }
+        if id == TASKS {
+            self.tasks.open();
+        }
+
+        if id == CALENDAR {
+            self.tools.calendar_open();
+        }
+
         self.view.cursor = if id == MEMORY {
             crate::swap_config::CHOICES
                 .iter()
@@ -218,40 +274,95 @@ impl State {
     }
     /// Рисует экран cancel с актуальным состоянием и фокусом.
     pub fn cancel_editor(&mut self) -> bool {
-        if matches!(self.view.id, FILES | EDITOR) { self.files.back() }
-        else if self.view.id == TASKS { self.tasks.back() }
-        else if self.view.id == EXPENSES { self.expenses.back() }
-        else { self.view.id == WEATHER && self.weather.cancel() }
+        if self.view.id == GALLERY {
+            if self.gallery_from_files {
+                self.view.id = FILES;
+                self.gallery_from_files = false;
+                true
+            } else {
+                self.gallery.back()
+            }
+        } else if self.view.id == BT_KEYBOARD {
+            self.keyboard_app.back()
+        } else if self.view.id == GOOGLE {
+            self.google.back()
+        } else if self.view.id == GOOGLE_CALENDAR {
+            self.google_calendar.back()
+        } else if self.view.id == GMAIL {
+            self.gmail.back()
+        } else if self.view.id == TRANSLATOR {
+            self.translator.back()
+        } else if matches!(self.view.id, FILES | EDITOR) {
+            self.files.back()
+        } else if self.view.id == TASKS {
+            self.tasks.back()
+        } else {
+            self.view.id == WEATHER && self.weather.cancel()
+        }
     }
     /// Выполняет очередной неблокирующий шаг обработки и проверяет готовые результаты.
-    pub fn poll(&mut self) { self.files.poll(); self.tasks.poll(); self.expenses.poll(); self.focus.poll(); }
+    pub fn poll(&mut self) {
+        self.files.poll();
+        self.tasks.poll();
+        self.gallery.poll();
+        if let Some(path) = gallery::take_open() {
+            self.view.id = GALLERY;
+            self.gallery_from_files = true;
+            self.gallery.open_path(path);
+        }
+        self.focus.poll();
+    }
     /// Собирает снимок состояния для интерфейса.
     pub fn view(&self) -> View {
         let mut view = self.view;
         view.tools = self.tools;
-        if matches!(view.id, FILES | EDITOR) { view.files = self.files.view(); }
-        if view.id == CALCULATOR { view.calculator = self.calculator.view(); }
-        if view.id == TASKS { view.organizer = self.tasks.view(); }
-        if view.id == EXPENSES { view.organizer = self.expenses.view(); }
-        if view.id == FOCUS { view.focus = self.focus.view(); }
-        if view.id == PHONE { view.phone = crate::companion::view(); }
-        if view.id == CALENDAR { view.tools.today = crate::rtc::calendar_date(); }
+        match view.id {
+            GALLERY => view.gallery = self.gallery.view(),
+            BT_KEYBOARD => view.keyboard_app = self.keyboard_app.view(),
+            GOOGLE => view.remote = self.google.view(),
+            GOOGLE_CALENDAR => view.remote = self.google_calendar.view(),
+            GMAIL => view.remote = self.gmail.view(),
+            TRANSLATOR => view.remote = self.translator.view(),
+            _ => {}
+        }
+        if matches!(view.id, FILES | EDITOR) {
+            view.files = self.files.view();
+        }
+        if view.id == CALCULATOR {
+            view.calculator = self.calculator.view();
+        }
+        if view.id == TASKS {
+            view.organizer = self.tasks.view();
+        }
+
+        if view.id == FOCUS {
+            view.focus = self.focus.view();
+        }
+        if view.id == PHONE {
+            view.phone = crate::companion::view();
+        }
+        if view.id == CALENDAR {
+            view.tools.today = crate::rtc::calendar_date();
+        }
         if view.id == WEATHER {
             view.weather = crate::weather::snapshot();
             view.weather_editor = self.weather.view();
         }
         view.world_offset = self.world_offset;
-        if view.id == BREATHING {
-            if let Some(start) = self.breathe_started {
-                let elapsed = esp_hal::time::Instant::now()
-                    .duration_since_epoch()
-                    .as_secs()
-                    .saturating_sub(start);
-                view.breathe_elapsed = elapsed.min(120) as u16;
-                view.breathing = elapsed < 120;
-            }
-        }
         view
+    }
+    /// Общая точка аккаунта из настроек.
+    pub fn open_account(&mut self) {
+        self.open(GOOGLE);
+        self.google.account();
+    }
+    /// Системная BLE-служба забирает отчёты, приложение не владеет контроллером радио.
+    pub fn bluetooth_action(&mut self) -> Option<crate::runtime::BluetoothUiAction> {
+        if self.view.id == BT_KEYBOARD {
+            self.keyboard_app.take()
+        } else {
+            None
+        }
     }
     /// Обновляет ограниченный буфер результата калькулятора для интерфейса.
     fn refresh_text(&mut self) {
@@ -264,14 +375,52 @@ impl State {
     /// Work is performed only on input; utility pages have no polling tasks.
     pub fn event(&mut self, event: RuntimeEvent) -> Option<u8> {
         match self.view.id {
-            TASKS => { self.tasks.event(event); return None; }
-            EXPENSES => { self.expenses.event(event); return None; }
-            FOCUS => { self.focus.event(event); return None; }
-            PHONE => { crate::companion::event(event, self.files.saved_text()); return None; }
-            FILES | EDITOR => { self.files.event(event); return None; }
-            CALENDAR => { self.tools.calendar_event(event); return None; }
-            CONVERTER => { self.tools.converter_event(event); return None; }
-            COUNTER => { self.tools.counter_event(event); return None; }
+            GALLERY => {
+                self.gallery.event(event);
+                return None;
+            }
+            BT_KEYBOARD => {
+                self.keyboard_app.event(event);
+                return None;
+            }
+            GOOGLE => {
+                self.google.event(event);
+                return None;
+            }
+            GOOGLE_CALENDAR => {
+                self.google_calendar.event(event);
+                return None;
+            }
+            GMAIL => {
+                self.gmail.event(event);
+                return None;
+            }
+            TRANSLATOR => {
+                self.translator.event(event);
+                return None;
+            }
+            TASKS => {
+                self.tasks.event(event);
+                return None;
+            }
+
+            FOCUS => {
+                self.focus.event(event);
+                return None;
+            }
+            PHONE => {
+                crate::companion::event(event, self.files.saved_text());
+                return None;
+            }
+            FILES | EDITOR => {
+                self.files.event(event);
+                return None;
+            }
+            CALENDAR => {
+                self.tools.calendar_event(event);
+                return None;
+            }
+
             _ => {}
         }
         if self.view.id == WEATHER {
@@ -287,22 +436,6 @@ impl State {
                 }
                 RuntimeEvent::Press => self.world_offset = crate::rtc::timezone_hours(),
                 _ => {}
-            }
-            return None;
-        }
-        if self.view.id == BREATHING {
-            if event == RuntimeEvent::Press {
-                let now = esp_hal::time::Instant::now()
-                    .duration_since_epoch()
-                    .as_secs();
-                self.breathe_started = if self
-                    .breathe_started
-                    .is_some_and(|start| now.saturating_sub(start) < 120)
-                {
-                    None
-                } else {
-                    Some(now)
-                };
             }
             return None;
         }

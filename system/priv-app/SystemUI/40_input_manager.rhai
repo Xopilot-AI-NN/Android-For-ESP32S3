@@ -72,7 +72,7 @@ fn on_event(state,kind,value) {
         if screen==26 {return pack_state(26,wrap(cursor+value,7),b,dnd,air,th,locked,wifi,bt,adb,notes);}
         if screen==3 {let count=notes; if count<1 {count=1;} return pack_state(3,wrap(cursor+value,count),b,dnd,air,th,locked,wifi,bt,adb,notes);}
         if screen==4 {return pack_state(4,wrap(cursor+value,7),b,dnd,air,th,locked,wifi,bt,adb,notes);}
-        if screen==5 {return pack_state(5,wrap(cursor+value,9),b,dnd,air,th,locked,wifi,bt,adb,notes);}
+        if screen==5 {return pack_state(5,wrap(cursor+value,10),b,dnd,air,th,locked,wifi,bt,adb,notes);}
         if screen==6 {return pack_state(6,wrap(cursor+value,4),b,dnd,air,th,locked,wifi,bt,adb,notes);}
         if screen==7 {return pack_state(7,wrap(cursor+value,4),b,dnd,air,th,locked,wifi,bt,adb,notes);}
         if screen==9 {return pack_state(9,wrap(cursor+value,3),b,dnd,air,th,locked,wifi,bt,adb,notes);}

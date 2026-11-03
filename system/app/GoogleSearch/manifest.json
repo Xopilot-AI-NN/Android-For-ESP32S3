@@ -1,0 +1,18 @@
+{
+  "package": "com.xopilot.google",
+  "label": "Google",
+  "runtime": "native-rust",
+  "api": 37,
+  "system": true,
+  "characteristics": "watch",
+  "launcher": true,
+  "nativeApp": 25,
+  "entry": "main.rs",
+  "sharedSources": [
+    "../../../shared/remote.rs",
+    "../../../shared/remote_view.rs"
+  ],
+  "sources": [
+    "main.rs"
+  ]
+}

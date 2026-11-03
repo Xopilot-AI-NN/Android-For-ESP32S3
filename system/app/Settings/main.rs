@@ -3,7 +3,6 @@
 use super::*;
 
 impl Surface {
-
     /// Рисует главное меню настроек.
     pub(super) fn settings(&mut self, f: MaterialFrame, t: Theme) {
         self.photo_header(f, "Settings", t);
@@ -16,15 +15,16 @@ impl Surface {
             "Accessibility",
             "Security",
             "System",
+            "Аккаунты",
             "Back",
         ];
-        let cur = f.cursor.min(8) as usize;
-        let start = cur.saturating_sub(1).min(6);
+        let cur = f.cursor.min(9) as usize;
+        let start = cur.saturating_sub(1).min(7);
         for row in 0..3 {
-            let index = (start + row).min(8);
+            let index = (start + row).min(9);
             self.wear_row(63 + row as i32 * 67, labels[index], index == cur, t);
         }
-        self.scroll_indicator(cur as u8, 9, t);
+        self.scroll_indicator(cur as u8, 10, t);
     }
 
     /// Рисует состояние Wi-Fi, Bluetooth и авиарежима.
@@ -38,7 +38,13 @@ impl Surface {
             let index = (start + row).min(3);
             let y = 65 + row as i32 * 66;
             if index < 3 {
-                self.info_card(y, labels[index], if values[index] { "ON" } else { "OFF" }, index == cur, t);
+                self.info_card(
+                    y,
+                    labels[index],
+                    if values[index] { "ON" } else { "OFF" },
+                    index == cur,
+                    t,
+                );
             } else {
                 self.wear_row(y, labels[index], index == cur, t);
             }

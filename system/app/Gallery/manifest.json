@@ -1,15 +1,16 @@
 {
-  "package": "com.android.wear.assistant",
-  "label": "Ассистент",
+  "package": "com.xopilot.gallery",
+  "label": "Галерея",
   "runtime": "native-rust",
   "api": 37,
   "system": true,
   "characteristics": "watch",
   "launcher": true,
-  "nativeApp": 5,
+  "nativeApp": 23,
   "entry": "main.rs",
+  "sharedSources": [],
   "sources": [
-    "main.rs"
-  ],
-  "sharedSources": []
+    "main.rs",
+    "view.rs"
+  ]
 }

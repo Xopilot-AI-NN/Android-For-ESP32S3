@@ -1,16 +1,16 @@
 {
-  "package": "com.xopilot.converter",
-  "label": "Конвертер",
+  "package": "com.xopilot.btkeyboard",
+  "label": "BT-клавиатура",
   "runtime": "native-rust",
   "api": 37,
   "system": true,
   "characteristics": "watch",
   "launcher": true,
-  "nativeApp": 16,
+  "nativeApp": 24,
   "entry": "main.rs",
+  "sharedSources": [],
   "sources": [
     "main.rs",
-    "utilities.rs"
-  ],
-  "sharedSources": []
+    "view.rs"
+  ]
 }

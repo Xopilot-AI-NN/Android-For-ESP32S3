@@ -72,8 +72,16 @@ impl Runtime {
         }
         let screen = (self.state & 0x1f) as u8;
         let was_bt_enabled = self.state & (1 << 22) != 0;
-        let cursor = if matches!(screen, 2 | 26) { self.launcher_cursor } else { ((self.state >> 5) & 15) as u8 };
+        let cursor = if matches!(screen, 2 | 26) {
+            self.launcher_cursor
+        } else {
+            ((self.state >> 5) & 15) as u8
+        };
         // Native applications share one bounded router; the old SD script ABI stays intact.
+        if !self.native_app.active() && screen == 5 && cursor == 8 && event == RuntimeEvent::Press {
+            self.native_app.open_account();
+            return self.render();
+        }
         if self.native_app.active() {
             if matches!(event, RuntimeEvent::Back | RuntimeEvent::Swipe(2))
                 && self.native_app.cancel_editor()
@@ -98,8 +106,10 @@ impl Runtime {
             match event {
                 RuntimeEvent::Rotate(delta) => {
                     let count = i32::from(crate::apps::COUNT) + 1;
-                    self.launcher_cursor = (i32::from(cursor) + delta.rem_euclid(count)).rem_euclid(count) as u8;
-                    self.state = (self.state & !0x1e0) | (i32::from(self.launcher_cursor.min(15)) << 5);
+                    self.launcher_cursor =
+                        (i32::from(cursor) + delta.rem_euclid(count)).rem_euclid(count) as u8;
+                    self.state =
+                        (self.state & !0x1e0) | (i32::from(self.launcher_cursor.min(15)) << 5);
                 }
                 RuntimeEvent::Swipe(direction @ (-1 | 1)) => {
                     let step = if screen == 26 { 3 } else { 1 };
@@ -317,13 +327,13 @@ impl Runtime {
             return self.render();
         }
         if screen == 6 && event == RuntimeEvent::Press {
-            if cursor == 0 {
+            if cursor == 1 {
                 self.state = (self.state & !0x1ff) | 11;
                 self.timer_editor = 1;
-            } else if cursor == 1 {
+            } else if cursor == 2 {
                 self.state = (self.state & !0x1ff) | 11;
                 self.timer_editor = 3;
-            } else if cursor == 2 {
+            } else if cursor == 0 {
                 self.state = (self.state & !0x1ff) | 31;
             } else if cursor == 3 {
                 self.native_app.open(crate::apps::WORLD);
@@ -346,10 +356,10 @@ impl Runtime {
                         clock_action(1);
                     }
                     _ => {
-                        self.state = (self.state & !0x1ff) | 6 | (1 << 5);
+                        self.state = (self.state & !0x1ff) | 6 | (2 << 5);
                     }
                 },
-                RuntimeEvent::Back => self.state = (self.state & !0x1ff) | 6 | (1 << 5),
+                RuntimeEvent::Back => self.state = (self.state & !0x1ff) | 6 | (2 << 5),
                 RuntimeEvent::Home => self.state = (self.state & !0x1ff) | 1,
                 _ => {}
             }
@@ -364,7 +374,7 @@ impl Runtime {
                 }
                 RuntimeEvent::Rotate(delta) => {
                     self.state =
-                        (self.state & !0x1e0) | ((i32::from(cursor) + delta).rem_euclid(5) << 5);
+                        (self.state & !0x1e0) | ((i32::from(cursor) + delta).rem_euclid(6) << 5);
                 }
                 RuntimeEvent::Press => {
                     if self.timer_editor == 2 {
@@ -373,6 +383,8 @@ impl Runtime {
                     } else if cursor < 4 {
                         clock::set_timer_duration([300, 600, 900, 1800][cursor as usize]);
                         clock::start_timer();
+                    } else if cursor == 5 {
+                        clock_action(2);
                     } else {
                         self.timer_editor = 2;
                     }
@@ -381,7 +393,7 @@ impl Runtime {
                     self.timer_editor = if self.timer_editor == 2 { 1 } else { 0 };
                     self.state &= !0x1e0;
                     if self.timer_editor == 0 {
-                        self.state = (self.state & !0x1ff) | 6;
+                        self.state = (self.state & !0x1ff) | 6 | (1 << 5);
                     }
                 }
                 RuntimeEvent::Home => {
@@ -409,11 +421,11 @@ impl Runtime {
                     if cursor < 3 {
                         clock_action([3, 4, 5][cursor as usize]);
                     } else {
-                        self.state = (self.state & !0x1ff) | 6 | (2 << 5);
+                        self.state = (self.state & !0x1ff) | 6;
                     }
                 }
                 RuntimeEvent::Back => {
-                    self.state = (self.state & !0x1ff) | 6 | (2 << 5);
+                    self.state = (self.state & !0x1ff) | 6;
                 }
                 RuntimeEvent::Home => {
                     self.state = (self.state & !0x1ff) | 1;
@@ -476,7 +488,7 @@ impl Runtime {
             RuntimeEvent::Back => ("back", 0),
             RuntimeEvent::Rotate(delta) => ("rotate", delta),
             RuntimeEvent::Swipe(direction) => ("swipe", direction),
-            RuntimeEvent::Press => ("press", 0),
+            RuntimeEvent::Press | RuntimeEvent::Click(_) => ("press", 0),
             RuntimeEvent::Power => unreachable!(),
         };
         let options = CallFnOptions::new().eval_ast(false).rewind_scope(true);
@@ -516,5 +528,4 @@ impl Runtime {
         }
         self.render()
     }
-
 }

@@ -1,5 +1,5 @@
 # Калькулятор
 
-Нативный пакет Rust. Код и интерфейс: [calculator_page.rs](./calculator_page.rs), [main.rs](./main.rs).
+Код приложения: [calculator_page.rs](./calculator_page.rs), [main.rs](./main.rs).
 
-Пакет компилируется в исполняемый файл Firmware. Это исходники приложения, а не динамически загружаемая программа. Подробнее: [архитектура](../../../../ARCHITECTURE.md).
+[Архитектура](../../../../ARCHITECTURE.md).
