@@ -1,3 +1,5 @@
+Google Gateway: [запуск на телефоне через Termux и на ПК, приватная OAuth-настройка](GoogleAuthGateway/README.md).
+
 Сервисный запуск: [10 секунд для перезапуска, выбор Fastboot/Recovery колёсиком](Bootloader/DELIVERY.md).
 
 Актуальное разделение проекта: [загрузчик → прошивка → приложения](ARCHITECTURE.md).
