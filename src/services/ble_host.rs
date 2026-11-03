@@ -519,13 +519,16 @@ async fn run_session(connector: &BleConnector<'static>, mut address: [u8; 6], sh
                         }
                         GattConnectionEvent::PairingFailed(reason) => {
                             crate::watch_println!("BLE: pairing failed: {:?}", reason);
+
                             let mut s = shared.borrow_mut();
                             s.status = 5;
                             s.pin = None;
                             s.decision = None;
-                            drop(s);
-                            conn.raw().disconnect();
-                            return;
+                            s.subscribed = false;
+                            s.media.clear();
+
+                            // Не отключаем соединение повторно.
+                            // Дожидаемся события Disconnected от BLE-стека.
                         }
                         GattConnectionEvent::Gatt { event } => {
                             // Require encryption for reports/control; discovery
@@ -594,7 +597,9 @@ async fn run_session(connector: &BleConnector<'static>, mut address: [u8; 6], sh
                         return;
                     }
                     if !enabled || disconnect || expired {
-                        conn.raw().disconnect();
+                        if conn.raw().is_connected() {
+                            conn.raw().disconnect();
+                        }
                         return;
                     }
                     if let Some(yes) = decision {

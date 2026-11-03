@@ -5,27 +5,42 @@ impl Surface {
     /// Рисует стартовый логотип без зависимости от системного пакета ресурсов.
     pub fn boot_frame(&mut self, phase: u8) {
         self.fill_rect(0, 0, 240, 280, 0);
-        let progress = i32::from(phase);
-        self.line(
-            66,
-            80,
-            66 + 54 * progress / 255,
-            80 + 54 * progress / 255,
-            15,
-            rgb565(0, 175, 255),
+
+        const POSITIONS: [(i32, i32); 16] = [
+            (40, 0), (37, 15), (28, 28), (15, 37),
+            (0, 40), (-15, 37), (-28, 28), (-37, 15),
+            (-40, 0), (-37, -15), (-28, -28), (-15, -37),
+            (0, -40), (15, -37), (28, -28), (37, -15),
+        ];
+
+        let colors = [
+            rgb565(66, 133, 244),
+            rgb565(234, 67, 53),
+            rgb565(251, 188, 5),
+            rgb565(52, 168, 83),
+        ];
+
+        let step = usize::from(phase) % POSITIONS.len();
+
+        for (index, color) in colors.iter().enumerate() {
+            let position = (step + index * 4) % POSITIONS.len();
+            let (dx, dy) = POSITIONS[position];
+
+            self.circle(
+                120 + dx,
+                112 + dy,
+                7,
+                *color,
+            );
+        }
+
+        self.text_center(185, "Wear OS", 2, 0xffff);
+        self.text_center(
+            207,
+            "ESP32-S3",
+            1,
+            rgb565(145, 145, 145),
         );
-        self.line(
-            92,
-            71,
-            92 + 54 * progress / 255,
-            71 + 54 * progress / 255,
-            15,
-            rgb565(255, 218, 34),
-        );
-        self.circle(160, 76, 8, rgb565(0, 210, 111));
-        self.circle(160, 51, 8, rgb565(244, 54, 70));
-        self.text_center(173, "AOSP Wear", 2, 0xffff);
-        self.text_center(203, "by AOSP", 1, 0xffff);
     }
     /// Рисует стартовый экран и текущий этап подготовки.
     pub fn boot_progress_frame(&mut self, label: &str, phase: u8) {
@@ -65,13 +80,18 @@ impl Surface {
         };
         for (i, label) in labels.iter().enumerate() {
             let y = 88 + i as i32 * 34;
+
             if cursor as usize == i {
-                self.fill_rect(8, y - 6, 224, 29, if kind == 1 { green } else { orange });
+                self.fill_rect(
+                    8, y - 6, 224, 29,
+                    if kind == 1 { green } else { orange },
+                );
             }
+
             self.text(
                 16,
                 y,
-                label,
+                *label,
                 1,
                 if cursor as usize == i { 0 } else { 0xffff },
             );
