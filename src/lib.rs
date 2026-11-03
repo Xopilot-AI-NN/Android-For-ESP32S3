@@ -302,6 +302,10 @@ impl State {
     }
     /// Выполняет очередной неблокирующий шаг обработки и проверяет готовые результаты.
     pub fn poll(&mut self) {
+        self.google.poll();
+        self.google_calendar.poll();
+        self.gmail.poll();
+        self.translator.poll();
         self.files.poll();
         self.tasks.poll();
         self.gallery.poll();
