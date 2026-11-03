@@ -11,6 +11,7 @@ fi
 [[ -f "$ELF" ]] || { echo "Missing firmware ELF: $ELF" >&2; exit 1; }
 [[ -n "$ESPFLASH_BIN" ]] || { echo "espflash is required" >&2; exit 1; }
 mkdir -p "$OUTPUT"
+cp "$ELF" "$OUTPUT/firmware.elf"
 "$ESPFLASH_BIN" save-image --skip-update-check --chip esp32s3 --flash-size 4mb --merge --skip-padding \
   --partition-table "$ROOT/partitions.csv" "$ELF" "$OUTPUT/flash.bin"
 node "$ROOT/tools/split_flash.cjs" "$OUTPUT/flash.bin" "$OUTPUT"

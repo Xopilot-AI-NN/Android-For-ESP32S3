@@ -127,7 +127,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--serial", metavar="PORT", help="direct SD-mode serial, no reset")
     ap.add_argument("--socket", type=Path, default=default_viewer_socket())
     ap.add_argument("specs", nargs="*", help="Tag:priority filters, e.g. 'radio:D' '*:W'")
+    ap.add_argument("--elf", type=Path, help="decode ESP backtraces with the exact Firmware ELF")
     args = ap.parse_args(argv)
+    decoder = None
+    if args.elf:
+        from tools.decode_backtrace import Decoder
+        decoder = Decoder(args.elf)
     try:
         rules = filters(args.specs, args.s)
     except ValueError as error:
@@ -139,6 +144,9 @@ def main(argv: list[str] | None = None) -> int:
     def emit(record: Record | None) -> None:
         if record is not None and accepted(record, rules):
             print(format_record(record, args.v), flush=True)
+            if decoder is not None:
+                for symbol in decoder.decode(record.message):
+                    print(f"  {symbol}", flush=True)
 
     try:
         if not args.serial and args.socket.exists():

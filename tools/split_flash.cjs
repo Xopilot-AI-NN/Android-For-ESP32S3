@@ -16,4 +16,9 @@ const segments = [
   fs.writeFileSync(path.join(output, file), bytes);
   return {file, offset, length: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex')};
 });
-fs.writeFileSync(path.join(output, 'manifest.json'), JSON.stringify({chip: 'esp32s3', flashSize: 4194304, bootloaderProvider: 'espflash ESP-IDF second stage', segments}, null, 2) + '\n');
+// Symbolication is meaningful only with the exact ELF that produced these segments.
+const elf = path.join(output, 'firmware.elf');
+const debugSymbols = fs.existsSync(elf) ? {
+  file: 'firmware.elf', sha256: crypto.createHash('sha256').update(fs.readFileSync(elf)).digest('hex'),
+} : undefined;
+fs.writeFileSync(path.join(output, 'manifest.json'), JSON.stringify({chip: 'esp32s3', flashSize: 4194304, bootloaderProvider: 'espflash ESP-IDF second stage', segments, debugSymbols}, null, 2) + '\n');
