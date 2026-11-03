@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Модуль настольного отображения и ввода.
 """AOSP Wear OS USB Desktop Display v3.1.
 
 When usb_block_server.py is active, this viewer NEVER opens /dev/ttyACM*.
@@ -30,12 +31,16 @@ try:
 except ImportError:  # Windows
     termios = None
 
+# Параметр LOGICAL_W компонента настольного отображения и ввода.
 LOGICAL_W = 240
+# Параметр LOGICAL_H компонента настольного отображения и ввода.
 LOGICAL_H = 280
+# Параметр ESPRESSIF_VID компонента настольного отображения и ввода.
 ESPRESSIF_VID = 0x303A
 
 
 
+# Возвращает путь Unix-сокета локального просмотрщика.
 def default_viewer_socket() -> Path:
     runtime = os.environ.get("XDG_RUNTIME_DIR")
     if runtime and os.path.isdir(runtime):
@@ -44,6 +49,7 @@ def default_viewer_socket() -> Path:
     return Path(f"/tmp/aosp-wear-viewer-{uid}.sock")
 
 
+# Перечисляет последовательные порты, похожие на ESP32-S3.
 def list_candidate_ports() -> list[str]:
     ports = list(serial.tools.list_ports.comports())
     esp = []
@@ -61,11 +67,13 @@ def list_candidate_ports() -> list[str]:
     return esp + preferred + fallback
 
 
+# Выбирает порт по явному имени или обнаруженным кандидатам.
 def find_port() -> str | None:
     ports = list_candidate_ports()
     return ports[0] if ports else None
 
 
+# Отключает HUPCL, чтобы закрытие порта не сбрасывало плату.
 def _disable_hupcl(ser: serial.Serial) -> None:
     if termios is None or os.name != "posix":
         return
@@ -77,6 +85,7 @@ def _disable_hupcl(ser: serial.Serial) -> None:
         pass
 
 
+# Открывает порт без изменения линий сброса платы.
 def open_no_reset(port: str) -> serial.Serial:
     ser = serial.Serial()
     ser.baudrate = 115200
@@ -101,6 +110,7 @@ def open_no_reset(port: str) -> serial.Serial:
 class BridgeLink:
     """Viewer link that never touches the ESP serial device."""
 
+    # Создаёт объект и подготавливает принадлежащие ему буферы/подключения.
     def __init__(self, path: Path, messages: queue.Queue[str]):
         self.path = path
         self.messages = messages
@@ -110,6 +120,7 @@ class BridgeLink:
         self.thread = threading.Thread(target=self._worker, name="zw-viewer-bridge", daemon=True)
         self.thread.start()
 
+    # Передаёт данные по существующему соединению.
     def send(self, line: str) -> None:
         try:
             self.outbox.put_nowait(line)
@@ -123,10 +134,12 @@ class BridgeLink:
             except queue.Full:
                 pass
 
+    # Закрывает активный режим и освобождает связанные временные состояния.
     def close(self) -> None:
         self.stop_event.set()
         self.thread.join(timeout=0.8)
 
+    # Обслуживает чтение/запись в фоновом потоке без блокировки GUI.
     def _worker(self) -> None:
         sock: socket.socket | None = None
         rx = bytearray()
@@ -218,6 +231,7 @@ class BridgeLink:
 class SerialLink:
     """Direct no-reset serial link used when no PC-block bridge is active."""
 
+    # Создаёт объект и подготавливает принадлежащие ему буферы/подключения.
     def __init__(self, requested_port: str | None, messages: queue.Queue[str]):
         self.requested_port = requested_port
         self.messages = messages
@@ -227,6 +241,7 @@ class SerialLink:
         self.thread = threading.Thread(target=self._worker, name="zw-usb-link", daemon=True)
         self.thread.start()
 
+    # Передаёт данные по существующему соединению.
     def send(self, line: str) -> None:
         try:
             self.outbox.put_nowait(line)
@@ -240,16 +255,19 @@ class SerialLink:
             except queue.Full:
                 pass
 
+    # Закрывает активный режим и освобождает связанные временные состояния.
     def close(self) -> None:
         self.stop_event.set()
         self.thread.join(timeout=0.8)
 
+    # Выбирает порт для очередной попытки подключения.
     def _pick_port(self) -> str | None:
         if self.requested_port and os.path.exists(self.requested_port):
             return self.requested_port
         auto = find_port()
         return auto or self.requested_port
 
+    # Обслуживает чтение/запись в фоновом потоке без блокировки GUI.
     def _worker(self) -> None:
         ser: serial.Serial | None = None
         rx = bytearray()
@@ -347,11 +365,14 @@ class SerialLink:
                 pass
 
     @staticmethod
+    # Кодирует и отправляет строку настольного протокола.
     def _write_line(ser: serial.Serial, line: str) -> None:
         ser.write((line + "\n").encode("utf-8"))
 
 
+# Структура данных компонента настольного отображения и ввода.
 class WatchViewer:
+    # Создаёт объект и подготавливает принадлежащие ему буферы/подключения.
     def __init__(self, root: tk.Tk, link, scale: float):
         self.root = root
         self.link = link
@@ -422,9 +443,11 @@ class WatchViewer:
         self.root.after(20, self.pump)
         self.root.after(500, self.health_tick)
 
+    # Переводит логические координаты в координаты области просмотра.
     def p(self, x: float, y: float) -> tuple[float, float]:
         return self.ox + x * self.scale, self.oy + y * self.scale
 
+    # Рисует фон эмуляции физического экрана.
     def draw_screen_bg(self):
         self.canvas.delete("all")
         x0, y0 = self.p(0, 0)
@@ -432,6 +455,7 @@ class WatchViewer:
         r = 34 * self.scale
         self.round_rect(x0, y0, x1, y1, r, fill="#000000", outline="#4a4d52", width=2)
 
+    # Рисует прямоугольник со скруглёнными краями.
     def round_rect(self, x1, y1, x2, y2, r, **kwargs):
         points = [
             x1+r,y1, x2-r,y1, x2,y1, x2,y1+r,
@@ -440,14 +464,17 @@ class WatchViewer:
         ]
         return self.canvas.create_polygon(points, smooth=True, **kwargs)
 
+    # Рисует строку с горизонтальным центрированием.
     def text_center(self, y: int, text: str, size: int, color="#f1f3f4", weight="normal"):
         x, py = self.p(LOGICAL_W / 2, y)
         self.canvas.create_text(x, py, text=text, fill=color, font=("Sans", max(8, int(size * self.scale)), weight), anchor="n")
 
+    # Выводит строку с выравниванием по левому краю.
     def text_left(self, x: int, y: int, text: str, size: int, color="#f1f3f4"):
         px, py = self.p(x, y)
         self.canvas.create_text(px, py, text=text, fill=color, font=("Sans", max(8, int(size * self.scale))), anchor="nw")
 
+    # Рисует эмблему загрузочного экрана.
     def mark(self):
         colors = ("#4285f4", "#ea4335", "#34a853", "#fbbc05")
         rects = ((91,62,120,72),(120,62,149,72),(91,72,120,82),(120,72,149,82))
@@ -456,6 +483,7 @@ class WatchViewer:
             self.canvas.create_rectangle(*a, *b, fill=c, outline=c)
         self.text_center(88, "Z", 38, "white", "bold")
 
+    # Рисует текущую фазу индикатора ожидания.
     def spinner(self, phase: int):
         pts = [(120,214),(136,208),(142,192),(136,176),(120,170),(104,176),(98,192),(104,208)]
         for i, (x,y) in enumerate(pts):
@@ -464,6 +492,7 @@ class WatchViewer:
             color = "#f1f3f4" if i == phase % 8 else "#5f6368"
             self.canvas.create_oval(px-rr, py-rr, px+rr, py+rr, fill=color, outline="")
 
+    # Формирует или выводит кадр текущего состояния.
     def render(self, state: tuple[str, ...]):
         self.last_state = state
         self.draw_screen_bg()
@@ -496,6 +525,7 @@ class WatchViewer:
             self.text_center(165, detail, 12, "#9aa0a6")
 
 
+    # Возвращает палитру темы Material для настольного просмотра.
     def m3_palette(self, idx: int):
         palettes = [
             dict(bg="#0a120d", surface="#141e18", high="#1e2b23", primary="#7edfa4", on_primary="#00391d", pc="#145130", on_pc="#9efbc1", secondary="#34463b", on="#e0e9e1", muted="#becac1", outline="#89958c", error="#ffb4ab"),
@@ -505,14 +535,17 @@ class WatchViewer:
         ]
         return palettes[idx % len(palettes)]
 
+    # Рисует скруглённую Material-подложку.
     def m3_rr(self, x, y, w, h, r, fill, outline=""):
         a = self.p(x, y); b = self.p(x + w, y + h)
         return self.round_rect(a[0], a[1], b[0], b[1], r * self.scale, fill=fill, outline=outline)
 
+    # Рисует Material-круг в логических координатах.
     def m3_circle(self, cx, cy, r, fill):
         x, y = self.p(cx, cy); rr = r * self.scale
         self.canvas.create_oval(x-rr, y-rr, x+rr, y+rr, fill=fill, outline="")
 
+    # Воспроизводит доступные поля Material-кадра в настольном просмотрщике.
     def render_m3(self, state: tuple[str, ...]):
         vals = list(state[1:]) + ["0"] * 30
         try:
@@ -532,6 +565,7 @@ class WatchViewer:
         self.canvas.delete("all")
         self.m3_rr(0, 0, 240, 280, 34, t["bg"], outline="#35363a")
 
+        # Возвращает или выводит текст согласно назначению текущего компонента.
         def text(x, y, value, size=12, color=None, bold=False, center=False):
             px, py = self.p(x, y)
             self.canvas.create_text(
@@ -540,47 +574,57 @@ class WatchViewer:
                 anchor="n" if center else "nw"
             )
 
+        # Рисует заголовок в общей области под строкой состояния.
         def title(value):
             text(120, 12, value, 11, t["on"], True, True)
 
+        # Рисует отрезок заданной толщины.
         def line(x0,y0,x1,y1,color,width=2):
             a=self.p(x0,y0); b=self.p(x1,y1)
             self.canvas.create_line(a[0],a[1],b[0],b[1],fill=color,width=max(1,int(width*self.scale)),capstyle="round")
 
+        # Рисует пиктограмму Wi-Fi.
         def icon_wifi(cx,cy,color):
             line(cx-12,cy-6,cx,cy-12,color); line(cx,cy-12,cx+12,cy-6,color)
             line(cx-8,cy,cx,cy-4,color); line(cx,cy-4,cx+8,cy,color)
             line(cx-4,cy+6,cx,cy+4,color); line(cx,cy+4,cx+4,cy+6,color)
             self.m3_circle(cx,cy+10,2,color)
 
+        # Рисует пиктограмму Bluetooth.
         def icon_bt(cx,cy,color):
             line(cx,cy-13,cx,cy+13,color)
             line(cx,cy-13,cx+8,cy-5,color); line(cx+8,cy-5,cx-7,cy+7,color)
             line(cx-7,cy-7,cx+8,cy+5,color); line(cx+8,cy+5,cx,cy+13,color)
 
+        # Рисует пиктограмму «Не беспокоить».
         def icon_dnd(cx,cy,color):
             x,y=self.p(cx,cy); r=12*self.scale
             self.canvas.create_oval(x-r,y-r,x+r,y+r,outline=color,width=max(1,int(2*self.scale)))
             line(cx-7,cy,cx+7,cy,color,3)
 
+        # Рисует пиктограмму авиарежима.
         def icon_air(cx,cy,color):
             line(cx-13,cy,cx+13,cy,color,3); line(cx+3,cy,cx-3,cy-9,color,3); line(cx+3,cy,cx-3,cy+9,color,3)
 
+        # Рисует пиктограмму яркости.
         def icon_sun(cx,cy,color):
             x,y=self.p(cx,cy); r=7*self.scale
             self.canvas.create_oval(x-r,y-r,x+r,y+r,outline=color,width=max(1,int(2*self.scale)))
             for a,b,c,d in ((0,-14,0,-10),(0,10,0,14),(-14,0,-10,0),(10,0,14,0)):
                 line(cx+a,cy+b,cx+c,cy+d,color,2)
 
+        # Рисует пиктограмму часов.
         def icon_clock(cx,cy,color):
             x,y=self.p(cx,cy); r=12*self.scale
             self.canvas.create_oval(x-r,y-r,x+r,y+r,outline=color,width=max(1,int(2*self.scale)))
             line(cx,cy,cx,cy-7,color); line(cx,cy,cx+6,cy+3,color)
 
+        # Рисует пиктограмму уведомлений.
         def icon_bell(cx,cy,color):
             self.m3_circle(cx,cy,10,color); self.m3_circle(cx,cy,7,t["surface"])
             self.m3_rr(cx-10,cy,20,9,4,color); self.m3_circle(cx,cy+12,2,color)
 
+        # Рисует пиктограмму настроек.
         def icon_settings(cx,cy,color):
             x,y=self.p(cx,cy); r=9*self.scale
             self.canvas.create_oval(x-r,y-r,x+r,y+r,outline=color,width=max(1,int(3*self.scale)))
@@ -588,6 +632,7 @@ class WatchViewer:
             for a,b,c,d in ((0,-15,0,-10),(0,10,0,15),(-15,0,-10,0),(10,0,15,0)):
                 line(cx+a,cy+b,cx+c,cy+d,color,3)
 
+        # Рисует пиктограмму медиаплеера.
         def icon_media(cx,cy,color):
             # Compact Material play/media glyph.
             for i in range(13):
@@ -595,20 +640,24 @@ class WatchViewer:
                 line(cx-6+i,cy-half,cx-6+i,cy+half,color,2)
             line(cx-11,cy+13,cx+11,cy+13,color,2)
 
+        # Рисует пиктограмму сведений.
         def icon_info(cx,cy,color):
             x,y=self.p(cx,cy); r=12*self.scale
             self.canvas.create_oval(x-r,y-r,x+r,y+r,outline=color,width=max(1,int(2*self.scale)))
             self.m3_circle(cx,cy-6,2,color); self.m3_rr(cx-2,cy-1,4,10,2,color)
 
+        # Рисует пиктограмму сетки приложений.
         def icon_grid(cx,cy,color):
             for yy in (-7,0,7):
                 for xx in (-7,0,7): self.m3_circle(cx+xx,cy+yy,2,color)
 
+        # Рисует пиктограмму ассистента.
         def icon_assistant(cx,cy,color):
             line(cx,cy-13,cx,cy+13,color,2); line(cx-13,cy,cx+13,cy,color,2)
             line(cx-8,cy-8,cx+8,cy+8,color,2); line(cx-8,cy+8,cx+8,cy-8,color,2)
             self.m3_circle(cx,cy,3,color)
 
+        # Выбирает и рисует пиктограмму по стабильному ID приложения.
         def app_icon(index,cx,cy,color):
             if index==0: icon_clock(cx,cy,color)
             elif index==1: icon_media(cx,cy,color)
@@ -620,23 +669,28 @@ class WatchViewer:
 
         app_accents=("#b5e8d3","#ffbfab","#aecbff","#66ddcd","#dabeff","#7ee1a5","#323b36")
 
+        # Рисует пиктограмму возврата.
         def icon_back(cx,cy,color):
             line(cx+8,cy,cx-8,cy,color,3); line(cx-8,cy,cx-1,cy-7,color,3); line(cx-8,cy,cx-1,cy+7,color,3)
 
+        # Рисует пиктограмму блокировки.
         def icon_lock(cx,cy,color):
             self.m3_rr(cx-9,cy-1,18,15,4,color)
             x,y=self.p(cx,cy-5); r=7*self.scale
             self.canvas.create_oval(x-r,y-r,x+r,y+r,outline=color,width=max(1,int(2*self.scale)))
 
+        # Рисует пиктограмму звука.
         def icon_sound(cx,cy,color):
             self.m3_rr(cx-11,cy-4,6,8,1,color)
             line(cx-5,cy-4,cx+2,cy-10,color,3); line(cx-5,cy+4,cx+2,cy+10,color,3)
             line(cx+6,cy-7,cx+10,cy,color,2); line(cx+10,cy,cx+6,cy+7,color,2)
 
+        # Рисует пиктограмму специальных возможностей.
         def icon_person(cx,cy,color):
             self.m3_circle(cx,cy-8,4,color); line(cx,cy-2,cx,cy+10,color,3)
             line(cx-9,cy+2,cx+9,cy+2,color,3); line(cx,cy+10,cx-7,cy+15,color,3); line(cx,cy+10,cx+7,cy+15,color,3)
 
+        # Выбирает значок по смыслу системной строки меню.
         def row_icon(label,cx,cy,color):
             if label in ("CONNECTIVITY","WI-FI"): icon_wifi(cx,cy,color)
             elif label=="BLUETOOTH": icon_bt(cx,cy,color)
@@ -653,6 +707,7 @@ class WatchViewer:
             elif label=="BACK": icon_back(cx,cy,color)
             else: self.m3_circle(cx,cy,3,color)
 
+        # Рисует одну строку меню с фокусом.
         def row(y, label, selected):
             x,w,h,r = (5,230,50,25) if selected else (17,206,42,21)
             bg=t["pc"] if selected else t["surface"]
@@ -663,11 +718,13 @@ class WatchViewer:
             size = 7 if len(label) > 14 else (8 if len(label)>10 else 10)
             text(x+46,y+(15 if size<=8 else 11),label,size,fg,selected)
 
+        # Рисует переключатель с актуальным положением.
         def toggle(x,y,on):
             bg=t["primary"] if on else t["high"]
             self.m3_rr(x,y,42,24,12,bg)
             self.m3_circle(x+(30 if on else 12),y+12,8,t["on_primary"] if on else t["muted"])
 
+        # Рисует кнопку быстрых настроек.
         def qbutton(cx,cy,label,on,selected):
             w,h=(92,54) if selected else (82,48)
             bg=t["primary"] if on else (t["pc"] if selected else t["high"])
@@ -677,6 +734,7 @@ class WatchViewer:
             {"WIFI":icon_wifi,"BT":icon_bt,"DND":icon_dnd,"AIR":icon_air,"LIGHT":icon_sun,"SET":icon_settings}.get(label,lambda x,y,c:self.m3_circle(x,y,7,c))(ix,cy,fg)
             text(cx-2,cy-5,label,7,fg,True)
 
+        # Рисует информационный блок интерфейса.
         def info(y,a,b,active=False):
             self.m3_rr(16,y,208,52,26,t["pc"] if active else t["surface"])
             self.m3_circle(42,y+26,10,t["primary"] if active else t["high"])
@@ -878,6 +936,7 @@ class WatchViewer:
             text(25,34,preview,11 if wifi_password_len else 7,t["on"] if wifi_password_len else t["outline"],False,False)
             self.m3_circle(211,41,5,t["pc"]); self.m3_circle(211,41,2,t["primary"])
 
+            # Возвращает символ старого формата клавиатуры.
             def kbchar(x,y,w,h,ch,index):
                 sel=(selected==index); yy=y-3 if sel else y; hh=h+6 if sel else h
                 self.m3_rr(x,yy,w,hh,8,t["primary"] if sel else t["high"])
@@ -903,6 +962,7 @@ class WatchViewer:
             n=len(chars)
             page_key="#+=" if page==2 else "123" if page==3 else ("abc" if page==1 else "SHIFT")
             alpha_key="ABC" if page in (2,3) else "123"
+            # Возвращает подпись служебной клавиши старого формата.
             def kbaction(x,y,w,h,label,index):
                 sel=(selected==index); self.m3_rr(x,y,w,h,8,t["primary"] if sel else t["high"]); text(x+w/2,y+9,label,7,t["on_primary"] if sel else t["on"],True,True)
             kbaction(6,188,50,31,page_key,n); kbaction(60,188,42,31,alpha_key,n+1); kbaction(106,188,74,31,"SPACE",n+2); kbaction(184,188,50,31,"DEL",n+3)
@@ -939,12 +999,14 @@ class WatchViewer:
             title("WEAR OS")
             text(120,130,"ANDROID 17",12,t["on"],True,True)
 
+    # Добавляет запись в текстовый журнал GUI.
     def append_log(self, text: str):
         self.log.configure(state="normal")
         self.log.insert("end", text + "\n")
         self.log.see("end")
         self.log.configure(state="disabled")
 
+    # Разбирает очередную строку протокола часов.
     def handle_line(self, line: str):
         if line.startswith("@HOST|"):
             parts = line.split("|", 3)
@@ -981,6 +1043,7 @@ class WatchViewer:
         if line:
             self.append_log(line)
 
+    # Переносит события фонового чтения в поток GUI.
     def pump(self):
         try:
             while True:
@@ -989,6 +1052,7 @@ class WatchViewer:
             pass
         self.root.after(20, self.pump)
 
+    # Проверяет активность канала и планирует очередной опрос.
     def health_tick(self):
         now = time.monotonic()
         if self.connected and self.last_pong and now - self.last_pong > 3.0:
@@ -996,11 +1060,13 @@ class WatchViewer:
             self.status.configure(text=f"ESP32-S3 • {port} • USB open, waiting for board")
         self.root.after(500, self.health_tick)
 
+    # Закрывает активный режим и освобождает связанные временные состояния.
     def close(self):
         self.link.close()
         self.root.destroy()
 
 
+# Разбирает параметры запуска и выполняет основной сценарий утилиты.
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", help="preferred CDC port for direct-serial mode, e.g. /dev/ttyACM0")

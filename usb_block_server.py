@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Модуль обслуживания блочных USB-запросов часов.
 """Serve a raw AOSP Wear OS GPT image over ESP32-S3 USB-Serial-JTAG.
 
 The serial device has exactly one owner: this process.  A desktop viewer attaches
@@ -28,6 +29,7 @@ except ImportError:
 
 
 @contextmanager
+# Открывает образ с блокировкой против параллельного владельца.
 def locked_image(image_path: Path, mode: str):
     # Acquire before opening the image: the builder may atomically replace it.
     with image_path.with_suffix(image_path.suffix + ".lock").open("a+b") as lock:
@@ -40,7 +42,9 @@ def locked_image(image_path: Path, mode: str):
         with image_path.open(mode, buffering=0) as disk:
             yield disk
 
+# Размер логического сектора, байт.
 SECTOR = 512
+# Параметр PREFIX компонента обслуживания блочных USB-запросов часов.
 PREFIX = b"@ZBLK|"
 
 try:
@@ -49,6 +53,7 @@ except ImportError:  # non-POSIX
     termios = None
 
 
+# Возвращает путь Unix-сокета локального просмотрщика.
 def default_viewer_socket() -> Path:
     runtime = os.environ.get("XDG_RUNTIME_DIR")
     if runtime and os.path.isdir(runtime):
@@ -57,6 +62,7 @@ def default_viewer_socket() -> Path:
     return Path(f"/tmp/aosp-wear-viewer-{uid}.sock")
 
 
+# Выбирает доступный последовательный порт ESP32-S3.
 def auto_port() -> str:
     candidates: list[str] = []
     for pattern in ("/dev/ttyACM*", "/dev/ttyUSB*"):
@@ -66,6 +72,7 @@ def auto_port() -> str:
     return candidates[0]
 
 
+# Отключает HUPCL, чтобы закрытие порта не сбрасывало плату.
 def _disable_hupcl(ser) -> None:
     if termios is None or os.name != "posix":
         return
@@ -77,6 +84,7 @@ def _disable_hupcl(ser) -> None:
         pass
 
 
+# Открывает последовательный порт с параметрами протокола проекта.
 def open_serial(port: str, timeout: float):
     try:
         import serial  # type: ignore
@@ -115,6 +123,7 @@ def open_serial(port: str, timeout: float):
 class ViewerBridge:
     """Small local line-oriented fanout/broker for desktop_viewer.py."""
 
+    # Создаёт объект и подготавливает принадлежащие ему буферы/подключения.
     def __init__(self, path: Path):
         self.path = path
         self.commands: queue.Queue[str] = queue.Queue(maxsize=128)
@@ -124,6 +133,7 @@ class ViewerBridge:
         self.logs = LogBuffer()
         self.thread = threading.Thread(target=self._run, name="aosp-wear-viewer-bridge", daemon=True)
 
+    # Подготавливает запуск компонента и его исходное состояние.
     def start(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
@@ -132,6 +142,7 @@ class ViewerBridge:
             pass
         self.thread.start()
 
+    # Закрывает активный режим и освобождает связанные временные состояния.
     def close(self) -> None:
         self.stop_event.set()
         # Wake selector/accept without touching the serial device.
@@ -154,12 +165,14 @@ class ViewerBridge:
         except FileNotFoundError:
             pass
 
+    # Забирает следующую команду от подключённых клиентов моста.
     def pop_command(self) -> str | None:
         try:
             return self.commands.get_nowait()
         except queue.Empty:
             return None
 
+    # Рассылает подготовленную строку клиентам локального моста.
     def broadcast(self, line: str) -> None:
         payload = (line.rstrip("\r\n") + "\n").encode("utf-8", errors="replace")
         dead: list[socket.socket] = []
@@ -176,12 +189,14 @@ class ViewerBridge:
                 except OSError:
                     pass
 
+    # Добавляет запись в историю и отправляет подписанным клиентам.
     def publish_log(self, line: str) -> None:
         with self.clients_lock:
             record = self.logs.add(line)
         if record is not None:
             self.broadcast(record.wire())
 
+    # Обрабатывает запросы чтения, очистки и подписки на журнал.
     def _log_command(self, client: socket.socket, line: str) -> bool:
         # These commands stay on the host; never send them into the disk link.
         if not line.startswith("@ZLOG|"):
@@ -203,6 +218,7 @@ class ViewerBridge:
                 pass
         return True
 
+    # Проверяет и ставит клиентскую команду в очередь к часам.
     def _queue_command(self, line: str) -> None:
         line = line.strip("\r\n")
         if not line:
@@ -220,6 +236,7 @@ class ViewerBridge:
             except queue.Full:
                 pass
 
+    # Обслуживает клиентские соединения локального сервера.
     def _run(self) -> None:
         selector = selectors.DefaultSelector()
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -292,6 +309,7 @@ class ViewerBridge:
             selector.close()
 
 
+# Читает ровно требуемое количество байтов или возвращает ошибку.
 def read_exact(ser, count: int, timeout_budget: int = 50) -> bytes:
     out = bytearray()
     empty_reads = 0
@@ -324,16 +342,19 @@ def write_all(ser, payload: bytes) -> None:
         sent += n
 
 
+# Отправляет одну строку с разделителем протокола.
 def send_line(ser, text: str) -> None:
     write_all(ser, text.encode("ascii") + b"\r\n")
     ser.flush()
 
 
+# Сохраняет код ошибки текущей операции.
 def fail(ser, message: str) -> None:
     safe = message.replace("|", "/").replace("\r", " ").replace("\n", " ")
     send_line(ser, f"@ZBLK|FAIL|{safe}")
 
 
+# Обслуживает блочные запросы часов до завершения соединения.
 def serve(
     port: str,
     image_path: Path,
@@ -494,6 +515,7 @@ def serve(
             bridge.close()
 
 
+# Разбирает параметры запуска и выполняет основной сценарий утилиты.
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", help="serial device; default: first /dev/ttyACM* or /dev/ttyUSB*")

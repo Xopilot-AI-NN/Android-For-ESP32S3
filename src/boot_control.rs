@@ -1,37 +1,47 @@
+// Модуль метаданных слотов A/B.
 use embedded_sdmmc::BlockDevice;
 
 use crate::gpt::{self, Partition};
 
+/// Сигнатура формата BOOT_CTRL для проверки заголовка.
 const BOOT_CTRL_MAGIC: u32 = 0x4241_4342;
+/// Версия двоичного формата BOOT_CTRL.
 const BOOT_CTRL_VERSION: u8 = 1;
+/// Смещение метаданных A/B внутри служебного раздела, байт.
 const BOOT_CTRL_OFFSET: u64 = 2048;
+/// Исходный запас неподтверждённых попыток запуска слота.
 const DEFAULT_TRIES: u8 = 7;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Выбор загрузочного слота A/B компонента метаданных слотов A/B.
 pub enum Slot {
     A,
     B,
 }
 
 impl Slot {
+    /// Возвращает суффикс имени раздела для слота A/B.
     pub fn suffix(self) -> &'static str {
         match self {
             Slot::A => "_a",
             Slot::B => "_b",
         }
     }
+    /// Возвращает строковое представление значения.
     pub fn as_str(self) -> &'static str {
         match self {
             Slot::A => "a",
             Slot::B => "b",
         }
     }
+    /// Возвращает противоположный слот A/B.
     pub fn other(self) -> Self {
         match self {
             Slot::A => Slot::B,
             Slot::B => Slot::A,
         }
     }
+    /// Находит индекс существующей записи по полному пути.
     fn index(self) -> usize {
         match self {
             Slot::A => 0,
@@ -41,14 +51,20 @@ impl Slot {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
+/// Структура данных компонента метаданных слотов A/B.
 struct SlotMeta {
+    /// Приоритет выбора слота.
     priority: u8,
+    /// Оставшиеся неподтверждённые попытки запуска слота.
     tries_remaining: u8,
+    /// Признак уже подтверждённой успешной загрузки.
     successful_boot: bool,
+    /// Флаг нарушения проверки целостности, полученный при загрузке.
     verity_corrupted: bool,
 }
 
 impl SlotMeta {
+    /// Проверяет приоритет, успешность и оставшиеся попытки загрузки слота.
     fn bootable(self) -> bool {
         self.priority != 0
             && !self.verity_corrupted
@@ -57,18 +73,23 @@ impl SlotMeta {
 }
 
 #[derive(Clone, Copy, Debug)]
+/// Проверенные метаданные управления слотами компонента метаданных слотов A/B.
 pub struct BootControl {
+    /// Текущее выбранное значение или слот.
     current: Slot,
+    /// Количество адресуемых страниц или слотов.
     slots: [SlotMeta; 2],
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Ошибки операций компонента метаданных слотов A/B.
 pub enum BootControlError {
     Io,
     Invalid,
 }
 
 impl BootControl {
+    /// Читает метаданные A/B либо создаёт допустимое начальное состояние.
     pub fn load_or_init<D: BlockDevice>(
         dev: &D,
         misc: Partition,
@@ -86,10 +107,12 @@ impl BootControl {
         }
     }
 
+    /// Проверяет, разрешена ли загрузка выбранного слота.
     pub fn is_bootable(&self, slot: Slot) -> bool {
         self.slots[slot.index()].bootable()
     }
 
+    /// Выбирает пригодный слот с учётом приоритета и попыток.
     pub fn preferred_slot(&self) -> Option<Slot> {
         let a = self.slots[0];
         let b = self.slots[1];
@@ -107,6 +130,7 @@ impl BootControl {
         }
     }
 
+    /// Отмечает начало загрузки и уменьшает счётчик неподтверждённых попыток.
     pub fn begin_attempt<D: BlockDevice>(
         &mut self,
         dev: &D,
@@ -121,6 +145,7 @@ impl BootControl {
         self.store(dev, misc)
     }
 
+    /// Помечает слот непригодным после подтверждённой ошибки.
     pub fn mark_unbootable<D: BlockDevice>(
         &mut self,
         dev: &D,
@@ -134,6 +159,7 @@ impl BootControl {
         self.store(dev, misc)
     }
 
+    /// Отмечает выбранный слот как успешно загрузившийся.
     pub fn mark_successful<D: BlockDevice>(
         &mut self,
         dev: &D,
@@ -150,6 +176,7 @@ impl BootControl {
         self.store(dev, misc)
     }
 
+    /// Создаёт начальные метаданные A/B.
     fn default_state() -> Self {
         Self {
             current: Slot::A,
@@ -170,6 +197,7 @@ impl BootControl {
         }
     }
 
+    /// Проверяет двоичное представление и восстанавливает типизированные данные.
     fn decode(raw: &[u8; 32]) -> Result<Self, BootControlError> {
         let expected_crc = u32::from_le_bytes([raw[28], raw[29], raw[30], raw[31]]);
         if gpt::crc32(&raw[..28]) != expected_crc {
@@ -198,6 +226,7 @@ impl BootControl {
         Ok(Self { current, slots })
     }
 
+    /// Преобразует состояние в формат хранения или передачи.
     fn encode(&self) -> [u8; 32] {
         let mut raw = [0u8; 32];
         let suffix = self.current.suffix().as_bytes();
@@ -216,6 +245,7 @@ impl BootControl {
         raw
     }
 
+    /// Записывает проверенные метаданные в предназначенную область.
     fn store<D: BlockDevice>(&self, dev: &D, misc: Partition) -> Result<(), BootControlError> {
         let raw = self.encode();
         gpt::write_partition(dev, misc, BOOT_CTRL_OFFSET, &raw).map_err(|_| BootControlError::Io)

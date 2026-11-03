@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Модуль локального отладочного адаптера.
 """AOSP Wear OS Debug Bridge for the no-reset development transport.
 
 The local Unix bridge is still useful while bringing up real wireless ADB.  In
@@ -15,6 +16,7 @@ import sys
 from pathlib import Path
 
 
+# Выбирает путь существующего локального PC-моста.
 def default_socket() -> Path:
     runtime = os.environ.get("XDG_RUNTIME_DIR")
     if runtime:
@@ -22,6 +24,7 @@ def default_socket() -> Path:
     return Path(f"/tmp/aosp-wear-viewer-{os.getuid()}.sock")
 
 
+# Параметр SIMPLE_COMMANDS компонента локального отладочного адаптера.
 SIMPLE_COMMANDS = {
     "getprop": ("@ZADB|GETPROP", "getprop"),
     "services": ("@ZADB|SERVICES", "services"),
@@ -37,6 +40,7 @@ SIMPLE_COMMANDS = {
 }
 
 
+# Преобразует проверенные аргументы CLI в команду протокола проекта.
 def build_command(args: argparse.Namespace) -> tuple[str, str]:
     if args.command == "shell":
         command = " ".join(args.words).encode("utf-8")
@@ -70,6 +74,7 @@ def build_command(args: argparse.Namespace) -> tuple[str, str]:
     raise AssertionError(args.command)
 
 
+# Разбирает параметры запуска и выполняет основной сценарий утилиты.
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "logcat":
         from logcat import main as logcat_main

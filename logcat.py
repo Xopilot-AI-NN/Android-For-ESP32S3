@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Модуль чтения и фильтрации журналов.
 """Watch logs over the existing PC bridge or exclusive, no-reset serial.
 
 Times without a device uptime are host receive times. This is the project's
@@ -16,13 +17,18 @@ import socket
 import time
 from pathlib import Path
 
+# Параметр LEVELS компонента чтения и фильтрации журналов.
 LEVELS = "VDIWEFS"
+# Параметр ANSI компонента чтения и фильтрации журналов.
 ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+# Параметр PROTOCOL компонента чтения и фильтрации журналов.
 PROTOCOL = re.compile(r"^@?(?:ZWUI|ZADB|ZBLK|HOST)\|")
+# Параметр IDF компонента чтения и фильтрации журналов.
 IDF = re.compile(r"^([EWIDV]) \((\d+)\) ([^:]+):\s*(.*)$")
 
 
 @dataclass(frozen=True)
+# Разобранная запись журнала или пользовательского списка компонента чтения и фильтрации журналов.
 class Record:
     received: float
     level: str
@@ -30,10 +36,12 @@ class Record:
     message: str
     uptime_ms: int | None = None
 
+    # Кодирует запись журнала в строку протокола @ZLOG.
     def wire(self) -> str:
         return "@ZLOG|" + json.dumps(self.__dict__, ensure_ascii=False, separators=(",", ":"))
 
     @classmethod
+    # Проверяет и восстанавливает запись журнала из строки @ZLOG.
     def from_wire(cls, line: str) -> Record | None:
         if not line.startswith("@ZLOG|"):
             return None
@@ -43,6 +51,7 @@ class Record:
             return None
 
 
+# Разбирает реальную строку лога, отбрасывая управляющие пакеты и ANSI-коды.
 def parse_record(line: str, received: float | None = None) -> Record | None:
     text = ANSI.sub("", line).strip()
     if not text or PROTOCOL.match(text) or text.startswith("@ZLOG|"):
@@ -63,9 +72,11 @@ def parse_record(line: str, received: float | None = None) -> Record | None:
 
 class LogBuffer:
     """Host-side bounded history; callers synchronize access with bridge lock."""
+    # Создаёт объект и подготавливает принадлежащие ему буферы/подключения.
     def __init__(self) -> None:
         self.records: deque[Record] = deque(maxlen=128)
 
+    # Добавляет разобранную запись в ограниченную историю.
     def add(self, line: str) -> Record | None:
         record = parse_record(line)
         if record is not None:
@@ -73,6 +84,7 @@ class LogBuffer:
         return record
 
 
+# Проверяет фильтры тегов и уровней журнала.
 def filters(specs: list[str], silent: bool) -> dict[str, str]:
     result = {"*": "S" if silent else "I"}
     for spec in specs:
@@ -84,11 +96,13 @@ def filters(specs: list[str], silent: bool) -> dict[str, str]:
     return result
 
 
+# Сверяет запись с выбранным порогом уровня и тегом.
 def accepted(record: Record, rules: dict[str, str]) -> bool:
     threshold = rules.get(record.tag, rules["*"])
     return threshold != "S" and LEVELS.index(record.level) >= LEVELS.index(threshold)
 
 
+# Форматирует журнал без вымышленных PID/TID устройства.
 def format_record(record: Record, style: str) -> str:
     if style == "raw":
         return record.message
@@ -101,6 +115,7 @@ def format_record(record: Record, style: str) -> str:
     return f"{record.level}/{record.tag}(0): {record.message}"
 
 
+# Разбирает параметры запуска и выполняет основной сценарий утилиты.
 def main(argv: list[str] | None = None) -> int:
     from usb_block_server import auto_port, default_viewer_socket, open_serial
     ap = argparse.ArgumentParser(description=__doc__)
@@ -120,6 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.t is not None and not 1 <= args.t <= 128:
         ap.error("-t must be 1..128")
 
+    # Добавляет запись в журнал или выводит отфильтрованную строку.
     def emit(record: Record | None) -> None:
         if record is not None and accepted(record, rules):
             print(format_record(record, args.v), flush=True)

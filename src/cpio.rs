@@ -1,3 +1,4 @@
+// Модуль чтения файлов CPIO.
 extern crate alloc;
 
 use alloc::{string::String, vec::Vec};
@@ -9,6 +10,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Ошибки операций компонента чтения файлов CPIO.
 pub enum CpioError {
     Io,
     Invalid,
@@ -17,6 +19,7 @@ pub enum CpioError {
     Utf8,
 }
 
+/// Извлекает ограниченный текстовый файл из архива.
 pub fn extract_text<D: BlockDevice>(
     dev: &D,
     super_part: Partition,
@@ -28,6 +31,7 @@ pub fn extract_text<D: BlockDevice>(
     String::from_utf8(data).map_err(|_| CpioError::Utf8)
 }
 
+/// Ищет и читает файл CPIO с проверкой диапазона.
 pub fn extract_file<D: BlockDevice>(
     dev: &D,
     super_part: Partition,
@@ -99,6 +103,7 @@ pub fn locate_file<D: BlockDevice>(
     Err(CpioError::NotFound)
 }
 
+/// Считывает запрошенные данные через интерфейс текущего транспорта.
 fn read<D: BlockDevice>(
     dev: &D,
     super_part: Partition,
@@ -109,6 +114,7 @@ fn read<D: BlockDevice>(
     lp::read_logical(dev, super_part, logical, offset, out).map_err(map_lp)
 }
 
+/// Преобразует ошибку логического раздела в ошибку архива.
 fn map_lp(err: LpError) -> CpioError {
     match err {
         LpError::Io => CpioError::Io,
@@ -116,12 +122,14 @@ fn map_lp(err: LpError) -> CpioError {
     }
 }
 
+/// Нормализует имя пути перед сравнением.
 fn normalize(name: &str) -> &str {
     name.strip_prefix("./")
         .or_else(|| name.strip_prefix('/'))
         .unwrap_or(name)
 }
 
+/// Разбирает 32-битное число из шестнадцатеричных символов.
 fn parse_hex_u32(input: &[u8]) -> Option<u32> {
     let mut value = 0u32;
     for &b in input {
@@ -136,6 +144,7 @@ fn parse_hex_u32(input: &[u8]) -> Option<u32> {
     Some(value)
 }
 
+/// Округляет размер вверх до заданного выравнивания.
 fn align_up(value: u64, align: u64) -> u64 {
     (value + align - 1) & !(align - 1)
 }

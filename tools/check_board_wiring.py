@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
+# Модуль проверки соответствия распиновки исходникам.
 """Source-only pinout regression check. Does not build or flash the board."""
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-boot = (ROOT / "src" / "boot.rs").read_text()
+# Параметр ROOT компонента проверки соответствия распиновки исходникам.
+ROOT = Path(__file__).resolve().parents[2] / "Firmware"
+boot = (ROOT / "src" / "init.rs").read_text()
 config = (ROOT / "src" / "config.rs").read_text()
-display = (ROOT / "src" / "display.rs").read_text()
+display = (ROOT / "src" / "hal" / "display.rs").read_text()
 
 try:
-    tft = boot.split('    #[cfg(all(feature = "display-st7789", not(feature = "display-software-spi")))]\n    let mut physical_display = {', 1)[1].split('    };', 1)[0]
+    tft = boot.split('    #[cfg(all(feature = "display-st7789", not(feature = "display-software-spi")))]\n    let physical_display = {', 1)[1].split('    };', 1)[0]
     sd = boot.split('// SD requires >=74 clocks', 1)[1].split('let device = sd_spi::SdSpiSession::new', 1)[0]
 except IndexError as e:
     raise SystemExit('FAIL: expected TFT/SD initialization block not found') from e

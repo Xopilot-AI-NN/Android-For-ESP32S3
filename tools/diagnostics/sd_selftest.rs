@@ -1,3 +1,4 @@
+// Модуль аппаратной диагностики SD.
 //! Hardware-only SD probe. No filesystem writes, display or radio startup.
 #![no_std]
 #![no_main]
@@ -32,6 +33,7 @@ mod sd_init;
 mod sd_spi;
 esp_bootloader_esp_idf::esp_app_desc!();
 #[main]
+/// Запускает аппаратную SD-диагностику на выделенной распиновке платы.
 fn main() -> ! {
     esp_alloc::heap_allocator!(size:96*1024);
     let p = esp_hal::init(

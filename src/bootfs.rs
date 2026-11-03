@@ -1,3 +1,4 @@
+// Модуль прежнего загрузочного пути FAT.
 extern crate alloc;
 
 use alloc::{
@@ -11,15 +12,20 @@ use sha2::{Digest, Sha256};
 use crate::config::MAX_SCRIPT_BYTES;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Выбор загрузочного слота A/B компонента прежнего загрузочного пути FAT.
 pub enum Slot { A, B }
 
 impl Slot {
+    /// Возвращает имя каталога для выбранного слота.
     pub fn dir(self) -> &'static str { match self { Slot::A => "SLOTA", Slot::B => "SLOTB" } }
+    /// Возвращает противоположный слот A/B.
     pub fn other(self) -> Self { match self { Slot::A => Slot::B, Slot::B => Slot::A } }
+    /// Возвращает строковое представление значения.
     pub fn as_str(self) -> &'static str { match self { Slot::A => "A", Slot::B => "B" } }
 }
 
 #[derive(Debug)]
+/// Ошибки операций компонента прежнего загрузочного пути FAT.
 pub enum BootFsError {
     Card,
     Filesystem,
@@ -32,16 +38,23 @@ pub enum BootFsError {
     HashMismatch,
 }
 
+/// Загруженный слот, версия и входной скрипт компонента прежнего загрузочного пути FAT.
 pub struct SystemImage {
+    /// Выбранный загрузочный слот.
     pub slot: Slot,
+    /// Прочитанная либо ожидаемая версия формата/системы.
     pub version: String,
+    /// Входной скрипт или метаданные текущего элемента.
     pub entry: String,
+    /// Проверенный текст скрипта для запуска.
     pub script: String,
 }
 
 #[derive(Clone, Copy)]
+/// Фиксированное служебное время старого FAT-backend компонента прежнего загрузочного пути FAT.
 struct FixedTime;
 impl TimeSource for FixedTime {
+    /// Возвращает фиксированную служебную дату старого FAT-backend, а не текущее RTC.
     fn get_timestamp(&self) -> Timestamp {
         Timestamp {
             year_since_1970: 56,
@@ -54,6 +67,7 @@ impl TimeSource for FixedTime {
     }
 }
 
+/// Загружает систему через соответствующий транспорт и проверяет её компоненты.
 pub fn load_system<SPI, DELAY>(spi: SPI, delay: DELAY, preferred: Slot) -> Result<SystemImage, BootFsError>
 where
     SPI: SpiDevice<u8>,
@@ -76,6 +90,7 @@ where
     result
 }
 
+/// Проверяет манифест и загружает содержимое указанного слота.
 fn load_slot<D, T, const DIRS: usize, const FILES: usize, const VOLUMES: usize>(
     manager: &VolumeManager<D, T, DIRS, FILES, VOLUMES>,
     root: embedded_sdmmc::RawDirectory,
@@ -107,6 +122,7 @@ where
     result
 }
 
+/// Читает файл с ограничением размера.
 fn read_file<D, T, const DIRS: usize, const FILES: usize, const VOLUMES: usize>(
     manager: &VolumeManager<D, T, DIRS, FILES, VOLUMES>,
     dir: embedded_sdmmc::RawDirectory,
@@ -135,6 +151,7 @@ where
     result
 }
 
+/// Извлекает обязательные поля загрузочного манифеста.
 fn parse_manifest(text: &str) -> Result<(String, String, [u8; 32]), BootFsError> {
     let mut magic_ok = false;
     let mut version: Option<String> = None;
@@ -159,6 +176,7 @@ fn parse_manifest(text: &str) -> Result<(String, String, [u8; 32]), BootFsError>
     Ok((version, entry, sha256))
 }
 
+/// Проверяет и разбирает шестнадцатеричную запись SHA-256.
 fn parse_sha256(s: &str) -> Result<[u8; 32], BootFsError> {
     if s.len() != 64 { return Err(BootFsError::InvalidManifest); }
     let bytes = s.as_bytes();
@@ -171,6 +189,7 @@ fn parse_sha256(s: &str) -> Result<[u8; 32], BootFsError> {
     Ok(out)
 }
 
+/// Преобразует шестнадцатеричный знак в число.
 fn hex(c: u8) -> Option<u8> {
     match c {
         b'0'..=b'9' => Some(c - b'0'),

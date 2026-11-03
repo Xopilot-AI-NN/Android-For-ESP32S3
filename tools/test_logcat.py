@@ -1,3 +1,4 @@
+# Модуль проверок logcat.
 """Exercise real bridge fanout and logcat parsing without a physical TTY."""
 import socket
 import tempfile
@@ -11,8 +12,10 @@ from logcat import LogBuffer, Record, accepted, filters, format_record, parse_re
 from usb_block_server import ViewerBridge
 
 
+# Структура данных компонента проверок logcat.
 class LogcatTests(unittest.TestCase):
     @unittest.skipUnless(os.name == "posix", "requires a POSIX pseudo-terminal")
+    # Проверяет чтение реальных строк serial-logcat и корректное завершение клиента.
     def test_direct_serial_logcat_reads_real_lines_and_exits_cleanly(self):
         import pty
         import select
@@ -39,6 +42,7 @@ class LogcatTests(unittest.TestCase):
             os.close(master)
             os.close(slave)
 
+    # Проверяет уровни ESP-IDF, uptime, Unicode и исключение управляющих пакетов из лога.
     def test_idf_levels_uptime_unicode_and_protocol_exclusion(self):
         r = parse_record("\x1b[31mE (145) sd: CRC failed\x1b[0m", 1.25)
         self.assertEqual((r.level, r.tag, r.uptime_ms), ("E", "sd", 145))
@@ -52,6 +56,7 @@ class LogcatTests(unittest.TestCase):
         self.assertFalse(accepted(russian, filters(["*:W"], False)))
         self.assertTrue(accepted(russian, filters(["settings:I"], True)))
 
+    # Проверяет ограничение длины истории журнала.
     def test_history_is_bounded(self):
         logs = LogBuffer()
         for n in range(300):
@@ -59,6 +64,7 @@ class LogcatTests(unittest.TestCase):
         self.assertEqual(len(logs.records), 128)
         self.assertEqual(logs.records[0].message, "event 172")
 
+    # Проверяет dump/clear/live-логи и отсутствие их отправки как команд плате.
     def test_bridge_dump_clear_live_logs_never_become_board_commands(self):
         with tempfile.TemporaryDirectory() as tmp:
             bridge = ViewerBridge(Path(tmp) / "bridge.sock")
@@ -73,7 +79,7 @@ class LogcatTests(unittest.TestCase):
                     try:
                         client.connect(str(bridge.path))
                         break
-                    except FileNotFoundError:
+                    except (FileNotFoundError, ConnectionRefusedError):
                         if time.monotonic() > deadline:
                             raise
                         time.sleep(0.005)
@@ -95,6 +101,7 @@ class LogcatTests(unittest.TestCase):
             finally:
                 bridge.close()
 
+    # Проверяет настоящую CLI-команду logcat на отфильтрованной истории моста.
     def test_real_logcat_command_dumps_filtered_bridge_history(self):
         with tempfile.TemporaryDirectory() as tmp:
             bridge = ViewerBridge(Path(tmp) / "bridge.sock")

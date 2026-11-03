@@ -1,3 +1,4 @@
+// Модуль init.
 // AOSP Wear OS early userspace entrypoint.
 // Return 0 to mark the boot hand-off successful.
 let api = boot_version();

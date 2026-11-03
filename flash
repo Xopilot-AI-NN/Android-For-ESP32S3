@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Модуль сборки и прошивки часов.
 set -Eeuo pipefail
 DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 exec "$DIR/flash.sh" "$@"

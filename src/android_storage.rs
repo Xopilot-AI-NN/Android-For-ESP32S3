@@ -1,3 +1,4 @@
+// Модуль загрузки Android-подобного образа.
 extern crate alloc;
 
 use alloc::{string::String, string::ToString};
@@ -21,6 +22,7 @@ use crate::{
 };
 
 #[derive(Debug)]
+/// Ошибки операций компонента загрузки Android-подобного образа.
 pub enum AndroidBootError {
     Card,
     #[cfg(all(not(feature = "pc-block-boot"), feature = "sd-checked-startup"))]
@@ -38,6 +40,7 @@ pub enum AndroidBootError {
 }
 
 impl core::fmt::Display for AndroidBootError {
+    /// Форматирует значение для диагностики, не изменяя его.
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Card => f.write_str("card I/O error"),
@@ -57,23 +60,39 @@ impl core::fmt::Display for AndroidBootError {
     }
 }
 
+/// Загруженный слот, версия и входной скрипт компонента загрузки Android-подобного образа.
 pub struct SystemImage {
+    /// Выбранный загрузочный слот.
     pub slot: Slot,
+    /// Прочитанная либо ожидаемая версия формата/системы.
     pub version: String,
+    /// Входной скрипт или метаданные текущего элемента.
     pub entry: &'static str,
+    /// Проверенный текст скрипта для запуска.
     pub script: String,
+    /// Индекс anti-rollback из заголовка AVB.
     pub rollback_index: u64,
+    /// Образ использует неподписанный режим AVB.
     pub avb_unsigned: bool,
 }
 
+/// Структура данных компонента загрузки Android-подобного образа.
 pub struct BootSession<D: BlockDevice> {
+    /// Владелец блочного интерфейса карты.
     card: D,
+    /// Служебный раздел с метаданными A/B.
     misc: Partition,
+    /// Управляющее состояние компонента/протокола.
     control: BootControl,
+    /// Дескриптор загружаемого/тестируемого системного образа.
     pub image: SystemImage,
 }
 
 impl<D: BlockDevice> BootSession<D> {
+    /// Возвращает диск при отказе запуска runtime, не оставляя USB внутри потерянной сессии.
+    pub fn into_block_device(self) -> D { self.card }
+
+    /// Отмечает выбранный слот как успешно загрузившийся.
     pub fn mark_successful(&mut self) -> Result<(), AndroidBootError> {
         self.control
             .mark_successful(&self.card, self.misc, self.image.slot)
@@ -137,6 +156,7 @@ impl<D: BlockDevice> BootSession<D> {
     }
 }
 
+/// Добавляет проверенный компонент к загружаемому системному пакету.
 fn append_component(bundle: &mut String, marker: &str, text: &str) -> Result<(), AndroidBootError> {
     let new_len = bundle
         .len()
@@ -152,6 +172,7 @@ fn append_component(bundle: &mut String, marker: &str, text: &str) -> Result<(),
 }
 
 #[cfg(all(not(feature = "pc-block-boot"), feature = "sd-checked-startup"))]
+/// Загружает систему через соответствующий транспорт и проверяет её компоненты.
 pub fn load_system<BUS, CS, DELAY, PostInit>(
     spi: crate::sd_spi::SdSpiSession<BUS, CS, DELAY>,
     delay: DELAY,
@@ -190,44 +211,54 @@ pub fn load_system<SPI: SpiDevice<u8>, DELAY: DelayNs, PostInit: FnOnce(&SdCard<
 
 /// Load the Android-like system from any synchronous 512-byte block device.
 pub fn load_block_device<D: BlockDevice>(card: D) -> Result<BootSession<D>, AndroidBootError> {
+    load_block_device_recoverable(card).map_err(|(_, error)| error)
+}
+
+/// Сохраняет транспорт при ошибке, чтобы сервисный режим смог повторно использовать USB.
+/// Ошибка GPT/AVB не должна уничтожать единственного владельца периферии.
+pub fn load_block_device_recoverable<D: BlockDevice>(card: D) -> Result<BootSession<D>, (D, AndroidBootError)> {
+    match inspect_device(&card) {
+        Ok((misc, control, image)) => Ok(BootSession { card, misc, control, image }),
+        Err(error) => Err((card, error)),
+    }
+}
+
+/// Читает и проверяет метаданные, не забирая владение диском у вызывающего кода.
+fn inspect_device<D: BlockDevice>(card: &D) -> Result<(Partition, BootControl, SystemImage), AndroidBootError> {
     card.num_blocks().map_err(|_| AndroidBootError::Card)?;
-    if let Err(error) = gpt::probe(&card) {
-        crate::disk_probe::report(&card);
+    if let Err(error) = gpt::probe(card) {
+        crate::disk_probe::report(card);
         return Err(AndroidBootError::Gpt(error));
     }
-    let misc = gpt::find_partition(&card, "misc").map_err(AndroidBootError::Gpt)?;
+    let misc = gpt::find_partition(card, "misc").map_err(AndroidBootError::Gpt)?;
     let mut control =
-        BootControl::load_or_init(&card, misc).map_err(|_| AndroidBootError::BootControl)?;
+        BootControl::load_or_init(card, misc).map_err(|_| AndroidBootError::BootControl)?;
     let preferred = control
         .preferred_slot()
         .ok_or(AndroidBootError::MissingSlot)?;
 
-    let first = try_slot(&card, misc, &mut control, preferred);
+    let first = try_slot(card, misc, &mut control, preferred);
     let image = match first {
         Ok(image) => image,
         Err(first_error) => {
             if should_mark_unbootable(&first_error) {
-                let _ = control.mark_unbootable(&card, misc, preferred);
+                let _ = control.mark_unbootable(card, misc, preferred);
             }
             let fallback = preferred.other();
             if !control.is_bootable(fallback) {
                 return Err(first_error);
             }
-            match try_slot(&card, misc, &mut control, fallback) {
+            match try_slot(card, misc, &mut control, fallback) {
                 Ok(image) => image,
                 Err(_) => return Err(first_error),
             }
         }
     };
 
-    Ok(BootSession {
-        card,
-        misc,
-        control,
-        image,
-    })
+    Ok((misc, control, image))
 }
 
+/// Пытается загрузить один слот, возвращая точную причину отказа.
 fn try_slot<D: BlockDevice>(
     card: &D,
     misc: Partition,
@@ -277,12 +308,14 @@ fn try_slot<D: BlockDevice>(
     })
 }
 
+/// Формирует имя раздела с суффиксом слота.
 fn partition_name(prefix: &str, slot: Slot) -> String {
     let mut out = String::from(prefix);
     out.push_str(slot.suffix());
     out
 }
 
+/// Определяет, следует ли исключить слот после данной ошибки.
 fn should_mark_unbootable(error: &AndroidBootError) -> bool {
     match error {
         #[cfg(all(not(feature = "pc-block-boot"), feature = "sd-checked-startup"))]

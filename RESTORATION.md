@@ -25,7 +25,7 @@ The firmware build properties and local getprop report the same default locale.
 - Official Google Material Symbols Rounded replace the hand-drawn system
   icons, including Wi-Fi, Bluetooth, settings, gestures and media controls.
   [Icon provenance](src/material/symbols/SOURCE.md) and
-  [font provenance](src/material/fonts/SOURCE.md) record the pinned sources
+  [font provenance](../Firmware/src/material/fonts/SOURCE.md) record the pinned sources
   and licenses. Both render offline from checked-in antialiased masks.
 - The follow-up Wear references guide the black background, pastel cyan
   palette, round complication rings with real clock/connection data, large

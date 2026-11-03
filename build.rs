@@ -1,3 +1,5 @@
+// Модуль настройки сборки.
+/// Передаёт линкеру конфигурацию памяти и флаги для ESP32-S3.
 fn main() {
     // esp-hal 1.0.0's empty flash alignment reservation inherits SHF_WRITE.
     // Keep its addresses and NOBITS semantics, but declare the flash gap read-only

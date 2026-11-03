@@ -1,4 +1,20 @@
+# Загрузочная часть и инструменты
+
+Текущее разделение описано в [архитектуре](../ARCHITECTURE.md).
+[Загрузочная библиотека](src/lib.rs) — отдельный Rust crate без приложений, UI и VM.
+Исполняемая прошивка теперь собирается в Firmware. [build_image.sh](build_image.sh)
+создаёт отдельные сегменты ESP-IDF bootloader / partition table / firmware.
+Загрузчик ESP-IDF поставляется espflash; Rust-библиотека читает системный GPT-образ
+при инициализации прошивки. Это разные этапы загрузки.
+
+Следующие разделы сохраняют историю старой объединённой архитектуры.
+
+---
+
 # AOSP Wear OS Bootloader 17.2.1 — Android 17 QPR1 embedded runtime
+
+Комплектующие, действующая распиновка, MPU6050 и питание через
+TP4056/TPS61023: [основной README](../README.md#комплектующие-и-подключение-платы).
 
 Photo-based restoration, BLE media/pairing, clock functions, build outputs and
 validation details: [RESTORATION.md](RESTORATION.md).

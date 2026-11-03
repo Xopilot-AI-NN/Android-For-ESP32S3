@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Модуль создания GPT-образа карты.
 """Build a sparse Android-like microSD image for AOSP Wear OS.
 
 The generated card uses a real GPT and A/B physical boot partitions:
@@ -21,24 +22,35 @@ import uuid
 import zlib
 from pathlib import Path
 
+# Размер логического сектора, байт.
 SECTOR = 512
+# Параметр ALIGN_LBA компонента создания GPT-образа карты.
 ALIGN_LBA = 2048  # 1 MiB
+# Параметр GPT_ENTRIES компонента создания GPT-образа карты.
 GPT_ENTRIES = 128
+# Параметр GPT_ENTRY_SIZE компонента создания GPT-образа карты.
 GPT_ENTRY_SIZE = 128
+# Параметр GPT_ENTRIES_SECTORS компонента создания GPT-образа карты.
 GPT_ENTRIES_SECTORS = GPT_ENTRIES * GPT_ENTRY_SIZE // SECTOR
+# Параметр BASIC_DATA_GUID компонента создания GPT-образа карты.
 BASIC_DATA_GUID = uuid.UUID("EBD0A0A2-B9E5-4433-87C0-68B6B72699C7")
+# Параметр DISK_NAMESPACE компонента создания GPT-образа карты.
 DISK_NAMESPACE = uuid.UUID("adf41d27-a230-4e4e-9af8-6ecb2c31cf65")
+# Сигнатура формата BOOT_CTRL для проверки заголовка.
 BOOT_CTRL_MAGIC = 0x42414342
 
 
+# Округляет размер вверх до заданного выравнивания.
 def align_up(v: int, a: int) -> int:
     return (v + a - 1) // a * a
 
 
+# Кодирует GUID в формате записи GPT.
 def guid_le(g: uuid.UUID) -> bytes:
     return g.bytes_le
 
 
+# Собирает архив в формате CPIO newc с нужным выравниванием.
 def cpio_newc(files: dict[str, bytes]) -> bytes:
     out = bytearray()
     ino = 1
@@ -61,6 +73,7 @@ def cpio_newc(files: dict[str, bytes]) -> bytes:
     return bytes(out)
 
 
+# Создаёт заголовок Android boot v4 и выровненный ramdisk.
 def android_boot_v4(ramdisk: bytes, version: str) -> bytes:
     header = bytearray(4096)
     header[0:8] = b"ANDROID!"
@@ -76,6 +89,7 @@ def android_boot_v4(ramdisk: bytes, version: str) -> bytes:
     return image + b"\0" * ((-len(image)) % 4096)
 
 
+# Создаёт Android vendor_boot v4 с данными проекта.
 def vendor_boot_v4(version: str) -> bytes:
     header = bytearray(4096)
     header[0:8] = b"VNDRBOOT"
@@ -98,6 +112,7 @@ def vendor_boot_v4(version: str) -> bytes:
     return bytes(header)
 
 
+# Формирует AVB-дескриптор хеша раздела.
 def avb_hash_descriptor(partition_name: str, image: bytes, salt: bytes) -> bytes:
     name = partition_name.encode()
     digest = hashlib.sha256(salt + image).digest()
@@ -112,6 +127,7 @@ def avb_hash_descriptor(partition_name: str, image: bytes, salt: bytes) -> bytes
     return struct.pack(">QQ", 2, len(payload)) + payload
 
 
+# Собирает vbmeta с хешами разделов и метаданными AVB.
 def vbmeta_image(images: dict[str, bytes], rollback_index: int = 0) -> bytes:
     descriptors = bytearray()
     for name, image in images.items():
@@ -135,6 +151,7 @@ def vbmeta_image(images: dict[str, bytes], rollback_index: int = 0) -> bytes:
     return bytes(header) + aux
 
 
+# Создаёт начальную структуру управления слотами A/B.
 def boot_control() -> bytes:
     raw = bytearray(32)
     raw[0:3] = b"_a\0"
@@ -147,6 +164,7 @@ def boot_control() -> bytes:
     return bytes(raw)
 
 
+# Создаёт защитный MBR для GPT-носителя.
 def protective_mbr(total_lba: int) -> bytes:
     mbr = bytearray(512)
     count = min(total_lba - 1, 0xFFFFFFFF)
@@ -159,6 +177,7 @@ def protective_mbr(total_lba: int) -> bytes:
     return bytes(mbr)
 
 
+# Собирает одну запись раздела GPT.
 def partition_entry(name: str, first: int, last: int, disk_guid: uuid.UUID) -> bytes:
     e = bytearray(128)
     e[0:16] = guid_le(BASIC_DATA_GUID)
@@ -170,6 +189,7 @@ def partition_entry(name: str, first: int, last: int, disk_guid: uuid.UUID) -> b
     return bytes(e)
 
 
+# Готовит основные и резервные таблицы GPT с их CRC.
 def gpt_headers(total_lba: int, parts: list[tuple[str, int, int]], disk_guid: uuid.UUID):
     entries = bytearray(GPT_ENTRIES * GPT_ENTRY_SIZE)
     for i, (name, first, last) in enumerate(parts):
@@ -178,6 +198,7 @@ def gpt_headers(total_lba: int, parts: list[tuple[str, int, int]], disk_guid: uu
     first_usable = 2 + GPT_ENTRIES_SECTORS
     last_usable = total_lba - GPT_ENTRIES_SECTORS - 2
 
+    # Собирает один заголовок GPT для указанного положения таблиц.
     def hdr(current, backup, entries_lba):
         h = bytearray(512)
         h[0:8] = b"EFI PART"
@@ -201,10 +222,12 @@ def gpt_headers(total_lba: int, parts: list[tuple[str, int, int]], disk_guid: uu
     return primary, bytes(entries), backup, backup_entries_lba
 
 
+# Переводит размер в байтах в МиБ.
 def mib(n: int) -> int:
     return n * 1024 * 1024
 
 
+# Разбирает параметры запуска и выполняет основной сценарий утилиты.
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--output", default="out/aosp-wear-sd.img")
@@ -259,6 +282,7 @@ def main():
         f.seek((total_lba - 1) * SECTOR); f.write(backup)
 
         by_name = {name: (first, last) for name, first, last in parts}
+        # Записывает подготовленные байты в рассчитанную область образа.
         def put(name: str, blob: bytes, offset: int = 0):
             first, last = by_name[name]
             cap = (last - first + 1) * SECTOR

@@ -1,3 +1,4 @@
+// Модуль логических разделов Android super.
 extern crate alloc;
 
 use alloc::vec::Vec;
@@ -6,28 +7,41 @@ use sha2::{Digest, Sha256};
 
 use crate::gpt::{self, Partition};
 
+/// Сигнатура формата GEOMETRY для проверки заголовка.
 const GEOMETRY_MAGIC: u32 = 0x616c_4467;
+/// Сигнатура формата HEADER для проверки заголовка.
 const HEADER_MAGIC: u32 = 0x414c_5030;
+/// Параметр RESERVED_BYTES компонента логических разделов Android super.
 const RESERVED_BYTES: u64 = 4096;
+/// Параметр GEOMETRY_SIZE компонента логических разделов Android super.
 const GEOMETRY_SIZE: u64 = 4096;
+/// Параметр GEOMETRY_STRUCT_SIZE компонента логических разделов Android super.
 const GEOMETRY_STRUCT_SIZE: usize = 52;
+/// Параметр HEADER_V1_SIZE компонента логических разделов Android super.
 const HEADER_V1_SIZE: usize = 128;
+/// Параметр HEADER_V12_SIZE компонента логических разделов Android super.
 const HEADER_V12_SIZE: usize = 256;
+/// Параметр TARGET_LINEAR компонента логических разделов Android super.
 const TARGET_LINEAR: u32 = 0;
 
 #[derive(Clone, Copy, Debug)]
+/// Структура данных компонента логических разделов Android super.
 pub struct LogicalPartition {
+    /// Начальный сектор области данных.
     pub first_sector: u64,
+    /// Ёмкость носителя в логических секторах.
     pub num_sectors: u64,
 }
 
 impl LogicalPartition {
+    /// Возвращает размер области в байтах.
     pub fn size_bytes(self) -> u64 {
         self.num_sectors * 512
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Ошибки операций компонента логических разделов Android super.
 pub enum LpError {
     Io,
     BadGeometry,
@@ -40,6 +54,7 @@ pub enum LpError {
     OutOfBounds,
 }
 
+/// Ищет логический раздел в проверенных метаданных Android super.
 pub fn find_logical<D: BlockDevice>(
     dev: &D,
     super_part: Partition,
@@ -147,6 +162,7 @@ pub fn find_logical<D: BlockDevice>(
     Err(LpError::PartitionNotFound)
 }
 
+/// Читает байты логического раздела через его extent-отображение.
 pub fn read_logical<D: BlockDevice>(
     dev: &D,
     super_part: Partition,
@@ -168,11 +184,14 @@ pub fn read_logical<D: BlockDevice>(
 }
 
 #[derive(Clone, Copy)]
+/// Структура данных компонента логических разделов Android super.
 struct Geometry {
+    /// Максимальный размер области метаданных логических разделов.
     metadata_max_size: u32,
     slot_count: u32,
 }
 
+/// Читает и проверяет геометрию Android liblp.
 fn read_geometry<D: BlockDevice>(dev: &D, super_part: Partition) -> Result<Geometry, LpError> {
     let mut raw = [0u8; GEOMETRY_STRUCT_SIZE];
     gpt::read_partition(dev, super_part, RESERVED_BYTES, &mut raw).map_err(|_| LpError::Io)?;
@@ -204,12 +223,17 @@ fn read_geometry<D: BlockDevice>(dev: &D, super_part: Partition) -> Result<Geome
 }
 
 #[derive(Clone, Copy)]
+/// Структура данных компонента логических разделов Android super.
 struct TableDesc {
+    /// Смещение в байтах относительно начала соответствующей области.
     offset: usize,
+    /// Количество элементов или выполненных действий в текущем контексте.
     count: u32,
+    /// Размер одной записи таблицы в байтах.
     entry_size: usize,
 }
 
+/// Разбирает описание таблицы метаданных liblp.
 fn table_desc(raw: &[u8], tables_size: usize) -> Result<TableDesc, LpError> {
     let offset = le_u32(&raw[0..4]) as usize;
     let count = le_u32(&raw[4..8]);
@@ -227,6 +251,7 @@ fn table_desc(raw: &[u8], tables_size: usize) -> Result<TableDesc, LpError> {
     })
 }
 
+/// Находит запись таблицы с проверкой её границ.
 fn table_entry<'a>(tables: &'a [u8], desc: TableDesc, index: u32) -> Result<&'a [u8], LpError> {
     if index >= desc.count {
         return Err(LpError::OutOfBounds);
@@ -236,12 +261,15 @@ fn table_entry<'a>(tables: &'a [u8], desc: TableDesc, index: u32) -> Result<&'a 
     tables.get(start..end).ok_or(LpError::OutOfBounds)
 }
 
+/// Читает 16-битное число little-endian из проверенного среза.
 fn le_u16(b: &[u8]) -> u16 {
     u16::from_le_bytes([b[0], b[1]])
 }
+/// Читает 32-битное число little-endian из проверенного среза.
 fn le_u32(b: &[u8]) -> u32 {
     u32::from_le_bytes([b[0], b[1], b[2], b[3]])
 }
+/// Читает 64-битное число little-endian из проверенного среза.
 fn le_u64(b: &[u8]) -> u64 {
     u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]])
 }

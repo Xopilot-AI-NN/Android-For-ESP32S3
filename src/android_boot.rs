@@ -1,3 +1,4 @@
+// Модуль заголовков boot/vendor_boot и ramdisk.
 extern crate alloc;
 
 use alloc::{
@@ -11,13 +12,19 @@ use crate::{
     gpt::{self, Partition},
 };
 
+/// Сигнатура формата BOOT для проверки заголовка.
 const BOOT_MAGIC: &[u8; 8] = b"ANDROID!";
+/// Сигнатура формата VENDOR_BOOT для проверки заголовка.
 const VENDOR_BOOT_MAGIC: &[u8; 8] = b"VNDRBOOT";
+/// Параметр BOOT_PAGE_SIZE компонента заголовков boot/vendor_boot и ramdisk.
 const BOOT_PAGE_SIZE: u64 = 4096;
+/// Параметр BOOT_HEADER_V4_SIZE компонента заголовков boot/vendor_boot и ramdisk.
 const BOOT_HEADER_V4_SIZE: u32 = 1584;
+/// Параметр VENDOR_BOOT_HEADER_V4_SIZE компонента заголовков boot/vendor_boot и ramdisk.
 const VENDOR_BOOT_HEADER_V4_SIZE: u32 = 2128;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Ошибки операций компонента заголовков boot/vendor_boot и ramdisk.
 pub enum BootImageError {
     Io,
     BadMagic,
@@ -31,14 +38,18 @@ pub enum BootImageError {
 }
 
 #[derive(Clone, Debug)]
+/// Структура данных компонента заголовков boot/vendor_boot и ramdisk.
 pub struct BootImageInfo {
     pub _header_version: u32,
     pub _os_version: u32,
+    /// Начало ramdisk относительно соответствующего образа, байт.
     pub ramdisk_offset: u64,
+    /// Размер ramdisk, байт.
     pub ramdisk_size: u32,
     pub cmdline_version: String,
 }
 
+/// Проверяет структуру Android boot/init_boot перед извлечением данных.
 pub fn validate_boot<D: BlockDevice>(
     dev: &D,
     part: Partition,
@@ -78,6 +89,7 @@ pub fn validate_boot<D: BlockDevice>(
     })
 }
 
+/// Проверяет заголовок и диапазоны vendor_boot.
 pub fn validate_vendor_boot<D: BlockDevice>(
     dev: &D,
     part: Partition,
@@ -100,6 +112,7 @@ pub fn validate_vendor_boot<D: BlockDevice>(
     Ok(())
 }
 
+/// Извлекает /init.rhai из проверенного ramdisk.
 pub fn extract_init_script<D: BlockDevice>(
     dev: &D,
     init_boot: Partition,
@@ -119,6 +132,7 @@ pub fn extract_init_script<D: BlockDevice>(
     Ok((info.cmdline_version, script))
 }
 
+/// Ищет файл в CPIO newc с проверкой выравнивания и размеров.
 fn extract_newc_file<D: BlockDevice>(
     dev: &D,
     part: Partition,
@@ -177,12 +191,14 @@ fn extract_newc_file<D: BlockDevice>(
     Err(BootImageError::InitMissing)
 }
 
+/// Приводит имя архивного файла к единому виду.
 fn normalize_name(name: &str) -> &str {
     name.strip_prefix("./")
         .or_else(|| name.strip_prefix('/'))
         .unwrap_or(name)
 }
 
+/// Ищет значение параметра в командной строке загрузки.
 fn cmdline_value(cmdline: &[u8], key: &[u8]) -> Option<String> {
     let end = cmdline
         .iter()
@@ -199,6 +215,7 @@ fn cmdline_value(cmdline: &[u8], key: &[u8]) -> Option<String> {
     None
 }
 
+/// Разбирает 32-битное число из шестнадцатеричных символов.
 fn parse_hex_u32(input: &[u8]) -> Option<u32> {
     let mut value = 0u32;
     for &b in input {
@@ -213,9 +230,11 @@ fn parse_hex_u32(input: &[u8]) -> Option<u32> {
     Some(value)
 }
 
+/// Округляет размер вверх до заданного выравнивания.
 fn align_up(value: u64, align: u64) -> u64 {
     (value + align - 1) & !(align - 1)
 }
+/// Читает 32-битное число little-endian из проверенного среза.
 fn le_u32(b: &[u8]) -> u32 {
     u32::from_le_bytes([b[0], b[1], b[2], b[3]])
 }

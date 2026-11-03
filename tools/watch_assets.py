@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Модуль импорта обоев и экспорта снимков.
 """Import a wallpaper or export a captured frame in a stopped watch disk image.
 
 The image lock prevents concurrent writes by the block server or image builder.
@@ -19,10 +20,13 @@ from usb_block_server import locked_image
 from inspect_android_sd import parse_primary_gpt, validate_backup_gpt
 
 WIDTH, HEIGHT = 240, 280
+# Параметр LENGTH компонента импорта обоев и экспорта снимков.
 LENGTH = WIDTH * HEIGHT * 2
+# Параметр SCREENSHOT_OFFSET компонента импорта обоев и экспорта снимков.
 SCREENSHOT_OFFSET = 1024 * 1024
 
 
+# Создаёт заголовок пользовательского графического ресурса.
 def asset_header(magic: bytes, payload: bytes) -> bytes:
     header = bytearray(512)
     struct.pack_into('<8sHHII', header, 0, magic, WIDTH, HEIGHT,
@@ -30,6 +34,7 @@ def asset_header(magic: bytes, payload: bytes) -> bytes:
     return bytes(header)
 
 
+# Преобразует проверенное изображение в формат хранения обоев.
 def encode_wallpaper(path: Path) -> bytes:
     # ImageMagick handles image decoding, EXIF orientation and a centered crop.
     raw = subprocess.run(['magick', str(path.resolve()), '-auto-orient',
@@ -44,6 +49,7 @@ def encode_wallpaper(path: Path) -> bytes:
     return bytes(pixels)
 
 
+# Находит границы userdata и проверяет допустимый диапазон операции.
 def userdata_range(disk) -> tuple[int, int]:
     header, entries, parts = parse_primary_gpt(disk)
     validate_backup_gpt(disk, header, entries)
@@ -54,6 +60,7 @@ def userdata_range(disk) -> tuple[int, int]:
     return first * 512, size
 
 
+# Записывает обои только в предназначенную область userdata.
 def import_wallpaper(disk, payload: bytes) -> None:
     if len(payload) != LENGTH:
         raise ValueError('invalid wallpaper dimensions')
@@ -73,6 +80,7 @@ def import_wallpaper(disk, payload: bytes) -> None:
     os.fsync(disk.fileno())
 
 
+# Читает сохранённый снимок и экспортирует изображение на компьютер.
 def export_screenshot(disk, output: Path) -> None:
     base, _ = userdata_range(disk)
     disk.seek(base + SCREENSHOT_OFFSET)
@@ -91,6 +99,7 @@ def export_screenshot(disk, output: Path) -> None:
                     str(output.resolve())], input=raw, check=True)
 
 
+# Разбирает параметры запуска и выполняет основной сценарий утилиты.
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--image', type=Path, required=True)

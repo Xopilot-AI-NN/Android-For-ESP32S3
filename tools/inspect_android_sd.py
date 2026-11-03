@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Модуль проверки загрузочных разделов карты.
 """Offline integrity checker for AOSP Wear OS Android-style microSD images."""
 from __future__ import annotations
 
@@ -8,17 +9,25 @@ import struct
 import zlib
 from pathlib import Path
 
+# Размер логического сектора, байт.
 SECTOR = 512
+# Параметр BOOT_HEADER_V4_SIZE компонента проверки загрузочных разделов карты.
 BOOT_HEADER_V4_SIZE = 1584
+# Параметр VENDOR_BOOT_HEADER_V4_SIZE компонента проверки загрузочных разделов карты.
 VENDOR_BOOT_HEADER_V4_SIZE = 2128
 
 
+# Читает 32-битное little-endian поле заголовка.
 def u32le(b, o): return struct.unpack_from('<I', b, o)[0]
+# Читает 64-битное little-endian поле заголовка.
 def u64le(b, o): return struct.unpack_from('<Q', b, o)[0]
+# Читает 32-битное big-endian поле заголовка.
 def u32be(b, o): return struct.unpack_from('>I', b, o)[0]
+# Читает 64-битное big-endian поле заголовка.
 def u64be(b, o): return struct.unpack_from('>Q', b, o)[0]
 
 
+# Сверяет контрольную сумму заголовка с записанным значением.
 def validate_header_crc(header: bytes) -> None:
     assert header[:8] == b'EFI PART', 'GPT magic'
     hs = u32le(header, 12)
@@ -29,6 +38,7 @@ def validate_header_crc(header: bytes) -> None:
     assert zlib.crc32(copy) & 0xFFFFFFFF == expected, 'GPT header CRC'
 
 
+# Разбирает и проверяет основную GPT и границы разделов.
 def parse_primary_gpt(f):
     f.seek(0)
     mbr = f.read(SECTOR)
@@ -57,6 +67,7 @@ def parse_primary_gpt(f):
     return h, entries, parts
 
 
+# Проверяет резервную GPT относительно основной разметки.
 def validate_backup_gpt(f, primary: bytes, entries: bytes) -> None:
     backup_lba = u64le(primary, 32)
     f.seek(backup_lba * SECTOR)
@@ -73,6 +84,7 @@ def validate_backup_gpt(f, primary: bytes, entries: bytes) -> None:
     assert zlib.crc32(backup_entries) & 0xFFFFFFFF == ecrc, 'backup GPT entry CRC'
 
 
+# Читает диапазон внутри проверенных границ раздела.
 def read_partition(f, parts, name, used_size=None):
     first, last = parts[name]
     cap = (last - first + 1) * SECTOR
@@ -80,6 +92,7 @@ def read_partition(f, parts, name, used_size=None):
     return f.read(cap if used_size is None else min(used_size, cap))
 
 
+# Проверяет структуру Android boot v4 и границы ramdisk.
 def validate_boot_v4(blob: bytes, expect_ramdisk: bool) -> tuple[int, int]:
     assert blob[:8] == b'ANDROID!', 'boot magic'
     kernel_size = u32le(blob, 8)
@@ -91,6 +104,7 @@ def validate_boot_v4(blob: bytes, expect_ramdisk: bool) -> tuple[int, int]:
     return kernel_size, ramdisk_size
 
 
+# Проверяет наличие init в архиве ramdisk.
 def cpio_has_init(blob: bytes, base: int, size: int) -> bool:
     cursor = 0
     while cursor + 110 <= size:
@@ -110,6 +124,7 @@ def cpio_has_init(blob: bytes, base: int, size: int) -> bool:
     return False
 
 
+# Проверяет поля Android vendor_boot v4.
 def validate_vendor_boot_v4(blob: bytes) -> None:
     assert blob[:8] == b'VNDRBOOT', 'vendor_boot magic'
     assert u32le(blob, 8) == 4, 'vendor_boot version'
@@ -118,6 +133,7 @@ def validate_vendor_boot_v4(blob: bytes) -> None:
     assert u32le(blob, 2120) == 108, 'vendor ramdisk table entry size'
 
 
+# Проверяет заголовок и дескрипторы vbmeta.
 def validate_vbmeta(v: bytes, blobs: dict[str, bytes]) -> None:
     assert v[:4] == b'AVB0', 'vbmeta magic'
     assert u32be(v, 4) == 1, 'AVB major version'
@@ -150,6 +166,7 @@ def validate_vbmeta(v: bytes, blobs: dict[str, bytes]) -> None:
     assert seen == {'boot', 'init_boot', 'vendor_boot'}, f'missing AVB descriptors: {seen}'
 
 
+# Разбирает параметры запуска и выполняет основной сценарий утилиты.
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('image')

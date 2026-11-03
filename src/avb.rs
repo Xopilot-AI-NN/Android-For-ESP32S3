@@ -1,13 +1,18 @@
+// Модуль проверки дескрипторов AVB.
 use embedded_sdmmc::BlockDevice;
 use sha2::{Digest, Sha256};
 
 use crate::gpt::{self, Partition};
 
+/// Параметр AVB_HEADER_SIZE компонента проверки дескрипторов AVB.
 const AVB_HEADER_SIZE: u64 = 256;
+/// Параметр AVB_DESCRIPTOR_TAG_HASH компонента проверки дескрипторов AVB.
 const AVB_DESCRIPTOR_TAG_HASH: u64 = 2;
+/// Параметр AVB_ALGORITHM_NONE компонента проверки дескрипторов AVB.
 const AVB_ALGORITHM_NONE: u32 = 0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Ошибки операций компонента проверки дескрипторов AVB.
 pub enum AvbError {
     Io,
     BadMagic,
@@ -22,11 +27,15 @@ pub enum AvbError {
 }
 
 #[derive(Clone, Copy, Debug)]
+/// Структура данных компонента проверки дескрипторов AVB.
 pub struct AvbInfo {
+    /// Индекс anti-rollback из заголовка AVB.
     pub rollback_index: u64,
+    /// Признак разрешённого отладочного vbmeta без подписи.
     pub unsigned_development_vbmeta: bool,
 }
 
+/// Проверяет хеш выбранного раздела по AVB-дескриптору.
 pub fn verify_partition<D: BlockDevice>(
     dev: &D,
     vbmeta: Partition,
@@ -101,6 +110,7 @@ pub fn verify_partition<D: BlockDevice>(
     Err(AvbError::DescriptorMissing)
 }
 
+/// Разбирает и сверяет дескриптор хеша раздела.
 fn verify_hash_descriptor<D: BlockDevice>(
     dev: &D,
     vbmeta: Partition,
@@ -166,11 +176,13 @@ fn verify_hash_descriptor<D: BlockDevice>(
     Ok(true)
 }
 
+/// Читает строку до нулевого байта в пределах переданного среза.
 fn cstr(input: &[u8]) -> &[u8] {
     let end = input.iter().position(|b| *b == 0).unwrap_or(input.len());
     &input[..end]
 }
 
+/// Сравнивает байтовые последовательности без раннего выхода по несовпадению.
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
@@ -182,9 +194,11 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     diff == 0
 }
 
+/// Читает 32-битное число big-endian из проверенного среза.
 fn be_u32(b: &[u8]) -> u32 {
     u32::from_be_bytes([b[0], b[1], b[2], b[3]])
 }
+/// Читает 64-битное число big-endian из проверенного среза.
 fn be_u64(b: &[u8]) -> u64 {
     u64::from_be_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]])
 }

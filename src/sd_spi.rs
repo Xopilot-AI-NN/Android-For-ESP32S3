@@ -1,3 +1,4 @@
+// Модуль исключительной SPI-сессии microSD.
 //! Session adapter for embedded-sdmmc 0.10 on the dedicated SPI2 bus.
 //!
 //! The driver splits commands, R1 polling and data into separate SpiDevice
@@ -11,10 +12,15 @@ use embedded_hal::{
 };
 use embedded_hal_bus::spi::DeviceError;
 
+/// Структура данных компонента исключительной SPI-сессии microSD.
 pub struct SdSpiSession<B: SpiBus<u8>, C: OutputPin, D: DelayNs> {
+    /// Выделенная шина обмена.
     bus: B,
+    /// Линия выбора SPI-устройства.
     cs: C,
+    /// Источник требуемых аппаратных задержек.
     delay: D,
+    /// Выбранный элемент либо признак его выделения.
     selected: bool,
 }
 
@@ -53,10 +59,12 @@ impl<B: SpiBus<u8>, C: OutputPin, D: DelayNs> SdSpiSession<B, C, D> {
         idle.map_err(DeviceError::Spi)
     }
     #[cfg(not(feature = "sd-software-spi"))]
+    /// Возвращает исключительный доступ к выделенной SPI-шине.
     pub fn bus_mut(&mut self) -> &mut B {
         &mut self.bus
     }
 
+    /// Активирует CS карты перед обменом.
     fn select(&mut self) -> Result<(), DeviceError<B::Error, C::Error>> {
         if !self.selected {
             self.bus.flush().map_err(DeviceError::Spi)?;
@@ -73,10 +81,12 @@ impl<B: SpiBus<u8>, C: OutputPin, D: DelayNs> SdSpiSession<B, C, D> {
 }
 
 impl<B: SpiBus<u8>, C: OutputPin, D: DelayNs> ErrorType for SdSpiSession<B, C, D> {
+    /// Причины отказа операций компонента исключительной SPI-сессии microSD.
     type Error = DeviceError<B::Error, C::Error>;
 }
 
 impl<B: SpiBus<u8>, C: OutputPin, D: DelayNs> SpiDevice<u8> for SdSpiSession<B, C, D> {
+    /// Выполняет SPI-операции в рамках владения шиной и CS.
     fn transaction(&mut self, operations: &mut [Operation<'_, u8>]) -> Result<(), Self::Error> {
         self.select()?;
         let result = operations.iter_mut().try_for_each(|op| match op {
@@ -106,39 +116,50 @@ impl<B: SpiBus<u8>, C: OutputPin, D: DelayNs> SpiDevice<u8> for SdSpiSession<B, 
 }
 
 impl<B: SpiBus<u8>, C: OutputPin, D: DelayNs> Drop for SdSpiSession<B, C, D> {
+    /// Освобождает принадлежащие экземпляру ресурсы и незавершённые запросы.
     fn drop(&mut self) {
         self.release();
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_os = "none")))]
 mod tests {
     use super::*;
     use core::{cell::RefCell, convert::Infallible};
     use std::rc::Rc;
 
     #[derive(Default)]
+    /// Структура данных компонента исключительной SPI-сессии microSD.
     struct Card {
+        /// Выбранный элемент либо признак его выделения.
         selected: bool,
+        /// Необработанный запрос или ожидающий результат.
         pending: bool,
         response: bool,
         fail: bool,
         released_clock: bool,
     }
+    /// Структура данных компонента исключительной SPI-сессии microSD.
     struct Bus(Rc<RefCell<Card>>);
+    /// Структура данных компонента исключительной SPI-сессии microSD.
     struct Cs(Rc<RefCell<Card>>);
+    /// Структура данных компонента исключительной SPI-сессии microSD.
     struct Delay;
     impl DelayNs for Delay {
+        /// Выполняет задержку, заданную в наносекундах.
         fn delay_ns(&mut self, _: u32) {}
     }
     impl embedded_hal::digital::ErrorType for Cs {
+        /// Причины отказа операций компонента исключительной SPI-сессии microSD.
         type Error = Infallible;
     }
     impl OutputPin for Cs {
+        /// Устанавливает низкий уровень цифрового выхода.
         fn set_low(&mut self) -> Result<(), Self::Error> {
             self.0.borrow_mut().selected = true;
             Ok(())
         }
+        /// Устанавливает высокий уровень цифрового выхода.
         fn set_high(&mut self) -> Result<(), Self::Error> {
             let mut c = self.0.borrow_mut();
             assert!(!c.pending, "CS changed while clocks were still in flight");
@@ -148,9 +169,11 @@ mod tests {
         }
     }
     impl ErrorType for Bus {
+        /// Причины отказа операций компонента исключительной SPI-сессии microSD.
         type Error = embedded_hal::spi::ErrorKind;
     }
     impl SpiBus<u8> for Bus {
+        /// Передаёт данные через интерфейс текущего транспорта.
         fn write(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
             let mut c = self.0.borrow_mut();
             if c.fail {
@@ -165,19 +188,23 @@ mod tests {
             }
             Ok(())
         }
+        /// Завершает отложенную передачу данных.
         fn flush(&mut self) -> Result<(), Self::Error> {
             self.0.borrow_mut().pending = false;
             Ok(())
         }
+        /// Считывает запрошенные данные через интерфейс текущего транспорта.
         fn read(&mut self, bytes: &mut [u8]) -> Result<(), Self::Error> {
             bytes.fill(0xff);
             self.transfer_in_place(bytes)
         }
+        /// Передаёт выходные байты и одновременно считывает входные.
         fn transfer(&mut self, read: &mut [u8], write: &[u8]) -> Result<(), Self::Error> {
             assert!(write.iter().all(|&b| b == 0xff));
             read.fill(0xff);
             self.transfer_in_place(read)
         }
+        /// Выполняет полнодуплексный обмен, заменяя исходный буфер принятыми байтами.
         fn transfer_in_place(&mut self, bytes: &mut [u8]) -> Result<(), Self::Error> {
             assert!(bytes.iter().all(|&b| b == 0xff));
             let c = self.0.borrow();
@@ -187,6 +214,7 @@ mod tests {
     }
 
     #[test]
+    /// Проверяет сохранность SD-ответа между SPI-фрагментами и снятие CS после flush.
     fn command_response_survives_fragments_and_drop_releases_after_flush() {
         let card = Rc::new(RefCell::new(Card::default()));
         {
@@ -202,6 +230,7 @@ mod tests {
     }
 
     #[test]
+    /// Проверяет модель потери ответа при разрывах CS и освобождение CS после ошибки транспорта.
     fn ordinary_device_loses_this_cards_response_and_transport_errors_release_cs() {
         let card = Rc::new(RefCell::new(Card::default()));
         let mut old =

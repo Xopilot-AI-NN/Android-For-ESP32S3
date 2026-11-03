@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Модуль обновления хешей образа.
 from __future__ import annotations
 
 import argparse
@@ -7,6 +8,7 @@ import re
 from pathlib import Path
 
 
+# Обновляет хеш выбранного слота в образе.
 def update_slot(slot_dir: Path) -> None:
     manifest = slot_dir / "MANIFEST.TXT"
     text = manifest.read_text(encoding="utf-8")
@@ -24,6 +26,7 @@ def update_slot(slot_dir: Path) -> None:
     print(f"{slot_dir.name}: {entry} -> {digest}")
 
 
+# Разбирает параметры запуска и выполняет основной сценарий утилиты.
 def main() -> int:
     ap = argparse.ArgumentParser(description="Refresh Zephyr Watch boot manifest SHA-256 values")
     ap.add_argument("sdcard", nargs="?", type=Path, default=Path("sdcard"))

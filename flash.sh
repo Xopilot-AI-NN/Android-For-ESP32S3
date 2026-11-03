@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Модуль сборки и прошивки часов.
 set -Eeuo pipefail
 
 BOOTLOADER_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -74,7 +75,7 @@ FLAGS=(--no-default-features --features "$FEATURES")
 
 BOOT_VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
 echo "== AOSP Wear OS / Android 17 QPR1 one-shot flash =="
-echo "Bootloader : v${BOOT_VERSION}"
+echo "Firmware   : v${BOOT_VERSION}"
 echo "Display    : ${DISPLAY_NAME}"
 echo "Storage    : ${STORAGE_NAME}"
 echo "Radio      : ${RADIO_NAME}"
@@ -112,16 +113,18 @@ MSG
 fi
 
 echo
-echo "== Building Bootloader =="
-cargo +esp build --release "${FLAGS[@]}"
+echo "== Building Firmware executable =="
+(cd "$FIRMWARE_DIR" && cargo +esp build --release "${FLAGS[@]}")
 
 echo
-ELF="$BOOTLOADER_DIR/target/xtensa-esp32s3-none-elf/release/bootloader"
+ELF="$FIRMWARE_DIR/target/xtensa-esp32s3-none-elf/release/firmware"
 
 if [[ ! -f "$ELF" ]]; then
   echo "ERROR: ELF not found: $ELF" >&2
   exit 1
 fi
+
+bash "$BOOTLOADER_DIR/build_image.sh" "$ELF"
 
 if [[ "$BUILD_ONLY" == 1 ]]; then
   echo "Build complete: $ELF"
@@ -129,7 +132,7 @@ if [[ "$BUILD_ONLY" == 1 ]]; then
   exit 0
 fi
 if [[ "$STORAGE_NAME" == "sd" ]]; then
-  echo "SD mode: the Rust loader is flashed internally; userspace is loaded from microSD."
+  echo "SD mode: firmware runs from internal flash; the GPT system/data image is on microSD."
   echo "Write $IMAGE to the chosen memory card before booting (see DELIVERY.md)."
 fi
 
@@ -146,9 +149,9 @@ echo
 echo "== Flashing ESP32-S3 =="
 
 if [[ "$STORAGE_NAME" == "pc" ]]; then
-  "$ESPFLASH_BIN" flash --chip esp32s3 "$ELF"
+  "$ESPFLASH_BIN" flash --chip esp32s3 --flash-size 4mb --partition-table "$BOOTLOADER_DIR/partitions.csv" "$ELF"
 else
-  "$ESPFLASH_BIN" flash --chip esp32s3 --monitor "$ELF"
+  "$ESPFLASH_BIN" flash --chip esp32s3 --flash-size 4mb --partition-table "$BOOTLOADER_DIR/partitions.csv" --monitor "$ELF"
   exit 0
 fi
 

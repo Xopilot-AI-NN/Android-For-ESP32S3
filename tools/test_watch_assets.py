@@ -1,3 +1,4 @@
+# Модуль проверок watch_assets.
 """Exercise asset writes against a real CRC-protected GPT, without hardware."""
 import importlib.util
 from pathlib import Path
@@ -13,7 +14,9 @@ builder = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
 
 
+# Структура данных компонента проверок watch_assets.
 class AssetTests(unittest.TestCase):
+    # Проверяет, что запись обоев ограничена резервом и сохраняет соседние данные.
     def test_write_stays_inside_reserved_range_and_preserves_other_data(self):
         with tempfile.TemporaryFile() as disk:
             sectors = 8192
