@@ -1,0 +1,18 @@
+{
+  "package": "com.xopilot.expenses",
+  "label": "Расходы",
+  "runtime": "native-rust",
+  "api": 37,
+  "system": true,
+  "characteristics": "watch",
+  "launcher": true,
+  "nativeApp": 20,
+  "entry": "main.rs",
+  "sources": [
+    "main.rs"
+  ],
+  "sharedSources": [
+    "../Tasks/main.rs",
+    "../Tasks/organizer.rs"
+  ]
+}

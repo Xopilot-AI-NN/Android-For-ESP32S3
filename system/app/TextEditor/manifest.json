@@ -1,0 +1,18 @@
+{
+  "package": "com.xopilot.editor",
+  "label": "Текстовый редактор",
+  "runtime": "native-rust",
+  "api": 37,
+  "system": true,
+  "characteristics": "watch",
+  "launcher": true,
+  "nativeApp": 18,
+  "entry": "main.rs",
+  "sources": [
+    "main.rs"
+  ],
+  "sharedSources": [
+    "../Files/main.rs",
+    "../Files/view.rs"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "package": "com.xopilot.weather",
+  "label": "Погода",
+  "runtime": "native-rust",
+  "api": 37,
+  "system": true,
+  "characteristics": "watch",
+  "launcher": true,
+  "nativeApp": 12,
+  "entry": "main.rs",
+  "sources": [
+    "main.rs",
+    "weather.rs"
+  ],
+  "sharedSources": []
+}

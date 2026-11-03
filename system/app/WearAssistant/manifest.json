@@ -1,1 +1,15 @@
-{"package":"com.android.wear.assistant","label":"Assistant","runtime":"rhai","api":37,"system":true,"characteristics":"watch","companion_required":true}
+{
+  "package": "com.android.wear.assistant",
+  "label": "Ассистент",
+  "runtime": "native-rust",
+  "api": 37,
+  "system": true,
+  "characteristics": "watch",
+  "launcher": true,
+  "nativeApp": 5,
+  "entry": "main.rs",
+  "sources": [
+    "main.rs"
+  ],
+  "sharedSources": []
+}

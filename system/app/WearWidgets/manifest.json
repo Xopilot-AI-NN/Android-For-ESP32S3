@@ -1,1 +1,14 @@
-{"package":"com.android.wear.widgets","label":"Widgets","runtime":"rhai","api":37,"system":true,"characteristics":"watch"}
+{
+  "package": "com.android.wear.widgets",
+  "label": "WearWidgets",
+  "runtime": "native-rust",
+  "api": 37,
+  "system": true,
+  "characteristics": "watch",
+  "launcher": false,
+  "entry": "main.rs",
+  "sources": [
+    "main.rs"
+  ],
+  "sharedSources": []
+}

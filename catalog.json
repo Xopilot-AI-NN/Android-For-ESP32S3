@@ -1,0 +1,164 @@
+[
+  {
+    "directory": "system/app/Clock",
+    "package": "com.android.deskclock",
+    "label": "Часы",
+    "id": 0,
+    "screen": 6,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/WearMedia",
+    "package": "com.android.wear.media",
+    "label": "Медиа",
+    "id": 1,
+    "screen": 10,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Settings",
+    "package": "com.android.settings",
+    "label": "Настройки",
+    "id": 2,
+    "screen": 5,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/WearAssistant",
+    "package": "com.android.wear.assistant",
+    "label": "Ассистент",
+    "id": 5,
+    "screen": 27,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Calculator",
+    "package": "com.xopilot.calculator",
+    "label": "Калькулятор",
+    "id": 6,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Files",
+    "package": "com.xopilot.files",
+    "label": "Файлы",
+    "id": 7,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Share",
+    "package": "com.xopilot.share",
+    "label": "Передача файлов",
+    "id": 8,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Flashlight",
+    "package": "com.xopilot.flashlight",
+    "label": "Фонарик",
+    "id": 10,
+    "screen": 29,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Weather",
+    "package": "com.xopilot.weather",
+    "label": "Погода",
+    "id": 12,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Breathing",
+    "package": "com.xopilot.breathing",
+    "label": "Дыхание",
+    "id": 14,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Calendar",
+    "package": "com.xopilot.calendar",
+    "label": "Календарь",
+    "id": 15,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Converter",
+    "package": "com.xopilot.converter",
+    "label": "Конвертер",
+    "id": 16,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Counter",
+    "package": "com.xopilot.counter",
+    "label": "Счётчик",
+    "id": 17,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/TextEditor",
+    "package": "com.xopilot.editor",
+    "label": "Текстовый редактор",
+    "id": 18,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Tasks",
+    "package": "com.xopilot.tasks",
+    "label": "Задачи",
+    "id": 19,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Expenses",
+    "package": "com.xopilot.expenses",
+    "label": "Расходы",
+    "id": 20,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Focus",
+    "package": "com.xopilot.focus",
+    "label": "Фокус",
+    "id": 21,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Phone",
+    "package": "com.xopilot.phone",
+    "label": "Телефон",
+    "id": 22,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/WearLauncher",
+    "package": "com.android.wear.launcher",
+    "label": "WearLauncher",
+    "launcher": false
+  },
+  {
+    "directory": "system/app/WearWidgets",
+    "package": "com.android.wear.widgets",
+    "label": "WearWidgets",
+    "launcher": false
+  },
+  {
+    "directory": "system/priv-app/SystemUI",
+    "package": "com.android.systemui",
+    "label": "SystemUI",
+    "launcher": false
+  }
+]

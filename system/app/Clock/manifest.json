@@ -1,1 +1,21 @@
-{"package":"com.android.deskclock","label":"Clock","runtime":"rhai","api":37,"system":true,"characteristics":"watch"}
+{
+  "package": "com.android.deskclock",
+  "label": "Часы",
+  "runtime": "native-rust",
+  "api": 37,
+  "system": true,
+  "characteristics": "watch",
+  "launcher": true,
+  "nativeApp": 0,
+  "entry": "main.rs",
+  "sources": [
+    "controller.rs",
+    "faces.rs",
+    "main.rs",
+    "weather.rs"
+  ],
+  "sharedSources": [],
+  "components": [
+    13
+  ]
+}
