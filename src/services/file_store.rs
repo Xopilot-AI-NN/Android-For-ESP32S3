@@ -3,6 +3,8 @@
 //! Metadata and each file have two copies. Data is verified before publishing it.
 use crate::gpt::{self, Partition};
 use alloc::{string::String, sync::Arc, vec, vec::Vec};
+#[cfg(test)]
+pub(crate) use blob::tests::fixture as blob_fixture;
 use core::{
     cell::RefCell,
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
@@ -13,7 +15,14 @@ use embedded_sdmmc::BlockDevice;
 /// Максимальное число файлов и папок в каталоге WFSv1.
 pub const MAX_ENTRIES: usize = 32;
 /// Максимальный размер файла для данного формата, байт.
-pub const MAX_FILE: usize = 3072;
+const LEGACY_FILE: usize = 3072;
+pub const MAX_FILE: usize = 64 * 1024;
+/// Потоковые вложения: до 16 МиБ, без загрузки целого файла в RAM.
+pub const MAX_BLOB: usize = 16 * 1024 * 1024;
+/// Хвост userdata исключён из расширения swap.
+pub const BLOB_RESERVE: u64 = 64 * 1024 * 1024;
+const UNIT: u64 = 64 * 1024;
+const UNIT_DATA: usize = 64 * 1024 - 512;
 /// Максимальная длина полного UTF-8-пути, байт.
 pub const MAX_PATH: usize = 80;
 /// Разрешение внешних файловых операций от PIN-гейта.
@@ -69,7 +78,7 @@ impl Error {
             Self::NotFound => "Файл не найден",
             Self::Exists => "Имя уже занято",
             Self::Full => "Нет свободных записей",
-            Self::TooLarge => "Лимит файла: 3072 байта",
+            Self::TooLarge => "Размер недоступен для этой операции",
             Self::NotEmpty => "Папка не пуста",
             Self::Busy => "Хранилище занято",
             Self::Conflict => "Файл изменён: откройте заново",
@@ -84,7 +93,9 @@ pub struct Entry {
     /// Номер активной копии данных (0 или 1).
     pub bank: u8,
     /// Размер содержимого в байтах.
-    pub size: u16,
+    pub size: u32,
+    /// Начальный 64-КиБ extent больших данных; None оставляет старый WFD1.
+    pub blob: Option<u16>,
     /// Контрольная сумма содержимого для обнаружения повреждений.
     pub crc: u32,
     /// Полный путь записи внутри управляемого хранилища.
@@ -97,6 +108,7 @@ impl Default for Entry {
             kind: 0,
             bank: 0,
             size: 0,
+            blob: None,
             crc: 0,
             path: heapless::String::new(),
         }
@@ -136,6 +148,21 @@ pub fn join(dir: &str, name: &str) -> Result<String, Error> {
     }
 }
 
+/// Непубликованная потоковая запись; старый каталог остаётся целым до FinishUpload.
+struct Upload {
+    path: String,
+    index: usize,
+    start: u16,
+    size: usize,
+    crc: u32,
+    generation: u64,
+}
+#[path = "file_store/blob.rs"]
+mod blob;
+#[path = "file_store/image.rs"]
+mod image;
+#[path = "file_store/png.rs"]
+mod png;
 /// Владелец каталога и транзакций WFSv1 компонента транзакционного хранилища документов WFSv1.
 pub struct Fs {
     /// Границы физического раздела, которому принадлежит область.
@@ -148,8 +175,14 @@ pub struct Fs {
     meta_bank: u8,
     /// Признак ещё не инициализированной резервной области.
     virgin: bool,
+    upload: Option<Upload>,
+    pool_base: Option<u64>,
 }
 impl Fs {
+    /// Фиксированная граница данных сохраняется и после увеличения userdata.
+    pub fn saved_blob_base(&self) -> Option<u64> {
+        self.pool_base
+    }
     /// Читает метаданные файлового хранилища и выбирает целую копию каталога.
     pub fn mount<D: BlockDevice>(dev: &D) -> Result<Self, Error> {
         let part = gpt::find_partition(dev, "userdata").map_err(|_| Error::Unavailable)?;
@@ -175,18 +208,28 @@ impl Fs {
                 .map_err(|_| Error::Io)?;
             blank &= bytes.iter().all(|&v| v == 0);
             if let Ok((generation, entries)) = Self::decode(&bytes) {
-                if selected.as_ref().is_none_or(|(g, _, _)| generation > *g) {
-                    selected = Some((generation, bank as u8, entries));
+                if selected.as_ref().is_none_or(|(g, _, _, _)| generation > *g) {
+                    selected = Some((
+                        generation,
+                        bank as u8,
+                        entries,
+                        u64::from_le_bytes(bytes[20..28].try_into().unwrap()),
+                    ));
                 }
             }
         }
-        if let Some((generation, meta_bank, entries)) = selected {
+        if let Some((generation, meta_bank, entries, base)) = selected {
+            if base != 0 && (base < BASE + REGION || base + BLOB_RESERVE > part.size_bytes()) {
+                return Err(Error::Corrupt);
+            }
             Ok(Self {
                 part,
                 entries,
                 generation,
                 meta_bank,
                 virgin: false,
+                upload: None,
+                pool_base: if base == 0 { None } else { Some(base) },
             })
         } else if blank {
             Ok(Self {
@@ -195,6 +238,8 @@ impl Fs {
                 generation: 0,
                 meta_bank: 1,
                 virgin: true,
+                upload: None,
+                pool_base: None,
             })
         } else {
             Err(Error::Corrupt)
@@ -222,14 +267,29 @@ impl Fs {
             {
                 return Err(Error::Corrupt);
             }
-            let size = u16::from_le_bytes([b[2], b[3]]);
-            if usize::from(size) > MAX_FILE || (b[0] == 2 && size != 0) {
+            let blob = if b[89] == 1 {
+                Some(u16::from_le_bytes([b[94], b[95]]))
+            } else if b[89] == 0 {
+                None
+            } else {
+                return Err(Error::Corrupt);
+            };
+            let size = if blob.is_some() {
+                u32::from_le_bytes(b[90..94].try_into().unwrap())
+            } else {
+                u32::from(u16::from_le_bytes([b[2], b[3]]))
+            };
+            if (blob.is_none() && size as usize > LEGACY_FILE)
+                || size as usize > MAX_BLOB
+                || (b[0] == 2 && size != 0)
+            {
                 return Err(Error::Corrupt);
             }
             entries.push(Entry {
                 kind: b[0],
                 bank: b[1],
                 size,
+                blob,
                 crc: u32::from_le_bytes(b[4..8].try_into().unwrap()),
                 path: heapless::String::try_from(path).map_err(|_| Error::Corrupt)?,
             });
@@ -268,10 +328,23 @@ impl Fs {
     pub fn read<D: BlockDevice>(&self, dev: &D, path: &str) -> Result<Vec<u8>, Error> {
         let index = self.index(path)?;
         let e = &self.entries[index];
+        if e.blob.is_some() {
+            if e.size as usize > 320 * 1024 {
+                return Err(Error::TooLarge);
+            }
+            let mut data = Vec::with_capacity(e.size as usize);
+            while data.len() < e.size as usize {
+                data.extend(self.read_range(dev, path, data.len(), 4096)?);
+            }
+            if gpt::crc32(&data) != e.crc {
+                return Err(Error::Corrupt);
+            }
+            return Ok(data);
+        }
         if e.kind != 1 {
             return Err(Error::InvalidPath);
         }
-        let used = (usize::from(e.size) + 16).div_ceil(512) * 512;
+        let used = (e.size as usize + 16).div_ceil(512) * 512;
         let mut bytes = vec![0; used];
         gpt::read_partition(dev, self.part, Self::data_offset(index, e.bank), &mut bytes)
             .map_err(|_| Error::Io)?;
@@ -309,11 +382,29 @@ impl Fs {
         let mut bytes = vec![0; PAGE];
         bytes[..8].copy_from_slice(MAGIC);
         bytes[8..16].copy_from_slice(&generation.to_le_bytes());
+        let pool = if entries.iter().any(|e| e.blob.is_some()) {
+            Some(self.blob_base()?)
+        } else {
+            self.pool_base
+        };
+        bytes[20..28].copy_from_slice(&pool.unwrap_or(0).to_le_bytes());
         for (i, e) in entries.iter().enumerate() {
             let b = &mut bytes[32 + i * RECORD..32 + (i + 1) * RECORD];
             b[0] = e.kind;
             b[1] = e.bank;
-            b[2..4].copy_from_slice(&e.size.to_le_bytes());
+            b[2..4].copy_from_slice(
+                &(if e.blob.is_some() {
+                    u16::MAX
+                } else {
+                    e.size as u16
+                })
+                .to_le_bytes(),
+            );
+            if let Some(start) = e.blob {
+                b[89] = 1;
+                b[90..94].copy_from_slice(&e.size.to_le_bytes());
+                b[94..96].copy_from_slice(&start.to_le_bytes());
+            }
             b[4..8].copy_from_slice(&e.crc.to_le_bytes());
             b[8] = e.path.len() as u8;
             b[9..9 + e.path.len()].copy_from_slice(e.path.as_bytes());
@@ -333,6 +424,7 @@ impl Fs {
         if check != bytes {
             return Err(Error::Io);
         }
+        self.pool_base = pool;
         self.entries = entries;
         self.generation = generation;
         self.meta_bank = bank;
@@ -365,6 +457,11 @@ impl Fs {
                 .position(|e| e.kind == 0)
                 .ok_or(Error::Full)?,
         };
+        if data.len() > LEGACY_FILE {
+            self.begin_upload(dev, path)?;
+            self.upload_chunk(dev, data)?;
+            return self.finish_upload(dev);
+        }
         self.check_virgin(dev)?;
         let bank = 1 - self.entries[index].bank;
         let mut bytes = vec![0; (16 + data.len()).div_ceil(512) * 512];
@@ -383,7 +480,8 @@ impl Fs {
         entries[index] = Entry {
             kind: 1,
             bank,
-            size: data.len() as u16,
+            size: data.len() as u32,
+            blob: None,
             crc: gpt::crc32(data),
             path: heapless::String::try_from(path).map_err(|_| Error::InvalidPath)?,
         };
@@ -461,59 +559,59 @@ impl Fs {
             return Err(Error::InvalidPath);
         }
         if self.entries[source].kind == 1 {
+            if self.entries[source].blob.is_some() {
+                let size = self.entries[source].size as usize;
+                self.begin_upload(dev, to)?;
+                let mut at = 0;
+                while at < size {
+                    let chunk = self.read_range(dev, from, at, 4096)?;
+                    self.upload_chunk(dev, &chunk)?;
+                    at += chunk.len();
+                }
+                return self.finish_upload(dev);
+            }
             let bytes = self.read(dev, from)?;
             return self.write(dev, to, &bytes, None);
         }
-        let originals: Vec<_> = self
+        let mut originals: Vec<_> = self
             .entries
             .iter()
             .filter(|e| e.kind != 0 && (e.path == from || e.path.starts_with(&prefix)))
             .cloned()
             .collect();
-        let free: Vec<_> = self
-            .entries
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| e.kind == 0)
-            .map(|(i, _)| i)
-            .collect();
-        if free.len() < originals.len() {
+        if self.entries.iter().filter(|e| e.kind == 0).count() < originals.len() {
             return Err(Error::Full);
         }
-        let mut entries = self.entries.clone();
-        for (original, index) in originals.into_iter().zip(free) {
-            let path = alloc::format!("{}{}", to, &original.path[from.len()..]);
-            if !path_valid(&path) {
+        originals.sort_by_key(|e| e.path.len());
+        for entry in &originals {
+            let target = alloc::format!("{}{}", to, &entry.path[from.len()..]);
+            if !path_valid(&target) {
                 return Err(Error::InvalidPath);
             }
-            let bank = 1 - entries[index].bank;
-            if original.kind == 1 {
-                let bytes = self.read(dev, &original.path)?;
-                let mut page = vec![0; (16 + bytes.len()).div_ceil(512) * 512];
-                page[..4].copy_from_slice(b"WFD1");
-                page[4..8].copy_from_slice(&(bytes.len() as u32).to_le_bytes());
-                page[16..16 + bytes.len()].copy_from_slice(&bytes);
-                gpt::write_partition(dev, self.part, Self::data_offset(index, bank), &page)
-                    .map_err(|_| Error::Io)?;
-                let mut check = vec![0; page.len()];
-                gpt::read_partition(dev, self.part, Self::data_offset(index, bank), &mut check)
-                    .map_err(|_| Error::Io)?;
-                if check != page {
-                    return Err(Error::Io);
-                }
+            if self.index(&target).is_ok() {
+                return Err(Error::Exists);
             }
-            entries[index] = Entry {
-                bank,
-                path: heapless::String::try_from(path.as_str()).map_err(|_| Error::InvalidPath)?,
-                ..original
-            };
         }
-        self.commit(dev, entries)
+        for entry in originals {
+            let target = alloc::format!("{}{}", to, &entry.path[from.len()..]);
+            if entry.kind == 2 {
+                self.mkdir(dev, &target)?;
+            } else {
+                self.copy(dev, &entry.path, &target)?;
+            }
+        }
+        Ok(())
     }
 }
 
 /// Разрешённая операция над файловым хранилищем компонента транзакционного хранилища документов WFSv1.
 pub enum Op {
+    Thumbnail(String),
+    ReadLog,
+    BeginUpload(String),
+    Upload(Vec<u8>),
+    FinishUpload,
+    ReadRange(String, usize, usize),
     Mount,
     Read(String),
     Create(String, Vec<u8>),
@@ -628,6 +726,14 @@ pub fn service<D: BlockDevice>(dev: &D) -> bool {
         Err(e) => (None, Err(e)),
         Ok(mut fs) => {
             let result = match op {
+                Op::BeginUpload(path) => fs.begin_upload(dev, &path).map(|_| None),
+                Op::Upload(data) => fs.upload_chunk(dev, &data).map(|_| None),
+                Op::FinishUpload => fs.finish_upload(dev).map(|_| None),
+                Op::ReadRange(path, offset, len) => {
+                    fs.read_range(dev, &path, offset, len).map(Some)
+                }
+                Op::ReadLog => crate::persistent_log::export(dev).map(Some),
+                Op::Thumbnail(path) => fs.thumbnail(dev, &path).map(Some),
                 Op::Mount => Ok(None),
                 Op::Read(path) => fs.read(dev, &path).map(Some),
                 Op::Create(path, data) => {
@@ -840,4 +946,6 @@ pub(crate) mod tests {
 }
 
 /// Контрольная сумма документа для обнаружения изменения при сохранении.
-pub fn content_crc(data: &[u8]) -> u32 { gpt::crc32(data) }
+pub fn content_crc(data: &[u8]) -> u32 {
+    gpt::crc32(data)
+}

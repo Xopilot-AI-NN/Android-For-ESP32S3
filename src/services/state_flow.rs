@@ -8,8 +8,11 @@ pub(crate) fn service_disk_requests<D: BlockDevice, B: BootDisplay>(
     display: &mut B,
     os: &mut runtime::Runtime,
 ) {
+    crate::persistent_log::service(dev);
     if crate::file_store::service(dev) {
-        if let Ok(frame) = os.render() { let _ = display.runtime(&frame); }
+        if let Ok(frame) = os.render() {
+            let _ = display.runtime(&frame);
+        }
     }
     crate::weather::save_location(dev);
     if crate::swap_config::service(dev) {

@@ -3,6 +3,10 @@
 //! Only this module owns HCI. The old discovery-only HCI path must never drain
 //! its packets. Futures are cooperatively polled from RadioServices::tick.
 use alloc::{boxed::Box, rc::Rc};
+use bt_hci::{
+    ControllerToHostPacket, HostToControllerPacket, WriteHci,
+    transport::{Transport, WithIndicator},
+};
 use core::{
     cell::RefCell,
     future::Future,
@@ -15,7 +19,6 @@ use esp_hal::time::Instant;
 use esp_radio::ble::controller::BleConnector;
 use heapless::Vec;
 use trouble_host::prelude::*;
-use bt_hci::{transport::{Transport, WithIndicator}, ControllerToHostPacket, HostToControllerPacket, WriteHci};
 
 // No executor sleeps on these timers: radio.tick polls every OS iteration.
 // A no-op wake is intentional; deadlines still use the real monotonic clock.
@@ -31,9 +34,14 @@ impl embassy_time_driver::Driver for CooperativeClock {
 embassy_time_driver::time_driver_impl!(static CLOCK: CooperativeClock = CooperativeClock);
 
 /// HID-дескриптор Consumer Control для медиакнопок.
-const REPORT_MAP: [u8; 23] = [
-    0x05, 0x0c, 0x09, 0x01, 0xa1, 0x01, 0x15, 0x00, 0x26, 0xff, 0x03, 0x19, 0x00, 0x2a, 0xff, 0x03,
-    0x75, 0x10, 0x95, 0x01, 0x81, 0x00, 0xc0,
+const REPORT_MAP: [u8; 70] = [
+    // Consumer Control, Report ID 1.
+    0x05, 0x0c, 0x09, 0x01, 0xa1, 0x01, 0x85, 0x01, 0x15, 0x00, 0x26, 0xff, 0x03, 0x19, 0x00, 0x2a,
+    0xff, 0x03, 0x75, 0x10, 0x95, 0x01, 0x81, 0x00, 0xc0,
+    // Keyboard, Report ID 2: modifiers, reserved, six key usages.
+    0x05, 0x01, 0x09, 0x06, 0xa1, 0x01, 0x85, 0x02, 0x05, 0x07, 0x19, 0xe0, 0x29, 0xe7, 0x15, 0x00,
+    0x25, 0x01, 0x75, 0x01, 0x95, 0x08, 0x81, 0x02, 0x75, 0x08, 0x95, 0x01, 0x81, 0x01, 0x19, 0x00,
+    0x29, 0x65, 0x15, 0x00, 0x25, 0x65, 0x75, 0x08, 0x95, 0x06, 0x81, 0x00, 0xc0,
 ];
 
 #[gatt_server]
@@ -53,14 +61,17 @@ struct MediaHid {
     info: [u8; 4],
     #[characteristic(uuid = "2a4b", read, value = REPORT_MAP)]
     /// Дескриптор HID-отчётов.
-    map: [u8; 23],
+    map: [u8; 70],
     #[characteristic(uuid = "2a4c", write_without_response)]
     /// Управляющее состояние компонента/протокола.
     control: u8,
-    #[descriptor(uuid = "2908", read, value = [0u8, 1u8])]
+    #[descriptor(uuid = "2908", read, value = [1u8, 1u8])]
     #[characteristic(uuid = "2a4d", read, notify)]
     /// HID-отчёт Consumer Control либо результат диагностики.
     report: [u8; 2],
+    #[descriptor(uuid = "2908", read, value = [2u8, 1u8])]
+    #[characteristic(uuid = "2a4d", read, notify)]
+    keyboard: [u8; 8],
 }
 
 // Optional custom service; it does not impersonate Google Wear OS services.
@@ -91,6 +102,8 @@ struct State {
     playback: Option<crate::media::Playback>,
     /// Признак подписки подключённого клиента на уведомления.
     subscribed: bool,
+    keyboard_subscribed: bool,
+    keys: Vec<[u8; 8], 16>,
     /// Сохранённые BLE-ключи сопряжения.
     bonds: Vec<BondInformation, 4>,
     /// Признак необходимости сохранить изменённые BLE-ключи.
@@ -120,13 +133,20 @@ impl embedded_io::ErrorType for SessionTransport<'_> {
 }
 impl Transport for SessionTransport<'_> {
     /// Только активная сессия читает HCI; параллельного raw-HCI reader нет.
-    async fn read<'a>(&self, buffer: &'a mut [u8]) -> Result<ControllerToHostPacket<'a>, Self::Error> {
+    async fn read<'a>(
+        &self,
+        buffer: &'a mut [u8],
+    ) -> Result<ControllerToHostPacket<'a>, Self::Error> {
         Transport::read(self.connector, buffer).await
     }
     /// Запоминает opcode для диагностики зависания и передаёт исходный пакет драйверу.
     async fn write<T: HostToControllerPacket>(&self, packet: &T) -> Result<(), Self::Error> {
         let mut encoded = [0; 259];
-        if WithIndicator::new(packet).write_hci(&mut encoded[..]).is_ok() && encoded[0] == 1 {
+        if WithIndicator::new(packet)
+            .write_hci(&mut encoded[..])
+            .is_ok()
+            && encoded[0] == 1
+        {
             let mut s = self.state.borrow_mut();
             s.last_opcode = u16::from_le_bytes([encoded[1], encoded[2]]);
             s.last_command_ms = now_ms();
@@ -218,7 +238,9 @@ impl BleHost {
             s.status = 5;
             return;
         }
-        if value && !s.enabled { s.restart_generation = s.restart_generation.wrapping_add(1); }
+        if value && !s.enabled {
+            s.restart_generation = s.restart_generation.wrapping_add(1);
+        }
         s.enabled = value;
         if !value {
             s.status = 0;
@@ -272,6 +294,14 @@ impl BleHost {
         }
         s.media.push(usage).is_ok()
     }
+    /// Отправляет клавишу только в зашифрованное соединение с подпиской Keyboard Input.
+    pub fn keyboard(&mut self, report: [u8; 8]) -> bool {
+        let mut s = self.state.borrow_mut();
+        if !s.keyboard_subscribed || !matches!(s.status, 2 | 3) {
+            return false;
+        }
+        s.keys.push(report).is_ok()
+    }
     /// Забирает последнее реальное состояние воспроизведения.
     pub fn take_playback(&mut self) -> Option<crate::media::Playback> {
         self.state.borrow_mut().playback.take()
@@ -320,8 +350,14 @@ async fn run(connector: BleConnector<'static>, address: [u8; 6], shared: Rc<RefC
         let failures = recovery.stopped(shared.borrow().advertise_generation != advertised);
         {
             let mut s = shared.borrow_mut();
-            s.status = 5; s.pin = None; s.decision = None;
-            s.subscribed = false; s.playback = None; s.media.clear();
+            s.status = 5;
+            s.pin = None;
+            s.decision = None;
+            s.subscribed = false;
+            s.keyboard_subscribed = false;
+            s.keys.clear();
+            s.playback = None;
+            s.media.clear();
         }
         crate::watch_println!("BLE: host session stopped; recovery attempt {}/3", failures);
         Timer::after_millis(500).await;
@@ -329,8 +365,15 @@ async fn run(connector: BleConnector<'static>, address: [u8; 6], shared: Rc<RefC
 }
 
 /// Одна сессия владеет своим host, GATT и очередями; физический connector заимствован.
-async fn run_session(connector: &BleConnector<'static>, mut address: [u8; 6], shared: Rc<RefCell<State>>) {
-    let controller: ExternalController<_, 8> = ExternalController::new(SessionTransport { connector, state: shared.clone() });
+async fn run_session(
+    connector: &BleConnector<'static>,
+    mut address: [u8; 6],
+    shared: Rc<RefCell<State>>,
+) {
+    let controller: ExternalController<_, 8> = ExternalController::new(SessionTransport {
+        connector,
+        state: shared.clone(),
+    });
     let mut resources: HostResources<DefaultPacketPool, 1, 3> = HostResources::new();
     // Stable per-board static-random identity, distinct from its public address.
     address[5] |= 0xc0;
@@ -412,7 +455,11 @@ async fn run_session(connector: &BleConnector<'static>, mut address: [u8; 6], sh
                 }
                 Either::Second(_) => {
                     let s = shared.borrow();
-                    crate::watch_println!("BLE: advertising startup timeout; last HCI=0x{:04x} age={}ms; rebuilding host", s.last_opcode, now_ms().saturating_sub(s.last_command_ms));
+                    crate::watch_println!(
+                        "BLE: advertising startup timeout; last HCI=0x{:04x} age={}ms; rebuilding host",
+                        s.last_opcode,
+                        now_ms().saturating_sub(s.last_command_ms)
+                    );
                     shared.borrow_mut().status = 5;
                     return;
                 }
@@ -420,7 +467,10 @@ async fn run_session(connector: &BleConnector<'static>, mut address: [u8; 6], sh
             let pairing = now_ms() < shared.borrow().pair_until;
             shared.borrow_mut().status = if pairing { 6 } else { 1 };
             crate::watch_println!("BLE: advertising ready as {}", name);
-            { let mut s = shared.borrow_mut(); s.advertise_generation = s.advertise_generation.wrapping_add(1); }
+            {
+                let mut s = shared.borrow_mut();
+                s.advertise_generation = s.advertise_generation.wrapping_add(1);
+            }
             let idle = async {
                 loop {
                     Timer::after_millis(50).await;
@@ -534,7 +584,10 @@ async fn run_session(connector: &BleConnector<'static>, mut address: [u8; 6], sh
                             // Require encryption for reports/control; discovery
                             // and the report map remain readable to HID hosts.
                             let sensitive = match &event {
-                                GattEvent::Read(e) => e.handle() == server.hid.report.handle,
+                                GattEvent::Read(e) => {
+                                    e.handle() == server.hid.report.handle
+                                        || e.handle() == server.hid.keyboard.handle
+                                }
                                 GattEvent::Write(_) => true,
                                 _ => false,
                             };
@@ -554,6 +607,15 @@ async fn run_session(connector: &BleConnector<'static>, mut address: [u8; 6], sh
                                     }
                                 }
                             }
+                            let keyboard_subscription = match &event {
+                                GattEvent::Write(e)
+                                    if Some(e.handle()) == server.hid.keyboard.cccd_handle
+                                        && e.data().len() == 2 =>
+                                {
+                                    Some(e.data() == [1, 0])
+                                }
+                                _ => None,
+                            };
                             let subscription = match &event {
                                 GattEvent::Write(e)
                                     if Some(e.handle()) == server.hid.report.cccd_handle
@@ -570,6 +632,9 @@ async fn run_session(connector: &BleConnector<'static>, mut address: [u8; 6], sh
                             };
                             if let Ok(reply) = reply {
                                 if encrypted {
+                                    if let Some(on) = keyboard_subscription {
+                                        shared.borrow_mut().keyboard_subscribed = on;
+                                    }
                                     if let Some(on) = subscription {
                                         shared.borrow_mut().subscribed = on;
                                     }
@@ -616,8 +681,28 @@ async fn run_session(connector: &BleConnector<'static>, mut address: [u8; 6], sh
                         .unwrap_or(false);
                     if encrypted {
                         if shared.borrow().pin.is_none() {
-                            let ready = shared.borrow().subscribed;
+                            let ready = {
+                                let s = shared.borrow();
+                                s.subscribed || s.keyboard_subscribed
+                            };
                             shared.borrow_mut().status = if ready { 3 } else { 2 };
+                        }
+                        let key = {
+                            let mut s = shared.borrow_mut();
+                            if s.keyboard_subscribed && !s.keys.is_empty() {
+                                Some(s.keys.remove(0))
+                            } else {
+                                None
+                            }
+                        };
+                        if let Some(key) = key {
+                            let down = server.hid.keyboard.notify(&conn, &key).await;
+                            Timer::after_millis(30).await;
+                            let up = server.hid.keyboard.notify(&conn, &[0; 8]).await;
+                            if down.is_err() || up.is_err() {
+                                conn.raw().disconnect();
+                                return;
+                            }
                         }
                         let usage = {
                             let mut s = shared.borrow_mut();

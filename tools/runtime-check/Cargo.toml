@@ -37,3 +37,6 @@ rhai = { version = "=1.25.1", default-features = false, features = ["no_std", "o
 heapless = { version = "=0.9.3", default-features = false }
 
 sha2 = { version = "=0.10.9", default-features = false }
+
+[build-dependencies]
+cc = "=1.10.0"

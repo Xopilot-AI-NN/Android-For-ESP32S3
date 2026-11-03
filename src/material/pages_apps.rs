@@ -11,13 +11,39 @@ impl Surface {
         use crate::apps::*;
         let a = f.app;
         match a.id {
-            FILES | EDITOR => { self.files_page(f, t); return; }
-            TASKS | EXPENSES => { self.organizer_page(f, t); return; }
-            FOCUS => { self.focus_page(f, t); return; }
-            PHONE => { self.phone_page(f, t); return; }
-            CALENDAR => { self.calendar_page(f, t); return; }
-            CONVERTER => { self.converter_page(f, t); return; }
-            COUNTER => { self.counter_page(f, t); return; }
+            FILES | EDITOR => {
+                self.files_page(f, t);
+                return;
+            }
+            TASKS => {
+                self.organizer_page(f, t);
+                return;
+            }
+            FOCUS => {
+                self.focus_page(f, t);
+                return;
+            }
+            PHONE => {
+                self.phone_page(f, t);
+                return;
+            }
+            CALENDAR => {
+                self.calendar_page(f, t);
+                return;
+            }
+            GALLERY => {
+                self.gallery_page(f, t);
+                return;
+            }
+            BT_KEYBOARD => {
+                self.keyboard_app_page(f, t);
+                return;
+            }
+            GOOGLE | GOOGLE_CALENDAR | GMAIL | TRANSLATOR => {
+                self.remote_app_page(f, t);
+                return;
+            }
+
             _ => {}
         }
         if a.id == WEATHER {
@@ -26,10 +52,6 @@ impl Surface {
         }
         if a.id == WORLD {
             self.world_page(f, t);
-            return;
-        }
-        if a.id == BREATHING {
-            self.breathing_page(f, t);
             return;
         }
         match a.id {

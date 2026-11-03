@@ -89,6 +89,7 @@ pub enum BluetoothUiAction {
     Disconnect,
     Forget,
     Media(u16),
+    Keyboard([u8; 8]),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -108,6 +109,7 @@ pub enum RuntimeEvent {
     Rotate(i32),
     Swipe(i32),
     Press,
+    Click(u8),
     Power,
 }
 
@@ -430,13 +432,21 @@ impl Runtime {
             m.startup =
                 crate::startup::phase(crate::ui_resources::pending(), self.bluetooth_status == 7);
             m.app = self.native_app.view();
-            if m.screen == 1 && self.watch_face == 4 { m.app.weather = crate::weather::snapshot(); }
-            if matches!(m.screen, 2 | 26) { m.cursor = self.launcher_cursor.min(crate::apps::COUNT); }
-            if matches!(m.app.id, crate::apps::FILES | crate::apps::EDITOR) && matches!(m.app.files.mode, 2 | 4) {
+            if m.screen == 1 && self.watch_face == 4 {
+                m.app.weather = crate::weather::snapshot();
+            }
+            if matches!(m.screen, 2 | 26) {
+                m.cursor = self.launcher_cursor.min(crate::apps::COUNT);
+            }
+            if matches!(m.app.id, crate::apps::FILES | crate::apps::EDITOR)
+                && matches!(m.app.files.mode, 2 | 4)
+            {
                 m.keyboard = m.app.files.keyboard;
                 m.keyboard_error = m.app.files.error;
             }
-            if matches!(m.app.id, crate::apps::TASKS | crate::apps::EXPENSES) && m.app.organizer.editing {
+            if matches!(m.app.id, crate::apps::TASKS | crate::apps::EXPENSES)
+                && m.app.organizer.editing
+            {
                 m.keyboard = m.app.organizer.keyboard;
                 m.keyboard_error = m.app.organizer.error;
             }
@@ -544,13 +554,24 @@ impl Runtime {
         self.native_app.id() == crate::apps::DIAGNOSTICS
     }
 
+    /// Только списки файлов и строк используют один/два/три клика.
+    pub fn file_gestures_active(&self) -> bool {
+        matches!(
+            self.native_app.id(),
+            crate::apps::FILES | crate::apps::EDITOR
+        ) && matches!(self.native_app.view().files.mode, 0 | 3)
+    }
     /// Возвращает счётчики работы Rhai и кэша.
     pub fn script_stats(&self) -> ScriptStats {
         self.scene_cache.stats
     }
     /// Определяет ближайшую проверку интерфейса с учётом затемнения и сна.
     pub fn next_background_refresh_ms(&self, now_ms: u64) -> u64 {
-        idle::next_refresh(now_ms, self.last_input_ms, self.security.timeout)
+        if crate::startup::active() {
+            now_ms + 80
+        } else {
+            idle::next_refresh(now_ms, self.last_input_ms, self.security.timeout)
+        }
     }
     /// Забирает отложенную команду питания для аппаратного слоя.
     pub fn take_system_action(&mut self) -> Option<SystemAction> {
@@ -605,6 +626,13 @@ impl Runtime {
 
     /// Забирает Bluetooth-команду, выбранную пользователем.
     pub fn take_bluetooth_action(&mut self) -> Option<BluetoothUiAction> {
+        if let Some(action) = self.native_app.bluetooth_action() {
+            if action == BluetoothUiAction::Pair {
+                self.native_app.close();
+                self.state = (self.state & !0x1ff) | 30;
+            }
+            return Some(action);
+        }
         self.bluetooth_action.take()
     }
 
@@ -723,10 +751,11 @@ impl Runtime {
             return Err(RuntimeError::NonZero);
         }
         self.state = state;
-        if matches!(state & 31, 2 | 26) { self.launcher_cursor = ((state >> 5) & 15) as u8; }
+        if matches!(state & 31, 2 | 26) {
+            self.launcher_cursor = ((state >> 5) & 15) as u8;
+        }
         self.render()
     }
-
 }
 
 #[cfg(not(feature = "rhai-runtime"))]
@@ -748,6 +777,9 @@ impl Runtime {
         ))
     }
     /// Проверяет активность диагностики без построения полного снимка.
+    pub fn file_gestures_active(&self) -> bool {
+        false
+    }
     pub fn diagnostics_active(&self) -> bool {
         false
     }

@@ -20,7 +20,7 @@ const MARKER_OFFSET: u64 = 4 * MIB;
 /// Параметр EXTRA_OFFSET компонента настройки объёма ZPager.
 pub const EXTRA_OFFSET: u64 = 8 * MIB;
 /// Параметр KEEP_USER_BYTES компонента настройки объёма ZPager.
-const KEEP_USER_BYTES: u64 = 16 * MIB;
+const KEEP_USER_BYTES: u64 = crate::file_store::BLOB_RESERVE;
 /// Сигнатура, отличающая собственный формат данных от чужих.
 const MAGIC: &[u8; 8] = b"SWEXv1\0\0";
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -128,11 +128,15 @@ fn inspect<D: BlockDevice>(dev: &D) -> Result<(Partition, u64), ()> {
     Ok((part, reserved))
 }
 /// Определяет максимальный допустимый размер по ёмкости раздела.
-fn maximum(part: Partition) -> u16 {
+fn maximum<D: BlockDevice>(dev: &D, part: Partition) -> u16 {
+    let pool = crate::file_store::Fs::mount(dev)
+        .ok()
+        .and_then(|fs| fs.saved_blob_base())
+        .unwrap_or_else(|| part.size_bytes().saturating_sub(KEEP_USER_BYTES) / 65536 * 65536);
     CHOICES
         .into_iter()
         .rev()
-        .find(|&m| EXTRA_OFFSET + u64::from(m - 32) * MIB + KEEP_USER_BYTES <= part.size_bytes())
+        .find(|&m| EXTRA_OFFSET + u64::from(m - 32) * MIB <= pool)
         .unwrap_or(32)
 }
 /// Called by PageStore::open; persistent slots always stay on the base partition.
@@ -146,7 +150,7 @@ pub fn restore<D: BlockDevice>(dev: &D, base: &PageStore) -> Option<(Partition, 
     }
     let (part, reserved) = inspect(dev).ok()?;
     let extra = u64::from(selected - 32) * MIB;
-    if selected > maximum(part) || extra > reserved {
+    if selected > maximum(dev, part) || extra > reserved {
         return None;
     }
     Some((part, (extra / crate::page_store::PAGE_SIZE as u64) as u32))
@@ -159,7 +163,7 @@ pub fn initialize<D: BlockDevice>(dev: &D, pager: Option<&PageStore>) {
         state.selected = saved(dev, pager);
         if pager.base_mib() == 32 {
             if let Ok((part, _)) = inspect(dev) {
-                state.maximum = maximum(part);
+                state.maximum = maximum(dev, part);
             }
         }
         if state.selected != state.active {
@@ -181,7 +185,7 @@ fn apply<D: BlockDevice>(dev: &D, size: u16) -> Result<(), u8> {
     }
     if size > 32 {
         let (part, reserved) = inspect(dev).map_err(|_| 4)?;
-        if size > maximum(part) {
+        if size > maximum(dev, part) {
             return Err(3);
         }
         let mut marker = [0; 512];

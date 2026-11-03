@@ -118,11 +118,6 @@ impl Surface {
         self.symbol(Symbol::Info, cx, cy, c);
     }
 
-    /// Рисует пиктограмму ассистента.
-    pub(super) fn icon_assistant(&mut self, cx: i32, cy: i32, c: u16) {
-        self.symbol(Symbol::Assistant, cx, cy, c);
-    }
-
     /// Рисует пиктограмму возврата.
     pub(super) fn icon_back(&mut self, cx: i32, cy: i32, c: u16) {
         self.symbol(Symbol::Back, cx, cy, c);
@@ -146,7 +141,7 @@ impl Surface {
     pub(super) fn app_icon(&mut self, icon: u8, cx: i32, cy: i32, c: u16) {
         // These simple tool pictograms also work with older resource packages.
         match icon {
-            crate::apps::CALENDAR => {
+            crate::apps::CALENDAR | crate::apps::GOOGLE_CALENDAR => {
                 self.line(cx - 11, cy - 9, cx + 11, cy - 9, 2, c);
                 self.line(cx - 11, cy - 9, cx - 11, cy + 11, 2, c);
                 self.line(cx + 11, cy - 9, cx + 11, cy + 11, 2, c);
@@ -154,15 +149,61 @@ impl Surface {
                 self.line(cx - 11, cy - 3, cx + 11, cy - 3, 2, c);
                 for x in [-5, 5] {
                     self.line(cx + x, cy - 13, cx + x, cy - 6, 2, c);
-                    for y in [2, 7] { self.circle(cx + x, cy + y, 1, c); }
+                    for y in [2, 7] {
+                        self.circle(cx + x, cy + y, 1, c);
+                    }
                 }
+                return;
+            }
+            crate::apps::GALLERY => {
+                self.line(cx - 12, cy - 10, cx + 12, cy - 10, 2, c);
+                self.line(cx - 12, cy - 10, cx - 12, cy + 10, 2, c);
+                self.line(cx + 12, cy - 10, cx + 12, cy + 10, 2, c);
+                self.line(cx - 12, cy + 10, cx + 12, cy + 10, 2, c);
+                self.circle(cx + 6, cy - 4, 3, c);
+                self.line(cx - 10, cy + 8, cx - 3, cy, 2, c);
+                self.line(cx - 3, cy, cx + 5, cy + 8, 2, c);
+                return;
+            }
+            crate::apps::BT_KEYBOARD => {
+                self.round_rect(cx - 14, cy - 9, 28, 19, 3, c);
+                let ink = rgb565(8, 20, 17);
+                for row in 0..2 {
+                    for col in 0..5 {
+                        self.round_rect(cx - 10 + col * 5, cy - 5 + row * 5, 3, 3, 0, ink);
+                    }
+                }
+                self.line(cx - 7, cy + 6, cx + 7, cy + 6, 2, ink);
+                return;
+            }
+            crate::apps::GMAIL => {
+                self.line(cx - 13, cy - 9, cx + 13, cy - 9, 2, c);
+                self.line(cx - 13, cy + 9, cx + 13, cy + 9, 2, c);
+                self.line(cx - 13, cy - 9, cx - 13, cy + 9, 2, c);
+                self.line(cx + 13, cy - 9, cx + 13, cy + 9, 2, c);
+                self.line(cx - 13, cy - 9, cx, cy + 1, 2, c);
+                self.line(cx + 13, cy - 9, cx, cy + 1, 2, c);
                 return;
             }
             crate::apps::CONVERTER => {
                 for (y, direction) in [(-5, 1), (5, -1)] {
                     self.line(cx - 11, cy + y, cx + 11, cy + y, 2, c);
-                    self.line(cx + direction * 11, cy + y, cx + direction * 5, cy + y - 5, 2, c);
-                    self.line(cx + direction * 11, cy + y, cx + direction * 5, cy + y + 5, 2, c);
+                    self.line(
+                        cx + direction * 11,
+                        cy + y,
+                        cx + direction * 5,
+                        cy + y - 5,
+                        2,
+                        c,
+                    );
+                    self.line(
+                        cx + direction * 11,
+                        cy + y,
+                        cx + direction * 5,
+                        cy + y + 5,
+                        2,
+                        c,
+                    );
                 }
                 return;
             }
@@ -195,6 +236,8 @@ impl Surface {
             20 => Symbol::Calculator,
             21 => Symbol::Timer,
             22 => Symbol::Devices,
+            25 => Symbol::Search,
+            28 => Symbol::Language,
             _ => Symbol::Grid,
         };
         if let Some(atlas) = crate::ui_resources::icons(true) {
@@ -228,6 +271,12 @@ impl Surface {
             20 => rgb565(255, 214, 153),
             21 => rgb565(218, 195, 253),
             22 => rgb565(156, 219, 237),
+            23 => rgb565(255, 193, 216),
+            24 => rgb565(130, 235, 250),
+            25 => rgb565(164, 204, 255),
+            26 => rgb565(169, 211, 255),
+            27 => rgb565(255, 184, 180),
+            28 => rgb565(184, 223, 255),
             _ => rgb565(50, 59, 54),
         }
     }
@@ -256,7 +305,14 @@ impl Surface {
             "Security" | "Screen lock" | "SECURITY" | "SCREEN LOCK" => {
                 self.icon_lock(cx, cy, color)
             }
-            "Date & time" | "Clock" | "DATE & TIME" | "CLOCK" | "Автовремя" | "Час" | "Минута" | "Часовой пояс" => self.icon_clock(cx, cy, color),
+            "Date & time"
+            | "Clock"
+            | "DATE & TIME"
+            | "CLOCK"
+            | "Автовремя"
+            | "Час"
+            | "Минута"
+            | "Часовой пояс" => self.icon_clock(cx, cy, color),
             "About" | "System info" | "ABOUT" | "SYSTEM INFO" | "BUILD NUMBER" => {
                 self.icon_info(cx, cy, color)
             }

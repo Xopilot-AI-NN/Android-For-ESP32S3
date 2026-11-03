@@ -203,6 +203,7 @@ struct AdbStream {
     mode: AdbStreamMode,
     /// Клиент должен подтвердить предыдущий ADB-пакет до следующей передачи.
     waiting_for_okay: bool,
+    sync_ack_pending: bool,
     /// Поток закрывается после подтверждения завершающего ответа.
     close_after_okay: bool,
     /// Монотонное время/интервал close_deadline в миллисекундах.
@@ -225,6 +226,7 @@ impl AdbStream {
             device_id: 0,
             mode: AdbStreamMode::Closed,
             waiting_for_okay: false,
+            sync_ack_pending: false,
             close_after_okay: false,
             close_deadline_ms: 0,
             input: HString::new(),
@@ -241,6 +243,7 @@ impl AdbStream {
         self.device_id = 0;
         self.mode = AdbStreamMode::Closed;
         self.waiting_for_okay = false;
+        self.sync_ack_pending = false;
         self.close_after_okay = false;
         self.close_deadline_ms = 0;
         self.input.clear();
@@ -274,6 +277,7 @@ pub struct NetworkService {
     dhcp_handle: SocketHandle,
     /// Дескриптор TCP-сокета ADB.
     adb_handle: SocketHandle,
+    adb_listener: SocketHandle,
     /// Дескриптор UDP-сокета NTP.
     ntp_handle: SocketHandle,
     /// Последний проверенный погодный снимок.
@@ -281,7 +285,7 @@ pub struct NetworkService {
     /// Накопитель входящего ADB-пакета.
     adb_rx: AdbRx,
     /// Состояние единственного текущего ADB-потока.
-    adb_stream: AdbStream,
+    adb_streams: alloc::vec::Vec<AdbStream>,
     /// Источник локальных ID новых ADB-потоков.
     next_adb_local_id: u32,
     /// Последний выданный IP-адрес.
@@ -327,8 +331,15 @@ impl NetworkService {
         // latency to OKAY/WRTE/CLSE handshakes on a local Wi-Fi network.
         adb_socket.set_nagle_enabled(false);
         adb_socket.set_keep_alive(Some(SmolDuration::from_secs(15)));
-        adb_socket.set_timeout(Some(SmolDuration::from_secs(90)));
+        adb_socket.set_timeout(None);
         let adb_handle = sockets.add(adb_socket);
+        let mut listener = tcp::Socket::new(
+            tcp::SocketBuffer::new(vec![0; 4096]),
+            tcp::SocketBuffer::new(vec![0; 4096]),
+        );
+        listener.set_nagle_enabled(false);
+        listener.set_keep_alive(Some(SmolDuration::from_secs(15)));
+        let adb_listener = sockets.add(listener);
 
         let ntp_rx_meta = &mut NTP_RX_META.init([udp::PacketMetadata::EMPTY; 2])[..];
         let ntp_tx_meta = &mut NTP_TX_META.init([udp::PacketMetadata::EMPTY; 2])[..];
@@ -347,9 +358,10 @@ impl NetworkService {
             sockets,
             dhcp_handle,
             adb_handle,
+            adb_listener,
             ntp_handle,
             adb_rx: AdbRx::new(),
-            adb_stream: AdbStream::new(),
+            adb_streams: (0..4).map(|_| AdbStream::new()).collect(),
             next_adb_local_id: 1,
             ip: None,
             link: LinkState::Down,
@@ -404,11 +416,16 @@ impl NetworkService {
         self.link = LinkState::Down;
         self.clear_ip();
         self.adb_rx.reset();
-        self.adb_stream.clear();
+        for stream in &mut self.adb_streams {
+            stream.clear();
+        }
         let socket = self.sockets.get_mut::<tcp::Socket>(self.adb_handle);
         if socket.is_open() {
             socket.abort();
         }
+        self.sockets
+            .get_mut::<tcp::Socket>(self.adb_listener)
+            .abort();
         self.wadb_listening = false;
         self.wadb_seen_client = false;
         self.ntp_pending = false;
@@ -574,6 +591,30 @@ impl NetworkService {
     /// Обслуживает TCP/ADB без блокирующего ожидания клиента.
     fn poll_wadb(&mut self, enabled: bool) {
         let online = self.ip.is_some();
+        // A listening socket remains available while the current TCP peer is active.
+        // An explicit reconnect replaces the old transport; ordinary shell/logcat/SYNC
+        // channels multiplex on that transport instead of closing each other.
+        if !enabled || !online {
+            self.sockets
+                .get_mut::<tcp::Socket>(self.adb_listener)
+                .abort();
+        } else {
+            let listener = self.sockets.get_mut::<tcp::Socket>(self.adb_listener);
+            if !listener.is_open() {
+                let _ = listener.listen(WADB_PORT);
+            }
+            if listener.can_recv() {
+                core::mem::swap(&mut self.adb_handle, &mut self.adb_listener);
+                self.sockets
+                    .get_mut::<tcp::Socket>(self.adb_listener)
+                    .abort();
+                self.adb_rx.reset();
+                for stream in &mut self.adb_streams {
+                    stream.clear();
+                }
+                println!("adbd: replacing TCP transport after explicit reconnect");
+            }
+        }
         let socket = self.sockets.get_mut::<tcp::Socket>(self.adb_handle);
 
         if !enabled || !online {
@@ -582,16 +623,29 @@ impl NetworkService {
             }
             self.wadb_listening = false;
             self.adb_rx.reset();
-            self.adb_stream.clear();
+            for stream in &mut self.adb_streams {
+                stream.clear();
+            }
             return;
         }
 
+        if matches!(socket.state(), tcp::State::CloseWait | tcp::State::TimeWait)
+            && !socket.can_recv()
+        {
+            socket.abort();
+            self.adb_rx.reset();
+            for stream in &mut self.adb_streams {
+                stream.clear();
+            }
+        }
         if !socket.is_open() {
             match socket.listen(WADB_PORT) {
                 Ok(()) => {
                     self.wadb_listening = true;
                     self.wadb_seen_client = false;
-                    self.adb_stream.clear();
+                    for stream in &mut self.adb_streams {
+                        stream.clear();
+                    }
                     println!("adbd: wireless transport listening on tcp:{}", WADB_PORT);
                 }
                 Err(e) => {
@@ -617,35 +671,46 @@ impl NetworkService {
             }
             for &byte in &incoming[..n] {
                 if let Some(message) = self.adb_rx.push(byte) {
-                    handle_adb(
-                        socket,
-                        message,
-                        &mut self.adb_stream,
-                        &mut self.next_adb_local_id,
-                    );
+                    let slot = match message.header.command {
+                        A_CNXN => {
+                            for stream in &mut self.adb_streams {
+                                stream.clear();
+                            }
+                            Some(0)
+                        }
+                        A_OPEN => self
+                            .adb_streams
+                            .iter()
+                            .position(|s| s.mode == AdbStreamMode::Closed),
+                        _ => self
+                            .adb_streams
+                            .iter()
+                            .position(|s| s.matches(message.header.arg0, message.header.arg1)),
+                    };
+                    if let Some(index) = slot {
+                        handle_adb(
+                            socket,
+                            message,
+                            &mut self.adb_streams[index],
+                            &mut self.next_adb_local_id,
+                        );
+                    } else {
+                        let _ = send_packet(socket, A_CLSE, 0, message.header.arg0, &[]);
+                    }
                 }
             }
         }
 
-        service_stream(socket, &mut self.adb_stream);
-
-        // A well-behaved adb host ACKs WRTE before we close a one-shot shell.
-        // If an older/newer host fails to do that, don't leave the shell stream
-        // hung forever: close it after a short grace period.
-        if self.adb_stream.mode == AdbStreamMode::OneShot
-            && self.adb_stream.close_after_okay
-            && self.adb_stream.close_deadline_ms != 0
-            && now_ms() >= self.adb_stream.close_deadline_ms
-        {
-            println!("adbd: shell ACK timeout; closing stream");
-            let _ = send_packet(
-                socket,
-                A_CLSE,
-                self.adb_stream.device_id,
-                self.adb_stream.host_id,
-                &[],
-            );
-            self.adb_stream.clear();
+        for stream in &mut self.adb_streams {
+            service_stream(socket, stream);
+            if stream.mode == AdbStreamMode::OneShot
+                && stream.close_after_okay
+                && stream.close_deadline_ms != 0
+                && now_ms() >= stream.close_deadline_ms
+            {
+                let _ = send_packet(socket, A_CLSE, stream.device_id, stream.host_id, &[]);
+                stream.clear();
+            }
         }
     }
 }

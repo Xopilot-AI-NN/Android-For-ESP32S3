@@ -14,8 +14,8 @@ class AppPackagesTests(unittest.TestCase):
 
     def test_all_launcher_apps_have_real_sources(self):
         catalog = builder.validate_app_packages()
-        self.assertEqual(sum(entry.get("launcher", False) for entry in catalog), 18)
-        self.assertEqual(len(catalog), 21)
+        self.assertEqual(sum(entry.get("launcher", False) for entry in catalog), 19)
+        self.assertEqual(len(catalog), 22)
         self.assertFalse((builder.ROOT / "system/app").exists())
         self.assertFalse((builder.ROOT / "system/priv-app").exists())
 
@@ -33,7 +33,7 @@ class AppPackagesTests(unittest.TestCase):
             app = Path(temp) / "App"
             shutil.copytree(builder.APP_ROOT, app, ignore=shutil.ignore_patterns(".git"))
             source = app / "src/catalog.rs"
-            source.write_text(source.read_text().replace("0, 1, 2, 5", "1, 0, 2, 5"))
+            source.write_text(source.read_text().replace("0, 1, 2, 6", "1, 0, 2, 6"))
             with patch.object(builder, "APP_ROOT", app):
                 with self.assertRaisesRegex(ValueError, "Native launcher differs"):
                     builder.validate_app_packages()

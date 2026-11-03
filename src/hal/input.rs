@@ -1,6 +1,8 @@
 // Модуль энкодера, кнопки и выбора режима загрузки.
 #[path = "input/button.rs"]
 mod button;
+#[path = "input/clicks.rs"]
+mod clicks;
 use button::{ButtonAction, ButtonState};
 #[path = "input/encoder.rs"]
 mod encoder;
@@ -25,6 +27,7 @@ pub struct BootKeys<'d> {
     /// Аппаратный/временной обработчик кнопки.
     button: ButtonState,
     last_gesture: Option<(u64, i8)>,
+    clicks: clicks::Clicks,
 }
 
 impl<'d> BootKeys<'d> {
@@ -67,6 +70,7 @@ impl<'d> BootKeys<'d> {
             steps: encoder::EncoderSteps::new(),
             button: ButtonState::default(),
             last_gesture: None,
+            clicks: clicks::Clicks::default(),
         }
     }
 
@@ -79,7 +83,9 @@ impl<'d> BootKeys<'d> {
     /// Её отпускание не должно немедленно активировать первую строку меню.
     pub fn consume_boot_press(&mut self) {
         if self.power.is_low() {
-            let now = esp_hal::time::Instant::now().duration_since_epoch().as_millis();
+            let now = esp_hal::time::Instant::now()
+                .duration_since_epoch()
+                .as_millis();
             let _ = self.button.poll(true, now);
             self.button.consume_hold();
         }
@@ -150,6 +156,38 @@ impl<'d> BootKeys<'d> {
             },
             button,
         ]
+    }
+    /// Серии кликов включаются только для списка файлов/строк, не для клавиатуры.
+    pub fn poll_app_events(
+        &mut self,
+        reverse: bool,
+        gestures: bool,
+    ) -> [Option<crate::runtime::RuntimeEvent>; 2] {
+        use crate::runtime::RuntimeEvent;
+        let mut events = self.poll_runtime_events(reverse);
+        if !gestures {
+            self.clicks.cancel();
+            return events;
+        }
+        let now = esp_hal::time::Instant::now()
+            .duration_since_epoch()
+            .as_millis();
+        let press = events.iter().any(|e| *e == Some(RuntimeEvent::Press));
+        if events.iter().flatten().any(|e| *e != RuntimeEvent::Press) {
+            self.clicks.cancel();
+            return events;
+        }
+        for event in &mut events {
+            if *event == Some(RuntimeEvent::Press) {
+                *event = None;
+            }
+        }
+        if !self.power.is_low() {
+            if let Some(n) = self.clicks.poll(press, now) {
+                events[1] = Some(RuntimeEvent::Click(n));
+            }
+        }
+        events
     }
     /// Читает аппаратный счётчик и выдаёт устойчивое направление шага.
     pub fn poll_rotation(&mut self) -> i8 {

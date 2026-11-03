@@ -13,7 +13,11 @@ impl Surface {
     }
     /// Выбирает контрастный текст для обычной или светлой подложки.
     pub(super) fn focus_ink(t: Theme, selected: bool) -> u16 {
-        if selected { rgb565(8, 20, 17) } else { t.on_surface }
+        if selected {
+            rgb565(8, 20, 17)
+        } else {
+            t.on_surface
+        }
     }
     /// Накладывает полупрозрачную строку времени, Wi-Fi и Bluetooth поверх кадра.
     pub(super) fn status_strip(&mut self, f: MaterialFrame, t: Theme) {
@@ -71,7 +75,7 @@ impl Surface {
 
     /// Рисует единообразный заголовок приложения.
     pub(super) fn photo_header(&mut self, _frame: MaterialFrame, title: &str, t: Theme) {
-        self.text_center(
+        self.text_center_raw(
             29,
             title,
             if title.chars().count() > 19 { 1 } else { 2 },
@@ -213,7 +217,13 @@ impl Surface {
     ) {
         let (w, h) = (104, 54);
         let bg = Self::focus_fill(if on { t.primary } else { t.surface_high }, selected);
-        let fg = if selected { Self::focus_ink(t, true) } else if on { t.on_primary } else { t.on_surface };
+        let fg = if selected {
+            Self::focus_ink(t, true)
+        } else if on {
+            t.on_primary
+        } else {
+            t.on_surface
+        };
         self.round_rect(cx - w / 2, cy - h / 2, w, h, 27, bg);
         match label {
             "Wi-Fi" => self.icon_wifi(cx, cy - 7, fg),
@@ -252,7 +262,11 @@ impl Surface {
             value,
             1,
             138,
-            if active { Self::focus_ink(t, true) } else { t.on_surface_variant },
+            if active {
+                Self::focus_ink(t, true)
+            } else {
+                t.on_surface_variant
+            },
         );
     }
 }

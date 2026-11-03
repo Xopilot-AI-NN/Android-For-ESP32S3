@@ -42,7 +42,7 @@ rand_core = { version = "0.6", default-features = false, optional = true }
 bt-hci = { version = "=0.6.0", default-features = false, optional = true }
 embedded-io = { version = "=0.6.1", optional = true }
 esp-hal = { version = "=1.0.0", features = ["esp32s3", "unstable", "psram"] }
-esp-backtrace = { version = "=0.18.1", features = ["esp32s3", "panic-handler", "println"] }
+esp-backtrace = { version = "=0.18.1", features = ["esp32s3", "println"] }
 esp-println = { version = "=0.16.1", features = ["esp32s3"] }
 esp-alloc = "=0.9.0"
 esp-bootloader-esp-idf = { version = "=0.4.0", features = ["esp32s3"] }
@@ -65,6 +65,7 @@ opt-level = "s"
 # Keep the esp-hal 1.0 / esp-radio 0.17 ABI while backporting the upstream
 # Xtensa context-restore fix missing from esp-rtos 0.2.0.
 [patch.crates-io]
+trouble-host = { path = "platform/trouble-host" }
 esp-rtos = { path = "platform/esp-rtos" }
 
 [profile.release]
@@ -81,3 +82,6 @@ panic = "abort"
 # Wi-Fi/BLE operation even though the rest of the tiny boot runtime uses `z`.
 [profile.release.package.esp-radio]
 opt-level = 3
+
+[build-dependencies]
+cc = "=1.10.0"

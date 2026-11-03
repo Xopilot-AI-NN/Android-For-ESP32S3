@@ -6,55 +6,36 @@ impl Surface {
     pub fn boot_frame(&mut self, phase: u8) {
         self.fill_rect(0, 0, 240, 280, 0);
 
-        const POSITIONS: [(i32, i32); 16] = [
-            (40, 0), (37, 15), (28, 28), (15, 37),
-            (0, 40), (-15, 37), (-28, 28), (-37, 15),
-            (-40, 0), (-37, -15), (-28, -28), (-15, -37),
-            (0, -40), (15, -37), (28, -28), (37, -15),
-        ];
-
-        let colors = [
-            rgb565(66, 133, 244),
-            rgb565(234, 67, 53),
-            rgb565(251, 188, 5),
-            rgb565(52, 168, 83),
-        ];
-
-        let step = usize::from(phase) % POSITIONS.len();
-
-        for (index, color) in colors.iter().enumerate() {
-            let position = (step + index * 4) % POSITIONS.len();
-            let (dx, dy) = POSITIONS[position];
-
-            self.circle(
-                120 + dx,
-                112 + dy,
-                7,
-                *color,
-            );
-        }
-
-        self.text_center(185, "Wear OS", 2, 0xffff);
-        self.text_center(
-            207,
-            "ESP32-S3",
-            1,
-            rgb565(145, 145, 145),
-        );
+        // Геометрия Wear OS из референса: две наклонные капсулы и две точки.
+        // Векторное построение не требует SD, PNG-декодера или загрузки ресурсов.
+        let tick = if phase == 255 {
+            (esp_hal::time::Instant::now()
+                .duration_since_epoch()
+                .as_millis()
+                / 80
+                % 32) as u8
+        } else {
+            phase % 32
+        };
+        let lift = match tick {
+            0..=7 => 0,
+            8..=15 => -1,
+            16..=23 => 0,
+            _ => 1,
+        };
+        self.line(78, 91 + lift, 107, 151 + lift, 19, rgb565(0, 135, 245));
+        self.line(106, 91 - lift, 135, 151 - lift, 19, rgb565(255, 190, 0));
+        self.circle(159, 91 + lift, 10, rgb565(255, 60, 48));
+        self.circle(147, 118 - lift, 11, rgb565(0, 168, 70));
+        self.text_center_raw(181, "Wear OS", 2, 0xffff);
+        self.text_center_raw(207, "by Google", 1, 0xffff);
     }
-    /// Рисует стартовый экран и текущий этап подготовки.
-    pub fn boot_progress_frame(&mut self, label: &str, phase: u8) {
+    /// Единый экран на всех стадиях; технические статусы идут в logcat, не во второй splash.
+    pub fn boot_progress_frame(&mut self, label: &str, _phase: u8) {
         self.boot_frame(255);
-        self.round_rect(30, 236, 180, 4, 2, rgb565(40, 45, 50));
-        self.round_rect(
-            30,
-            236,
-            i32::from(phase.min(8)) * 180 / 8,
-            4,
-            2,
-            rgb565(120, 208, 255),
-        );
-        self.text_center(253, label, 1, 0xffff);
+        if label.starts_with("CROWN") {
+            self.text_center_raw(259, "+ Fastboot / - Recovery", 1, rgb565(120, 120, 120));
+        }
     }
     /// Рисует меню fastboot/recovery с выбранной строкой.
     pub fn boot_menu_frame(&mut self, kind: u8, cursor: u8) {
@@ -82,10 +63,7 @@ impl Surface {
             let y = 88 + i as i32 * 34;
 
             if cursor as usize == i {
-                self.fill_rect(
-                    8, y - 6, 224, 29,
-                    if kind == 1 { green } else { orange },
-                );
+                self.fill_rect(8, y - 6, 224, 29, if kind == 1 { green } else { orange });
             }
 
             self.text(

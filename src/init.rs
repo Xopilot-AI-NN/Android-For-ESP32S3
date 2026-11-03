@@ -19,6 +19,7 @@ pub(crate) fn run() -> ! {
         .with_cpu_clock(CpuClock::max())
         .with_psram(esp_hal::psram::PsramConfig::default());
     let p = esp_hal::init(hal_cfg);
+    crate::panic_record::recover();
     let requested = crate::power::take();
     if requested == Some(runtime::SystemAction::PowerOff) {
         use esp_hal::gpio::RtcPinWithResistors;
@@ -62,7 +63,6 @@ pub(crate) fn run() -> ! {
         esp_alloc::heap_allocator!(#[ram(reclaimed)] size: 64 * 1024);
         println!("radio: +64 KiB reclaimed internal heap reserved for RTOS stacks");
     }
-
 
     let delay = Delay::new();
 
@@ -149,13 +149,21 @@ pub(crate) fn run() -> ! {
     let mut mode = match requested {
         Some(runtime::SystemAction::Fastboot) => BootMode::Fastboot,
         Some(runtime::SystemAction::Recovery) => BootMode::Recovery,
-        _ => sample_boot_mode(&mut boot_display, &mut keys, &mut boot_input, &delay, config::BOOT_KEY_SAMPLE_MS),
+        _ => sample_boot_mode(
+            &mut boot_display,
+            &mut keys,
+            &mut boot_input,
+            &delay,
+            config::BOOT_KEY_SAMPLE_MS,
+        ),
     };
     if mode == BootMode::Recovery {
         // Минимальное встроенное recovery доступно и с пустым внешним носителем.
         mode = recovery_menu(&mut boot_display, &mut keys, &mut boot_input, &delay);
     }
-    if mode == BootMode::Fastboot { enter_fastboot(boot_display, boot_input, &mut keys, &delay); }
+    if mode == BootMode::Fastboot {
+        enter_fastboot(boot_display, boot_input, &mut keys, &delay);
+    }
     let (physical_display, usb_tx) = boot_display.into_parts();
     let usb_rx = boot_input.into_inner();
 
@@ -168,7 +176,6 @@ pub(crate) fn run() -> ! {
         esp_rtos::start(timg0.timer0);
         radio::RadioServices::new(p.WIFI, p.BT)
     };
-
 
     #[cfg(feature = "pc-block-boot")]
     {
@@ -342,7 +349,7 @@ pub(crate) fn run() -> ! {
         loop {
             keys.set_sensitivity(os.crown_sensitivity());
             service_disk_requests(session.block_device(), &mut display, &mut os);
-            let events = keys.poll_runtime_events(os.crown_reversed());
+            let events = keys.poll_app_events(os.crown_reversed(), os.file_gestures_active());
             for event in events.into_iter().flatten() {
                 if let Ok(frame) = dispatch_with_pager(
                     &mut os,
@@ -958,7 +965,7 @@ pub(crate) fn run() -> ! {
             service_disk_requests(session.block_device(), &mut display, &mut os);
             keys.set_sensitivity(os.crown_sensitivity());
             for event in keys
-                .poll_runtime_events(os.crown_reversed())
+                .poll_app_events(os.crown_reversed(), os.file_gestures_active())
                 .into_iter()
                 .flatten()
             {

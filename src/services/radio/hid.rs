@@ -76,6 +76,11 @@ impl RadioServices {
             return;
         };
         match action {
+            BluetoothUiAction::Keyboard(report) => {
+                if !host.keyboard(report) {
+                    println!("BLE: keyboard needs encrypted subscription");
+                }
+            }
             BluetoothUiAction::Pair => host.pair(),
             BluetoothUiAction::Confirm(yes) => host.confirm(yes),
             BluetoothUiAction::Disconnect => host.disconnect(),

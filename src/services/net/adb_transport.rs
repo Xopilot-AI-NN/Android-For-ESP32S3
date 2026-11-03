@@ -9,6 +9,12 @@ pub(super) fn service_stream(socket: &mut tcp::Socket<'_>, stream: &mut AdbStrea
     }
     if let Some(sync) = stream.sync.as_mut() {
         sync.poll();
+        if stream.sync_ack_pending && sync.can_accept_input() {
+            if !send_packet(socket, A_OKAY, stream.device_id, stream.host_id, &[]) {
+                return;
+            }
+            stream.sync_ack_pending = false;
+        }
         if !sync.output.is_empty() {
             if send_packet(
                 socket,
@@ -148,7 +154,10 @@ pub(super) fn handle_adb(
                 let _ = stream.output.push_str("AOSP wearable shell\r\naosp:/ $ ");
                 service_stream(socket, stream);
             } else {
-                println!("adbd: shell {}", command);
+                println!(
+                    "adbd: shell {}",
+                    command.split_whitespace().next().unwrap_or("")
+                );
                 execute(socket, stream, command);
             }
         }
@@ -157,12 +166,13 @@ pub(super) fn handle_adb(
                 let _ = send_packet(socket, A_CLSE, 0, message.header.arg0, &[]);
                 return;
             }
-            let _ = send_packet(socket, A_OKAY, stream.device_id, stream.host_id, &[]);
             if let Some(sync) = stream.sync.as_mut() {
+                stream.sync_ack_pending = true;
                 sync.push(message.payload);
                 service_stream(socket, stream);
                 return;
             }
+            let _ = send_packet(socket, A_OKAY, stream.device_id, stream.host_id, &[]);
             if stream.mode == AdbStreamMode::Logcat {
                 if message.payload.contains(&3) || message.payload.contains(&4) {
                     stream.logcat = None;

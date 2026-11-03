@@ -114,8 +114,15 @@ use input::BootMode;
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
-mod init;
+#[cfg(feature = "ble-hid")]
+#[path = "services/ble_recovery.rs"]
+mod ble_recovery;
 mod boot_modes;
+#[path = "services/companion.rs"]
+mod companion;
+#[path = "services/file_store.rs"]
+mod file_store;
+mod init;
 #[path = "services/persistence.rs"]
 mod persistence;
 #[path = "services/power.rs"]
@@ -126,13 +133,6 @@ mod radio_bridge;
 #[path = "services/state_flow.rs"]
 mod state_flow;
 mod text_input;
-#[path = "services/file_store.rs"]
-mod file_store;
-#[path = "services/companion.rs"]
-mod companion;
-#[cfg(feature = "ble-hid")]
-#[path = "services/ble_recovery.rs"]
-mod ble_recovery;
 
 #[main]
 /// Передаёт управление инициализации платы и основному циклу init::run.
@@ -147,3 +147,10 @@ pub mod storage_info;
 mod emergency;
 
 mod boot_policy;
+
+mod panic_record;
+#[path = "services/persistent_log.rs"]
+mod persistent_log;
+
+#[path = "services/google_gateway.rs"]
+mod google_gateway;

@@ -46,16 +46,26 @@ impl Surface {
                 t.error
             },
         );
-        let bytes = if organizer { f.app.organizer.bytes } else if file_editor {
+        let bytes = if organizer {
+            u32::from(f.app.organizer.bytes)
+        } else if file_editor {
             f.app.files.bytes
         } else if f.app.id == crate::apps::WEATHER {
-            u16::from(f.app.weather_editor.len)
+            u32::from(f.app.weather_editor.len)
         } else if f.name_editing {
-            u16::from(f.name_draft_len)
+            u32::from(f.name_draft_len)
         } else {
-            u16::from(f.wifi_password_len)
+            u32::from(f.wifi_password_len)
         };
-        let limit = if organizer { 128 } else if file_editor { f.app.files.limit } else if f.name_editing { 32 } else { 64 };
+        let limit = if organizer {
+            128
+        } else if file_editor {
+            f.app.files.limit
+        } else if f.name_editing {
+            32
+        } else {
+            64
+        };
         self.text_raw(
             if file_editor { 142 } else { 177 },
             29,
@@ -65,7 +75,13 @@ impl Surface {
         );
         // A light pill mirrors the input field in the supplied Gboard reference.
         self.round_rect(8, 49, 224, 32, 16, t.on_surface);
-        self.text_raw(17, 58, Self::text_field_tail(value.rsplit('\n').next().unwrap_or(""), 202), 1, t.bg);
+        self.text_raw(
+            17,
+            58,
+            Self::text_field_tail(value.rsplit('\n').next().unwrap_or(""), 202),
+            1,
+            t.bg,
+        );
         // Suggestions are explicit crown targets, never silent replacements.
         for (index, word) in keyboard.suggestions.iter().enumerate() {
             if word.is_empty() {
@@ -99,7 +115,11 @@ impl Surface {
                 }
                 let mut bytes = [0; 4];
                 let ch = keyboard.character(index).unwrap_or(' ');
-                let label = if ch == '\n' { "NL" } else { ch.encode_utf8(&mut bytes) };
+                let label = if ch == '\n' {
+                    "NL"
+                } else {
+                    ch.encode_utf8(&mut bytes)
+                };
                 self.keyboard_key(
                     left + col as i32 * (width + gap),
                     119 + row as i32 * 36,
@@ -138,7 +158,13 @@ impl Surface {
                 t.on_surface
             };
             if action == SHIFT && keyboard.page != 0 {
-                self.text_center_x(x + width / 2, 246, if keyboard.page == 1 { "1/2" } else { "2/2" }, 1, ink);
+                self.text_center_x(
+                    x + width / 2,
+                    246,
+                    if keyboard.page == 1 { "1/2" } else { "2/2" },
+                    1,
+                    ink,
+                );
             } else if action == MODE {
                 self.text_center_x(
                     x + width / 2,

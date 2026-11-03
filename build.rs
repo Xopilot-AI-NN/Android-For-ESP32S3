@@ -1,6 +1,7 @@
 // Модуль настройки сборки.
 /// Передаёт линкеру конфигурацию памяти и флаги для ESP32-S3.
 fn main() {
+    jpeg::build(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("platform/tjpgd"));
     // esp-hal 1.0.0's empty flash alignment reservation inherits SHF_WRITE.
     // Keep its addresses and NOBITS semantics, but declare the flash gap read-only
     // so GNU ld doesn't merge it with .text into an RWX program segment.
@@ -12,3 +13,6 @@ fn main() {
     println!("cargo:rerun-if-changed=../Bootloader/ld/esp32s3.x");
     println!("cargo:rustc-link-arg=-T{}", script.display());
 }
+
+#[path = "platform/tjpgd/build_support.rs"]
+mod jpeg;

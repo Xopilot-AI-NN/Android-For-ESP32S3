@@ -3,28 +3,28 @@
 //! only the ESP monotonic counter. Run with one test thread (shared clock state).
 #![allow(dead_code)]
 extern crate alloc;
+#[path = "../../../../Firmware/src/services/adb.rs"]
+pub mod adb;
+#[path = "../../../../Firmware/src/services/ble_recovery.rs"]
+mod ble_recovery;
+#[path = "../../../../Firmware/src/services/companion.rs"]
+pub mod companion;
+#[path = "../../../../Firmware/src/desktop_tx.rs"]
+mod desktop_tx;
 #[path = "../../../../Firmware/src/device_info.rs"]
 mod device_info;
 #[path = "../../../../Firmware/src/services/device_name.rs"]
 mod device_name;
-#[path = "../../../../Firmware/src/text_input.rs"]
-mod text_input;
 #[path = "../../../../Firmware/src/services/file_store.rs"]
 pub mod file_store;
-#[path = "../../../../Firmware/src/services/companion.rs"]
-pub mod companion;
-#[path = "../../../../Firmware/src/services/ble_recovery.rs"]
-mod ble_recovery;
-#[path = "../../../../Firmware/src/services/adb.rs"]
-pub mod adb;
-#[path = "../../../../Firmware/src/services/wallpaper.rs"]
-mod wallpaper;
 #[path = "../../../../Firmware/src/logging.rs"]
 mod logging;
-#[path = "../../../../Firmware/src/desktop_tx.rs"]
-mod desktop_tx;
+#[path = "../../../../Firmware/src/text_input.rs"]
+mod text_input;
 #[path = "../../../../Firmware/src/viewer_stream.rs"]
 mod viewer_stream;
+#[path = "../../../../Firmware/src/services/wallpaper.rs"]
+mod wallpaper;
 extern crate self as esp_hal;
 extern crate self as esp_println;
 pub use std::println;
@@ -48,11 +48,17 @@ pub mod time {
     pub struct Duration(u64);
     impl Duration {
         /// Возвращает длительность в миллисекундах.
-        pub fn as_millis(&self) -> u64 { self.0 }
+        pub fn as_millis(&self) -> u64 {
+            self.0
+        }
         /// Возвращает длительность в секундах.
-        pub fn as_secs(&self) -> u64 { self.0 / 1000 }
+        pub fn as_secs(&self) -> u64 {
+            self.0 / 1000
+        }
         /// Возвращает длительность в микросекундах.
-        pub fn as_micros(&self) -> u64 { self.0 * 1000 }
+        pub fn as_micros(&self) -> u64 {
+            self.0 * 1000
+        }
     }
     /// Устанавливает искусственное монотонное время host-теста в секундах.
     pub fn set(seconds: u64) {
@@ -63,13 +69,14 @@ pub mod time {
         NOW.store(milliseconds, Ordering::Relaxed);
     }
 }
-#[path = "../../../../Firmware/src/hal/input/button.rs"]
-mod button;
 #[allow(unused_imports)]
 #[path = "../../../../Firmware/src/config.rs"]
 mod board_config;
+#[path = "../../../../Firmware/src/hal/input/button.rs"]
+mod button;
 mod config {
-    #[allow(unused_imports)] pub use super::board_config::*;
+    #[allow(unused_imports)]
+    pub use super::board_config::*;
     pub const MAX_SCRIPT_BYTES: usize = 24 * 1024;
     pub const MAX_RUNTIME_BUNDLE_BYTES: usize = 32 * 1024;
 }
@@ -109,31 +116,36 @@ pub mod boot_control;
 mod cpio;
 #[path = "../../../../Bootloader/src/gpt.rs"]
 mod gpt;
-#[path = "../../../../Firmware/src/services/page_store.rs"]
-mod page_store;
 #[cfg(test)]
 mod image_boot;
 #[path = "../../../../Bootloader/src/lp.rs"]
 mod lp;
+#[path = "../../../../Firmware/src/services/page_store.rs"]
+mod page_store;
 
 #[path = "../../../../App/src/lib.rs"]
 pub mod apps;
-#[path = "../../../../App/system/app/Weather/main.rs"]
-pub mod weather;
-#[path = "../../../../Firmware/src/services/swap_config.rs"]
-mod swap_config;
 #[path = "../../../../Firmware/src/startup.rs"]
 mod startup;
+#[path = "../../../../Firmware/src/services/swap_config.rs"]
+mod swap_config;
 #[path = "../../../../Firmware/src/services/ui_resources.rs"]
 pub mod ui_resources;
+#[path = "../../../../App/system/app/Weather/main.rs"]
+pub mod weather;
 
 // Host rendering substitutes only the hardware allocation policy.
 extern crate self as esp_alloc;
 /// Структура данных компонента host-стенда реального runtime.
-pub enum MemoryCapability { Internal, External }
+pub enum MemoryCapability {
+    Internal,
+    External,
+}
 impl From<MemoryCapability> for u8 {
     /// Преобразует значение в совместимое представление host-стенда.
-    fn from(_: MemoryCapability) -> u8 { 0 }
+    fn from(_: MemoryCapability) -> u8 {
+        0
+    }
 }
 /// Структура данных компонента host-стенда реального runtime.
 pub struct HostHeap;
@@ -141,11 +153,17 @@ pub struct HostHeap;
 pub static HEAP: HostHeap = HostHeap;
 impl HostHeap {
     /// Возвращает моделируемый объём занятой памяти.
-    pub fn used(&self) -> usize { 0 }
+    pub fn used(&self) -> usize {
+        0
+    }
     /// Возвращает моделируемый объём свободной памяти.
-    pub fn free(&self) -> usize { 1024 * 1024 }
+    pub fn free(&self) -> usize {
+        1024 * 1024
+    }
     /// Возвращает свободную память для запрошенного класса в host-стенде.
-    pub fn free_caps(&self, _: u8) -> usize { 1024 * 1024 }
+    pub fn free_caps(&self, _: u8) -> usize {
+        1024 * 1024
+    }
     /// Выделяет host-память вместо аппаратного capability-аллокатора ESP32.
     pub unsafe fn alloc_caps(&self, _: u8, layout: core::alloc::Layout) -> *mut u8 {
         unsafe { std::alloc::alloc(layout) }
@@ -172,10 +190,15 @@ mod tests {
             .join("\n");
         let app = root.join("../../../../App");
         source.push_str(&std::fs::read_to_string(app.join("src/packages.rhai")).unwrap());
-        let mut system_ui: Vec<_> = std::fs::read_dir(app.join("system/priv-app/SystemUI")).unwrap()
-            .map(|p| p.unwrap().path()).filter(|p| p.extension().is_some_and(|e| e == "rhai")).collect();
+        let mut system_ui: Vec<_> = std::fs::read_dir(app.join("system/priv-app/SystemUI"))
+            .unwrap()
+            .map(|p| p.unwrap().path())
+            .filter(|p| p.extension().is_some_and(|e| e == "rhai"))
+            .collect();
         system_ui.sort();
-        for path in system_ui { source.push_str(&std::fs::read_to_string(path).unwrap()); }
+        for path in system_ui {
+            source.push_str(&std::fs::read_to_string(path).unwrap());
+        }
         source.push_str(&std::fs::read_to_string(root.join("../../../ramdisk/init.rhai")).unwrap());
         source.push_str(
             &std::fs::read_to_string(
@@ -203,7 +226,9 @@ mod tests {
         os.replace_state(5 | (70 << 9)).unwrap();
         let calls = os.script_stats().calls;
         let before = frame(&mut os);
-        for _ in 0..50 { os.render().unwrap(); }
+        for _ in 0..50 {
+            os.render().unwrap();
+        }
         assert_eq!(os.script_stats().calls, calls);
         assert!(os.script_stats().cache_hits >= 50);
         let remaining = frame(&mut os).timer_secs;
@@ -231,9 +256,14 @@ mod tests {
         for ms in [100_120, 100_160, 100_200, 100_240] {
             time::set_ms(ms);
             let before = os.state();
-            let RuntimeFrame::Material(f) = os.dispatch(RuntimeEvent::Rotate(1)).unwrap() else { panic!(); };
+            let RuntimeFrame::Material(f) = os.dispatch(RuntimeEvent::Rotate(1)).unwrap() else {
+                panic!();
+            };
             assert_ne!(os.state(), before);
-            assert_eq!(f.transition_alpha, 255, "each crown step must reach the panel immediately");
+            assert_eq!(
+                f.transition_alpha, 255,
+                "each crown step must reach the panel immediately"
+            );
         }
         os.dispatch(RuntimeEvent::Home).unwrap();
         assert_eq!(frame(&mut os).transition_alpha, 255);
@@ -452,17 +482,17 @@ mod tests {
     fn clock_hub_routes_directly_and_watch_face_persists() {
         time::set(4000);
         let mut os = start();
-        os.replace_state(6 | (2 << 5)).unwrap();
+        os.replace_state(6).unwrap();
         os.dispatch(RuntimeEvent::Press).unwrap();
         assert_eq!(os.state() & 31, 31);
         os.dispatch(RuntimeEvent::Back).unwrap();
         assert_eq!(os.state() & 31, 6);
-        os.replace_state(6).unwrap();
+        os.replace_state(6 | (1 << 5)).unwrap();
         os.dispatch(RuntimeEvent::Press).unwrap();
         assert_eq!(frame(&mut os).timer_editor, 1);
         os.dispatch(RuntimeEvent::Back).unwrap();
         assert_eq!(os.state() & 31, 6);
-        os.replace_state(6 | (1 << 5)).unwrap();
+        os.replace_state(6 | (2 << 5)).unwrap();
         os.dispatch(RuntimeEvent::Press).unwrap();
         assert_eq!(frame(&mut os).timer_editor, 3);
         os.dispatch(RuntimeEvent::Back).unwrap();
@@ -526,45 +556,45 @@ mod tests {
 
     #[test]
     /// Проверяет открытие утилит в обоих видах меню и сохранность значений в сессии.
-    fn new_tools_open_from_both_launcher_layouts_and_keep_session_values() {
+    fn installed_apps_open_from_both_launcher_layouts() {
         let mut os = start();
         for screen in [2, 26] {
             if screen == 26 {
                 os.replace_state(2).unwrap();
-                os.dispatch(RuntimeEvent::Rotate(i32::from(apps::COUNT))).unwrap();
+                os.dispatch(RuntimeEvent::Rotate(i32::from(apps::COUNT)))
+                    .unwrap();
                 os.dispatch(RuntimeEvent::Press).unwrap();
             }
-            for (index, id) in [(10, apps::CALENDAR), (11, apps::CONVERTER), (12, apps::COUNTER)] {
-                os.replace_state(screen | (index << 5)).unwrap();
+            for id in [
+                apps::CALENDAR,
+                apps::GALLERY,
+                apps::BT_KEYBOARD,
+                apps::GOOGLE,
+                apps::GOOGLE_CALENDAR,
+                apps::GMAIL,
+                apps::TRANSLATOR,
+            ] {
+                let index = apps::LAUNCHER.iter().position(|v| *v == id).unwrap();
+                os.replace_state(screen).unwrap();
+                os.dispatch(RuntimeEvent::Rotate(index as i32)).unwrap();
                 os.dispatch(RuntimeEvent::Press).unwrap();
                 assert_eq!(frame(&mut os).app.id, id);
                 os.dispatch(RuntimeEvent::Back).unwrap();
                 assert_eq!(frame(&mut os).screen, screen as u8);
             }
         }
-        os.replace_state(26).unwrap();
-        os.dispatch(RuntimeEvent::Rotate(i32::from(apps::COUNT))).unwrap();
-        os.dispatch(RuntimeEvent::Press).unwrap();
-        os.replace_state(2 | (12 << 5)).unwrap();
-        os.dispatch(RuntimeEvent::Press).unwrap();
-        os.dispatch(RuntimeEvent::Press).unwrap();
-        assert_eq!(frame(&mut os).app.tools.count, 1);
-        os.dispatch(RuntimeEvent::Back).unwrap();
-        os.dispatch(RuntimeEvent::Press).unwrap();
-        assert_eq!(frame(&mut os).app.tools.count, 1);
-        os.dispatch(RuntimeEvent::Home).unwrap();
-        assert_eq!(frame(&mut os).screen, 1);
     }
-
     #[test]
     /// Проверяет выбор приложений за пределами четырёх бит курсора без изменения яркости.
     fn launcher_reaches_apps_beyond_the_legacy_four_bit_cursor() {
-        let mut os = start(); os.replace_state(2).unwrap();
+        let mut os = start();
+        os.replace_state(2).unwrap();
         let brightness = os.state() & (127 << 9);
-        os.dispatch(RuntimeEvent::Rotate(17)).unwrap();
-        assert_eq!(frame(&mut os).cursor, 17);
+        os.dispatch(RuntimeEvent::Rotate(i32::from(apps::COUNT) - 1))
+            .unwrap();
+        assert_eq!(frame(&mut os).cursor, apps::COUNT - 1);
         os.dispatch(RuntimeEvent::Press).unwrap();
-        assert_eq!(frame(&mut os).app.id, apps::PHONE);
+        assert_eq!(frame(&mut os).app.id, apps::TRANSLATOR);
         assert_eq!(os.state() & (127 << 9), brightness);
         os.dispatch(RuntimeEvent::Back).unwrap();
         os.dispatch(RuntimeEvent::Rotate(1)).unwrap();
@@ -596,10 +626,10 @@ mod tests {
 #[path = "../../../../Firmware/src/services/storage_info.rs"]
 pub mod storage_info;
 
-#[path = "../../../../Firmware/src/hal/emergency_policy.rs"]
-mod emergency_policy;
 #[path = "../../../../Firmware/src/boot_policy.rs"]
 mod boot_policy;
+#[path = "../../../../Firmware/src/hal/emergency_policy.rs"]
+mod emergency_policy;
 
 #[cfg(test)]
 mod recovery_transport_tests {
@@ -609,15 +639,32 @@ mod recovery_transport_tests {
     struct FailedTransport(u32);
     impl BlockDevice for FailedTransport {
         type Error = core::fmt::Error;
-        fn num_blocks(&self) -> Result<BlockCount, Self::Error> { Err(core::fmt::Error) }
-        fn read(&self, _: &mut [Block], _: BlockIdx) -> Result<(), Self::Error> { Err(core::fmt::Error) }
-        fn write(&self, _: &[Block], _: BlockIdx) -> Result<(), Self::Error> { Err(core::fmt::Error) }
+        fn num_blocks(&self) -> Result<BlockCount, Self::Error> {
+            Err(core::fmt::Error)
+        }
+        fn read(&self, _: &mut [Block], _: BlockIdx) -> Result<(), Self::Error> {
+            Err(core::fmt::Error)
+        }
+        fn write(&self, _: &[Block], _: BlockIdx) -> Result<(), Self::Error> {
+            Err(core::fmt::Error)
+        }
     }
     #[test]
     fn failed_boot_returns_the_original_transport_for_fastboot() {
         let result = android_storage::load_block_device_recoverable(FailedTransport(42));
-        let Err((device, error)) = result else { panic!("missing disk must fail"); };
+        let Err((device, error)) = result else {
+            panic!("missing disk must fail");
+        };
         assert_eq!(device.0, 42);
         assert!(matches!(error, android_storage::AndroidBootError::Card));
     }
 }
+
+#[path = "../../../../Firmware/src/services/persistent_log.rs"]
+mod persistent_log;
+
+#[path = "../../../../Firmware/src/hal/input/clicks.rs"]
+mod clicks;
+
+#[path = "../../../../Firmware/src/services/google_gateway.rs"]
+mod google_gateway;

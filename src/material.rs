@@ -442,7 +442,7 @@ fn theme(index: u8) -> Theme {
             bg: rgb565(0, 0, 0),
             surface: rgb565(27, 46, 62),
             surface_high: rgb565(54, 83, 109),
-            primary: rgb565(166, 222, 239),
+            primary: rgb565(130, 235, 250),
             on_primary: rgb565(4, 40, 50),
             primary_container: rgb565(32, 72, 85),
             on_primary_container: rgb565(245, 254, 254),
@@ -500,18 +500,7 @@ impl Surface {
         }
         self.fill_rect(0, 0, WIDTH as i32, HEIGHT as i32, t.bg);
         if frame.startup != 0 && !frame.power_menu {
-            self.boot_frame(255);
-            self.text_center(232, "Запуск…", 2, t.on_surface);
-            self.text_center(
-                260,
-                match frame.startup {
-                    2 => "Подготовка графики",
-                    3 => "Запуск Bluetooth",
-                    _ => "Подготовка интерфейса",
-                },
-                1,
-                t.on_surface_variant,
-            );
+            self.boot_frame(frame.startup - 1);
             return Rect::FULL;
         }
         if frame.aod {
@@ -607,7 +596,7 @@ impl Surface {
             24 => self.wifi_password(frame, t),
             25 => self.wifi_connecting(frame, t),
             26 => self.launcher(frame, t),
-            27 => self.assistant_page(frame, t),
+            27 => self.launcher(frame, t),
             28 => self.brightness_editor(frame, t),
             29 => self.flashlight_page(),
             30 => self.bluetooth_pairing(frame, t),
@@ -665,15 +654,15 @@ mod theme_tests {
             let colors = theme(index);
             let mut surface = Surface::new();
             surface.render(frame);
-            assert_eq!(surface.pixels()[126 * WIDTH + 39], Surface::focus_fill(colors.primary, true));
+            assert_eq!(
+                surface.pixels()[126 * WIDTH + 39],
+                Surface::focus_fill(colors.primary, true)
+            );
             frame.screen = 11;
             frame.timer_editor = 1;
             surface.render(frame);
-            assert_eq!(surface.pixels()[120 * WIDTH + 20], Surface::focus_fill(colors.primary_container, true));
-            assert_eq!(
-                surface.pixels()[120 * WIDTH + 125],
-                colors.primary_container
-            );
+            assert_eq!(surface.pixels()[199 * WIDTH + 34], colors.primary);
+            assert_eq!(surface.pixels()[199 * WIDTH + 91], colors.surface_high);
         }
     }
 }
@@ -687,55 +676,54 @@ mod frame_key;
 mod pages_boot;
 
 // Application-owned views are compiled into the MCU firmware, never into loader tools.
-#[path = "../../App/system/priv-app/SystemUI/main.rs"]
-mod app_systemui_main;
-#[path = "../../App/system/app/Clock/main.rs"]
-mod app_clock_main;
-#[path = "../../App/system/app/WearLauncher/main.rs"]
-mod app_wearlauncher_main;
-#[path = "../../App/system/app/WearAssistant/main.rs"]
-mod app_wearassistant_main;
-#[path = "../../App/system/app/Settings/main.rs"]
-mod app_settings_main;
-#[path = "../../App/system/app/WearWidgets/main.rs"]
-mod app_wearwidgets_main;
-#[path = "../../App/system/app/WearMedia/main.rs"]
-mod app_wearmedia_main;
-#[path = "../../App/system/app/Weather/weather.rs"]
-mod app_weather_weather;
-#[path = "../../App/system/app/Clock/weather.rs"]
-mod app_clock_weather;
-#[path = "../../App/system/app/Breathing/main.rs"]
-mod app_breathing_weather;
+#[path = "../../App/system/app/Calculator/calculator_page.rs"]
+mod app_calculator_calculator_page;
 #[path = "../../App/system/app/Calendar/utilities.rs"]
 mod app_calendar_utilities;
-#[path = "../../App/system/app/Converter/utilities.rs"]
-mod app_converter_utilities;
-#[path = "../../App/system/app/Counter/utilities.rs"]
-mod app_counter_utilities;
-#[path = "../../App/system/app/Tasks/organizer.rs"]
-mod app_tasks_organizer;
+#[path = "../../App/system/app/Clock/faces.rs"]
+mod app_clock_faces;
+#[path = "../../App/system/app/Clock/main.rs"]
+mod app_clock_main;
+#[path = "../../App/system/app/Clock/weather.rs"]
+mod app_clock_weather;
+#[path = "../../App/system/app/Files/view.rs"]
+mod app_files_view;
+#[path = "../../App/system/app/Flashlight/main.rs"]
+mod app_flashlight_view;
 #[path = "../../App/system/app/Focus/organizer.rs"]
 mod app_focus_organizer;
 #[path = "../../App/system/app/Phone/main.rs"]
 mod app_phone_organizer;
-#[path = "../../App/system/app/Files/view.rs"]
-mod app_files_view;
-#[path = "../../App/system/app/Clock/faces.rs"]
-mod app_clock_faces;
-#[path = "../../App/system/app/Settings/system.rs"]
-mod app_settings_system;
 #[path = "../../App/system/app/Settings/bluetooth.rs"]
 mod app_settings_bluetooth;
-#[path = "../../App/system/app/Settings/wifi.rs"]
-mod app_settings_wifi;
-#[path = "../../App/system/app/Calculator/calculator_page.rs"]
-mod app_calculator_calculator_page;
-#[path = "../../App/system/app/Share/main.rs"]
-mod app_share_share_page;
-#[path = "../../App/system/app/Settings/memory_page.rs"]
-mod app_settings_memory_page;
 #[path = "../../App/system/app/Settings/diagnostics_page.rs"]
 mod app_settings_diagnostics_page;
-#[path = "../../App/system/app/Flashlight/main.rs"]
-mod app_flashlight_view;
+#[path = "../../App/system/app/Settings/main.rs"]
+mod app_settings_main;
+#[path = "../../App/system/app/Settings/memory_page.rs"]
+mod app_settings_memory_page;
+#[path = "../../App/system/app/Settings/system.rs"]
+mod app_settings_system;
+#[path = "../../App/system/app/Settings/wifi.rs"]
+mod app_settings_wifi;
+#[path = "../../App/system/app/Share/main.rs"]
+mod app_share_share_page;
+#[path = "../../App/system/priv-app/SystemUI/main.rs"]
+mod app_systemui_main;
+#[path = "../../App/system/app/Tasks/organizer.rs"]
+mod app_tasks_organizer;
+#[path = "../../App/system/app/WearLauncher/main.rs"]
+mod app_wearlauncher_main;
+#[path = "../../App/system/app/WearMedia/main.rs"]
+mod app_wearmedia_main;
+#[path = "../../App/system/app/WearWidgets/main.rs"]
+mod app_wearwidgets_main;
+#[path = "../../App/system/app/Weather/weather.rs"]
+mod app_weather_weather;
+
+#[path = "../../App/system/app/Gallery/view.rs"]
+mod app_gallery_view;
+#[path = "../../App/system/app/BluetoothKeyboard/view.rs"]
+mod app_keyboard_view;
+#[path = "../../App/shared/remote_view.rs"]
+mod app_remote_view;

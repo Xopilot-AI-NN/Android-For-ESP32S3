@@ -124,6 +124,7 @@ pub fn bounds() -> (u64, u64) {
 }
 /// Очищает временное состояние или буфер компонента.
 pub fn clear() {
+    crate::persistent_log::request_clear();
     critical_section::with(|cs| RING.borrow(cs).borrow_mut().len = 0);
 }
 /// Находит следующую запись журнала по номеру.
