@@ -1,3 +1,9 @@
+Сервисный запуск: [10 секунд для перезапуска, выбор Fastboot/Recovery колёсиком](Bootloader/DELIVERY.md).
+
+Актуальное разделение проекта: [загрузчик → прошивка → приложения](ARCHITECTURE.md).
+Код приложений находится в App, HAL и службы — в Firmware; Bootloader содержит
+загрузочную библиотеку и инструменты. Это собственная прошивка ESP32-S3, без Linux/ART/APK.
+
 # AOSP Wear for ESP32-S3 — current release 17.2.1
 
 **Platform identity:** Android 17 QPR1 / API 37  
@@ -14,6 +20,130 @@ utilities and ordinary wireless ADB. Browser remote control has been removed.
 
 The watch does not run an HTTP control server. ADB remains available on port
 5555 when enabled; weather uses outgoing public API requests.
+
+## Комплектующие и подключение платы
+
+Текущая сборка рассчитана на **Waveshare ESP32-S3-Zero-N4R2**, экран
+**ST7789V3 240×280**, энкодер с кнопкой и microSD. Номера ниже — **GPIO**,
+а не порядковые номера контактов по краю платы. Земля периферии общая с GND
+платы. Сигнальные линии ESP32-S3 работают с логикой 3,3 В.
+
+### Материалы
+
+| Компонент | Для чего / что проверить |
+|---|---|
+| ESP32-S3-Zero-N4R2 | Именно вариант с 4 МиБ Flash и 2 МиБ PSRAM |
+| ST7789V3 240×280 | SPI-модуль с совместимыми питанием и входом подсветки BL/BLK |
+| Энкодер A/B с кнопкой | Колёсико и нажатие; общий контакт — GND |
+| microSD и 3,3-В SPI-модуль | Для автономного режима SD; в PC-режиме карта необязательна |
+| MPU6050, например модуль GY-521 | Акселерометр + гироскоп; ниже зарезервирована отдельная I²C-шина |
+| Одноэлементная АКБ Li-ion/LiPo 1S | Номинал 3,7 В, заряд до 4,2 В; ёмкость и допустимый ток зарядки — по паспорту АКБ |
+| Модуль TPS61023 | Повышение напряжения АКБ; вариант схемы ниже предполагает выход **5,0 В** |
+| Модуль TP4056 | Зарядка 1S; конкретную плату нужно проверить на наличие защиты аккумулятора |
+| Защита 1S | Нужна защита от переразряда/КЗ: встроенная в АКБ либо отдельная; часто присутствует на TP4056-платах с DW01A/8205A |
+| Выключатель, провода, разъёмы, изоляция | Разъём АКБ с проверенной полярностью, короткие силовые провода; защита соединений от замыкания |
+| USB-кабель для данных, паяльные материалы, мультиметр | Прошивка/отладка и проверка питания перед подключением платы |
+
+TPS61023 — повышающий преобразователь, TP4056 — зарядное устройство. Они
+не измеряют достоверный процент заряда для интерфейса часов. В прошивке пока
+нет измерителя АКБ и драйвера MPU6050; жесты и шагомер не включены.
+
+### Дисплей, microSD и колёсико: действующая распиновка
+
+| Контакт модуля | ESP32-S3-Zero | Примечание |
+|---|---|---|
+| ST7789 SCK / SCL | GPIO1 | SPI3, это **не** I²C SCL |
+| ST7789 MOSI / SDA / DIN | GPIO2 | SPI3, это **не** I²C SDA |
+| ST7789 RST / RES | GPIO3 | Сброс дисплея |
+| ST7789 DC | GPIO4 | Команда/данные |
+| ST7789 CS | GPIO5 | Выбор дисплея |
+| ST7789 BL / BLK | GPIO6 | Управляющий вход подсветки модуля; голый светодиод подсветки требует драйвера, не питания от GPIO |
+| ST7789 GND | GND | Общая земля |
+| ST7789 VCC | 3V3 для совместимого 3,3-В модуля | Ориентироваться на схему конкретного модуля |
+| microSD DO / MISO | GPIO7 | SPI2 |
+| microSD CLK / SCK | GPIO8 | SPI2 |
+| microSD DI / MOSI | GPIO9 | SPI2 |
+| microSD CS | GPIO10 | SPI2 |
+| microSD VCC / GND | 3V3 / GND | Для используемого 3,3-В мини-модуля; 5 В на него не подавать |
+| Энкодер A / CLK | GPIO11 | Вход с подтяжкой |
+| Энкодер B / DT | GPIO12 | Вход с подтяжкой |
+| Энкодер COM / GND | GND | Если на модуле есть VCC — питание логики только 3,3 В |
+| Кнопка SW | GPIO13 и GND | Замыкание на землю при нажатии |
+| Native USB D− / D+ | GPIO19 / GPIO20 | Уже соединены с USB-C платы; сюда периферию не подключать |
+| Встроенный RGB LED | GPIO21 | Занят платой |
+
+Рабочие SPI-частоты и назначение выводов заданы в
+[конфигурации](Firmware/src/config.rs) и
+[инициализации платы](Firmware/src/init.rs). SD-карта содержит сырой образ
+GPT проекта; форматирование в FAT32 для этой сборки не требуется.
+
+### MPU6050: запланированное подключение
+
+Эти GPIO свободны от экрана, SD и энкодера. Это **схема для будущего драйвера**:
+данная прошивка пока не создаёт I²C-шину на GPIO14/15 и не читает MPU6050.
+
+| MPU6050 / GY-521 | Подключить к | Назначение |
+|---|---|---|
+| VCC | 3V3 платы | Проверить допустимое питание именно вашего модуля |
+| GND | GND платы | Общая земля |
+| SDA | GPIO14 | Данные I²C |
+| SCL | GPIO15 | Тактирование I²C |
+| INT | GPIO16 | Резерв под прерывание; для первого опроса необязателен |
+| AD0 | GND | Адрес I²C `0x68`; при AD0=3V3 адрес `0x69` |
+| XDA / XCL | Не подключать | Вспомогательная шина датчика, здесь не используется |
+
+SDA/SCL должны иметь подтяжки **к 3,3 В**, обычно они уже установлены на
+GY-521. Если их нет — предусмотреть внешние подтяжки для выбранной скорости
+и длины проводов. Сам кристалл MPU6050 рассчитан на VDD 2,375–3,46 В; наличие
+стабилизатора на модуле не означает, что сигналы ESP32 допускают 5 В.
+См. [спецификацию TDK/InvenSense](https://invensense.tdk.com/wp-content/uploads/2015/02/MPU-6000-Datasheet.pdf).
+
+### АКБ, TP4056 и TPS61023
+
+Ниже вариант для **TPS61023 с выходом 5,0 В** и **TP4056-модуля с отдельными
+B+/B− и защищёнными OUT+/OUT−**. Для модуля без защиты нужны защищённая АКБ
+или отдельная плата защиты. Маркировки контактов конкретного модуля имеют
+приоритет: IN+/IN−, VIN/GND и OUT+/OUT− могут называться по-разному.
+
+```text
+USB 5 В для зарядки ── TP4056 IN+
+USB GND            ── TP4056 IN−
+АКБ +              ── TP4056 B+
+АКБ −              ── TP4056 B−
+
+TP4056 OUT+ ── TPS61023 VIN+
+TP4056 OUT− ── TPS61023 VIN− / GND
+TPS61023 VOUT+ (проверенные 5,0 В) ── выключатель ── ESP32-S3-Zero 5V
+TPS61023 VOUT− / GND             ──────────────── ESP32-S3-Zero GND
+ESP32-S3-Zero 3V3 ── питание совместимых модулей экрана, SD и MPU6050
+```
+
+**USB платы и повышайку не включать параллельно без развязки.** По схеме
+Waveshare контакт 5V связан с USB VBUS. Для простого стендового варианта перед
+подключением USB-C платы разомкнуть связь **TPS61023 VOUT+ → 5V платы**:
+тогда плата питается от USB. Один диод только в ветви повышайки не решает
+возможную обратную подачу питания в USB компьютера. Для автоматической смены
+USB/АКБ нужен отдельный power mux / корректная развязка обеих ветвей.
+См. [схему ESP32-S3-Zero](https://files.waveshare.com/wiki/ESP32-S3-Zero/ESP32-S3-Zero-Sch.pdf).
+
+Землю системы брать с **защищённого OUT−**, а не соединять напрямую с B−
+в обход защитных ключей. АКБ 4,2 В и выход повышайки 5 В не подключать к 3V3
+или GPIO. До подключения ESP32 проверить мультиметром полярность и напряжение
+VOUT модуля; TPS61023 выпускается на платах с разными установками выхода.
+
+TP4056 не содержит отдельного выхода SYS с управлением power-path. В простом
+варианте заряжать АКБ при отключённой нагрузке: нагрузка на аккумуляторе может
+мешать определению окончания зарядки. Для работы часов во время зарядки нужна
+схема load sharing / power-path. Ток зарядки выбирается по паспорту АКБ и
+нагреву модуля; заводские 1 А могут быть недопустимы для маленькой АКБ часов.
+Не копировать RPROG вслепую: сначала определить допустимый ток своей батареи.
+См. [даташит TP4056 производителя UMW](https://www.umw-ic.com/static/pdf/f5956b63399d772bf88e62b3e89eb312.pdf).
+
+TPS61023 сам по себе не заменяет защиту Li-ion от глубокого разряда.
+Сведения о диапазонах напряжений, EN и токах — в
+[даташите TI](https://www.ti.com/lit/ds/symlink/tps61023.pdf). USB-тестирование,
+автономная работа и зарядка — разные режимы питания; их автоматическое
+совмещение нужно проектировать после выбора конкретных модулей и АКБ.
 
 ## Logs and background work
 
@@ -60,37 +190,100 @@ and `Tag:I` filters. Logs are volatile; ROM/vendor panic output may only be
 visible on serial. PID/TID are zero; timestamps before RTC sync use boot time.
 This is an embedded service subset, not a Linux shell or Android userspace.
 
-Product identity is centralized in `Bootloader/src/device_info.rs`, exposed
-by the main module. `ro.product.name` and `ro.product.device` are `aosp`;
+Product identity is centralized in `Firmware/src/device_info.rs`, exposed
+by the main module. the current product names and manufacturer follow that file;
 the editable friendly name is separate and saved on the card. The crown editor
 is in **Настройки → Система → Имя устройства**. BLE advertisements refresh
 when advertising restarts; a connected peer may cache its previous name.
 
-## Watch utilities and device diagnostics
+## Приложения, проводник и текстовый редактор
 
-The launcher has 30 px Material icons and 15 entries. Native utilities add a
-calculator, a built-in wallpaper browser, Wi-Fi/ADB transfer instructions,
-device diagnostics, memory/swap controls, weather, world clock, breathing and a
-flashlight shortcut. The file browser covers the
-built-in PNG assets; it is not a general FAT/ext4 filesystem browser or Android
-Quick Share implementation. The three-column grid scrolls vertically by rows instead of horizontal pages.
+В меню **18 приложений**. Системные сведения и диагностика находятся в
+настройках, мировое время — в «Часах». Помимо прежних утилит добавлены
+«Текстовый редактор», «Задачи», «Расходы», «Фокус» и «Телефон».
 
-Open **Настройки → Система → Диагностика** for live heap/internal-memory,
-uptime, Wi-Fi/BLE state, last render timings and cached storage capacities.
-Temperature/current/battery measurements are unavailable until their drivers
-or measurement hardware are added. Useful ordinary ADB commands:
+«Файлы» теперь позволяет создавать папки и документы, открывать UTF-8-текст,
+переименовывать, копировать и перемещать файлы/папки. Выберите элемент, нажмите
+колёсико и выберите действие. После «Копировать» или «Вырезать» перейдите в
+папку назначения и нажмите «Вставить». Удаление требует подтверждения; папку
+сначала нужно освободить от содержимого.
+
+Хранилище документов — небольшой собственный формат в зарезервированном
+диапазоне userdata, **не FAT/ext4** и не доступ к произвольным системным
+разделам. Лимиты: 32 записи вместе с папками, 3072 байта на файл, 80 UTF-8
+байт на полный путь. Записи «Задач» и «Расходов» используют общие файлы
+/tasks.txt и /expenses.txt; не переименовывайте их, если хотите сохранить
+доступ к спискам из этих приложений. Системные обои остаются доступны через
+настройки и read-only /sdcard/Wallpapers.
+
+Редактор работает построчно: выберите строку → нажмите → измените текст общей
+RU/EN-клавиатурой → подтвердите. В конце списка есть «Добавить строку» и
+«Сохранить». На второй странице символов доступна клавиша NL для переноса.
+Выход с изменениями предлагает сохранить/отменить их. Новая копия файла
+проверяется до переключения каталога; при конфликте с внешним изменением
+нужно открыть файл заново. Файлы сохраняются на карте или в PC-образе.
+
+Обычный ADB поддерживает обмен документами, когда часы разблокированы:
 
 ```sh
-adb shell dumpsys meminfo
-adb shell dumpsys hardware
+adb push note.txt /sdcard/Documents/note.txt
+adb pull /sdcard/Documents/note.txt ./note-copy.txt
 adb pull /sdcard/Wallpapers/1.png ./watch-wallpaper.png
 ```
 
-System PNGs 1.png through 16.png are read-only and stream in ACK-paced 512-byte
-chunks after an on-demand disk read. Display settings now persist wallpaper brightness and the analog second
-hand switch. Hidden timer/stopwatch ticks no longer invalidate static pages.
-For scope, limitations, power-measurement guidance and loader-only update
-commands, see [delivery notes](Bootloader/DELIVERY.md).
+SYNC поддерживает STAT/LIST/SEND/RECV для документов и прежний интерфейс
+обоев. Создавайте папки на часах; Linux shell/mkdir и полный Android shell
+не предоставляются. Блокировка PIN прекращает внешний доступ к документам.
+
+«Задачи» хранит до 24 пунктов с отметками выполнения; готовые можно очистить.
+«Расходы» хранит до 24 сумм с описаниями и выводит итог без ошибок двоичного
+округления копеек: ввод, например, «12.50 продукты». «Фокус» — рабочие сессии
+15/25/45 минут и пятиминутный перерыв с паузой; выход из приложения не
+останавливает текущий этап. «Телефон» описан ниже.
+
+Калькулятор поддерживает приоритет операций, скобки, смену знака выражения,
+проценты, квадрат, корень и повторное «=». Циферблатов пять: цифровой,
+аналоговый с минутными делениями, компликации, минимализм и панель с погодой,
+будильником и таймером. Выбор сохраняется в настройках экрана.
+
+Диагностика: **Настройки → Система → Диагностика**. Измерителя АКБ,
+медицинских датчиков и драйвера MPU6050 пока нет. Новые экраны и ограничения:
+[DELIVERY.md](Bootloader/DELIVERY.md).
+
+## KDE Connect через Linux-компьютер
+
+Встроенного KDE Connect LAN/TLS-клиента на ESP32 пока нет. Официальный
+[LAN backend KDE](https://github.com/KDE/kdeconnect-kde/blob/master/core/backends/lan/lanlinkprovider.cpp)
+использует TLS и сопряжение; один BLE HID его не заменяет. Добавлен
+[дополнительный мост](Bootloader/tools/kde_bridge.mjs): часы → локальный
+USB/PC-адаптер либо ADB → Linux KDE Connect → уже сопряжённый телефон.
+
+Нужны Node.js, kdeconnect-cli и телефон, заранее сопряжённый с KDE Connect
+на компьютере. Мост запускается вручную, службы автозапуска не устанавливаются:
+
+```sh
+node Bootloader/tools/kde_bridge.mjs --list
+node Bootloader/tools/kde_bridge.mjs --device ID_ИЗ_СПИСКА
+# PC-режим: существующий сервер ./flash pc должен уже работать.
+# Для SD + обычного Wi-Fi ADB вместо локального PC-сокета:
+adb connect IP_ЧАСОВ:5555
+node Bootloader/tools/kde_bridge.mjs --device ID_ИЗ_СПИСКА --watch IP_ЧАСОВ:5555
+```
+
+На часах открыть «Телефон» и подтвердить тот же код из 4 символов, что
+показывает мост. После этого доступны поиск телефона звонком, сигнал и
+отправка последнего открытого **сохранённого** текста через KDE Connect.
+Команды выполняются только по нажатию на часах. Для нового запуска моста
+отключить предыдущий мост в приложении и подтвердить новый код. При
+завершении процесса статус устаревает через 15 секунд; при блокировке PIN
+команды не выдаются.
+
+KDE-часть соединения обслуживает установленный KDE Connect. ADB-часть не
+получает от этого TLS: для стендового режима предпочтителен локальный USB/PC
+сокет; Wi-Fi ADB предназначен для доверенной сети и включается пользователем.
+Это не совместимость с Pixel Watch и не прямое Android-сопряжение часов.
+На этом компьютере проверены CLI и тесты моста; доступных KDE-устройств
+не обнаружено, поэтому реальный звонок/обмен с телефоном ещё не проверялся.
 
 ## System graphics update
 
@@ -117,15 +310,15 @@ To upload a custom image with ordinary ADB:
 adb push picture_240x280.png /sdcard/Wallpapers/current.png
 ```
 
-The restricted SYNC service accepts 240×280, 8-bit non-interlaced PNG files
+The wallpaper branch of SYNC accepts 240×280, 8-bit non-interlaced PNG files
 up to 320 KiB, validates them and saves RGB565 to the reserved userdata area.
-It does not expose a general filesystem. A successful transfer selects the
+Documents use the separate managed filesystem described above. A successful PNG transfer selects the
 uploaded wallpaper; saving can fail if userdata is unavailable or occupied by
 an incompatible filesystem. JPEG/other sizes must be converted on the PC first.
 Custom wallpaper uploads require no card rewrite. Defaults are restored by selecting one in Settings.
 
 The launcher remembers grid/list mode across reopening and reboot. Focus uses
-a darker fill without changing button dimensions. AOD is an optional switch
+a lighter fill with dark text without changing button dimensions. AOD is an optional switch
 under Display: after the sleep deadline it shows only a dim clock on black,
 updates by the minute and consumes the first input to wake. With AOD disabled,
 the panel turns off as before. ST7789 is an LCD, so AOD keeps its backlight on
