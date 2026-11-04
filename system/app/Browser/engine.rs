@@ -59,17 +59,15 @@ impl Layout {
                     } else {
                         210 - i32::from(indent) * 8
                     };
-                    for text in wrap(text, width) {
+                    wrap(text, width, |text| {
                         out.lines.push(Line {
                             text,
                             kind,
                             indent,
                             action,
                         });
-                        if out.lines.len() >= MAX_LINES {
-                            break;
-                        }
-                    }
+                        out.lines.len() < MAX_LINES
+                    });
                 }
                 if out.lines.len() >= MAX_LINES {
                     break;
@@ -79,17 +77,23 @@ impl Layout {
         out
     }
 }
-fn wrap(text: &str, limit: i32) -> Vec<String> {
-    let mut lines = Vec::new();
+// Emit directly into the layout. Building a temporary Vec for the entire
+// paragraph defeated MAX_LINES before the caller could stop consuming it.
+fn wrap(text: &str, limit: i32, mut emit: impl FnMut(String) -> bool) {
     let mut line = String::new();
     let mut width = 0;
     for word in text.split_whitespace() {
-        let size: i32 = word
-            .chars()
-            .map(crate::material::body_character_width)
-            .sum();
+        let mut size = 0;
+        for c in word.chars() {
+            size += crate::material::body_character_width(c);
+            if size > limit {
+                break; // Only need to know whether this word fits.
+            }
+        }
         if !line.is_empty() && width + 4 + size > limit {
-            lines.push(core::mem::take(&mut line));
+            if !emit(core::mem::take(&mut line)) {
+                return;
+            }
             width = 0;
         }
         if !line.is_empty() {
@@ -99,7 +103,9 @@ fn wrap(text: &str, limit: i32) -> Vec<String> {
         for c in word.chars() {
             let advance = crate::material::body_character_width(c);
             if !line.is_empty() && (width + advance > limit || line.len() + c.len_utf8() > 112) {
-                lines.push(core::mem::take(&mut line));
+                if !emit(core::mem::take(&mut line)) {
+                    return;
+                }
                 width = 0;
             }
             line.push(c);
@@ -107,13 +113,40 @@ fn wrap(text: &str, limit: i32) -> Vec<String> {
         }
     }
     if !line.is_empty() {
-        lines.push(line);
+        emit(line);
     }
-    lines
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn long_paragraphs_stop_at_the_budget_without_losing_link_actions() {
+        let layout = Layout::build(&serde_json::json!({"blocks":[
+            {"index":7,"type":"link","text":"Очень длинная ссылка ".repeat(4000)},
+            {"index":8,"type":"paragraph","text":"Must not be laid out"}
+        ]}));
+        assert_eq!(layout.lines.len(), MAX_LINES);
+        assert!(
+            layout
+                .lines
+                .iter()
+                .all(|line| matches!(line.action, Some(Action::Link(7))))
+        );
+        let mut first = Vec::new();
+        wrap("один два три четыре", 30, |line| {
+            first.push(line);
+            false
+        });
+        assert_eq!(first.len(), 1);
+        assert!(
+            first[0]
+                .chars()
+                .map(crate::material::body_character_width)
+                .sum::<i32>()
+                <= 30
+        );
+    }
+
     #[test]
     fn layout_keeps_unicode_links_headings_and_a_hard_line_budget() {
         let layout = Layout::build(&serde_json::json!({"blocks":[

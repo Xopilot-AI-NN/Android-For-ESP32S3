@@ -315,10 +315,11 @@ impl<E: Endpoint> Controller<E> {
             self.selected.clear();
             self.mail = MailPaging::default();
             self.body_tail = false;
+            self.next_photo_poll = 0;
             self.scroll = 0;
             self.page = 0;
             self.qr = RefCell::new((String::new(), [0; 407], 0));
-            if matches!(self.mode, 1 | 2 | 4) {
+            if matches!(self.mode, 1 | 2 | 4 | 7) {
                 self.mode = 0;
             }
             self.cursor = 0;
@@ -968,6 +969,30 @@ impl Default for View {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn account_change_closes_the_photo_picker_and_clears_its_state() {
+        struct Photos;
+        impl Endpoint for Photos {
+            const KIND: u8 = 5;
+            const INPUT: bool = false;
+        }
+        google::tests::connected();
+        let mut controller = Controller::<Photos>::default();
+        controller.seen_epoch = google::snapshot().account_epoch;
+        controller.mode = 7;
+        controller.next_photo_poll = 9000;
+        controller.qr.borrow_mut().0 = "https://example.invalid/old-picker".into();
+        controller.selected = "old-photo".into();
+        assert!(google::request(google::Operation::Logout));
+        controller.poll();
+        assert_eq!(controller.mode, 0);
+        assert_eq!(controller.next_photo_poll, 0);
+        assert!(controller.qr.borrow().0.is_empty());
+        assert!(controller.selected.is_empty());
+        assert!(google::cache(5).value.is_null());
+        google::tests::reset();
+    }
+
     #[test]
     fn mail_scrolls_across_pages_and_back_without_a_more_button() {
         use serde_json::json;
