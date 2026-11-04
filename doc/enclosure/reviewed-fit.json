@@ -1,0 +1,1439 @@
+{
+  "method": "BVH candidates, then EXACT Boolean closed-volume checks; open results inconclusive",
+  "limits": "No certification of manufacturing tolerance, wire routing or unknown component geometry",
+  "component_collisions": [
+    {
+      "a": "SD MODULE — 20×18, height assumed",
+      "b": "BATTERY — selected 28×27×5.7",
+      "intersections": [
+        {
+          "a_part": "SD socket metal",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            15.2,
+            17.5,
+            0.5
+          ],
+          "overlap_box": [
+            [
+              2.4000000953674316,
+              17.600000381469727
+            ],
+            [
+              -16.0,
+              1.5
+            ],
+            [
+              6.099998950958252,
+              6.599999904632568
+            ]
+          ],
+          "evidence": "surface_intersection",
+          "exact_check": {
+            "volume_mm3": 133.000062,
+            "nonmanifold_edges": 0,
+            "classification": "penetration"
+          }
+        }
+      ]
+    },
+    {
+      "a": "ENCODER — bare blue push encoder, NO PCB",
+      "b": "BATTERY — selected 28×27×5.7",
+      "intersections": [
+        {
+          "a_part": "Encoder A B C lead root",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.6,
+            0.5,
+            0.25
+          ],
+          "overlap_box": [
+            [
+              6.0,
+              6.600000381469727
+            ],
+            [
+              10.75,
+              11.25
+            ],
+            [
+              0.9000000953674316,
+              1.1500000953674316
+            ]
+          ],
+          "evidence": "surface_intersection",
+          "exact_check": {
+            "volume_mm3": 0.075,
+            "nonmanifold_edges": 0,
+            "classification": "penetration"
+          }
+        },
+        {
+          "a_part": "Encoder A B C lead root.001",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.6,
+            0.5,
+            0.25
+          ],
+          "overlap_box": [
+            [
+              8.5,
+              9.100000381469727
+            ],
+            [
+              10.75,
+              11.25
+            ],
+            [
+              0.9000000953674316,
+              1.1500000953674316
+            ]
+          ],
+          "evidence": "surface_intersection",
+          "exact_check": {
+            "volume_mm3": 0.075,
+            "nonmanifold_edges": 0,
+            "classification": "penetration"
+          }
+        },
+        {
+          "a_part": "Encoder A B C lead root.002",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.6,
+            0.5,
+            0.25
+          ],
+          "overlap_box": [
+            [
+              11.0,
+              11.600000381469727
+            ],
+            [
+              10.75,
+              11.25
+            ],
+            [
+              0.9000000953674316,
+              1.1500000953674316
+            ]
+          ],
+          "evidence": "surface_intersection",
+          "exact_check": {
+            "volume_mm3": 0.075,
+            "nonmanifold_edges": 0,
+            "classification": "penetration"
+          }
+        },
+        {
+          "a_part": "Encoder blue insulating body",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            12.0,
+            1.7,
+            5.7
+          ],
+          "overlap_box": [
+            [
+              2.8000001907348633,
+              14.800000190734863
+            ],
+            [
+              10.300000190734863,
+              12.000000953674316
+            ],
+            [
+              0.9000000953674316,
+              6.599999904632568
+            ]
+          ],
+          "evidence": "surface_intersection",
+          "exact_check": {
+            "volume_mm3": 116.27995,
+            "nonmanifold_edges": 0,
+            "classification": "penetration"
+          }
+        },
+        {
+          "a_part": "Encoder rear T-shaped retaining clip",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            11.8,
+            0.35,
+            4.75
+          ],
+          "overlap_box": [
+            [
+              2.9000000953674316,
+              14.700000762939453
+            ],
+            [
+              10.15000057220459,
+              10.5
+            ],
+            [
+              1.8499999046325684,
+              6.599999904632568
+            ]
+          ],
+          "evidence": "surface_intersection",
+          "exact_check": {
+            "volume_mm3": 5.099492,
+            "nonmanifold_edges": 0,
+            "classification": "penetration"
+          }
+        }
+      ]
+    }
+  ],
+  "case_collisions": [
+    {
+      "component": "BATTERY — selected 28×27×5.7",
+      "intersections": [
+        {
+          "part": "Battery pouch",
+          "overlap_bounds_mm": [
+            27.0,
+            28.0,
+            5.7
+          ],
+          "overlap_box": [
+            [
+              -2.3000009059906006,
+              24.700000762939453
+            ],
+            [
+              -16.0,
+              12.000000953674316
+            ],
+            [
+              0.9000000953674316,
+              6.599999904632568
+            ]
+          ],
+          "evidence": "surface_intersection",
+          "exact_check": {
+            "volume_mm3": 8.506522,
+            "nonmanifold_edges": 0,
+            "classification": "penetration"
+          }
+        }
+      ]
+    },
+    {
+      "component": "DISPLAY — LCDWIKI MSP1691 reference, revision unconfirmed",
+      "shell": "NEW FRONT COVER — screen aperture + four bolts",
+      "intersections": [
+        {
+          "part": "LCD adhesive — 0.30 mm",
+          "overlap_bounds_mm": [
+            37.43,
+            30.07,
+            0.25
+          ],
+          "overlap_box": [
+            [
+              -18.71000099182129,
+              18.719999313354492
+            ],
+            [
+              -15.039999961853027,
+              15.029999732971191
+            ],
+            [
+              14.100000381469727,
+              14.350000381469727
+            ]
+          ],
+          "evidence": "surface_intersection",
+          "exact_check": {
+            "volume_mm3": 24.09327,
+            "nonmanifold_edges": 0,
+            "classification": "penetration"
+          }
+        },
+        {
+          "part": "LCD PCB — 1.60 mm",
+          "overlap_bounds_mm": [
+            48.0,
+            31.0,
+            1.6
+          ],
+          "overlap_box": [
+            [
+              -24.0,
+              24.0
+            ],
+            [
+              -15.5,
+              15.5
+            ],
+            [
+              12.5,
+              14.100000381469727
+            ]
+          ],
+          "evidence": "surface_intersection",
+          "exact_check": {
+            "volume_mm3": 598.871629,
+            "nonmanifold_edges": 0,
+            "classification": "penetration"
+          }
+        },
+        {
+          "part": "LCD solder pad",
+          "overlap_bounds_mm": [
+            1.6,
+            1.6,
+            0.08
+          ],
+          "overlap_box": [
+            [
+              -23.299999237060547,
+              -21.700000762939453
+            ],
+            [
+              -9.690000534057617,
+              -8.09000015258789
+            ],
+            [
+              14.100000381469727,
+              14.180000305175781
+            ]
+          ],
+          "evidence": "sampled_overlap_interior",
+          "exact_check": {
+            "volume_mm3": 0.159818,
+            "nonmanifold_edges": 0,
+            "classification": "penetration"
+          }
+        },
+        {
+          "part": "LCD solder pad.001",
+          "overlap_bounds_mm": [
+            1.6,
+            1.6,
+            0.08
+          ],
+          "overlap_box": [
+            [
+              -23.299999237060547,
+              -21.700000762939453
+            ],
+            [
+              -7.150000095367432,
+              -5.549999713897705
+            ],
+            [
+              14.100000381469727,
+              14.180000305175781
+            ]
+          ],
+          "evidence": "sampled_overlap_interior",
+          "exact_check": {
+            "volume_mm3": 0.159818,
+            "nonmanifold_edges": 0,
+            "classification": "penetration"
+          }
+        },
+        {
+          "part": "LCD solder pad.002",
+          "overlap_bounds_mm": [
+            1.6,
+            1.6,
+            0.08
+          ],
+          "overlap_box": [
+            [
+              -23.299999237060547,
+              -21.700000762939453
+            ],
+            [
+              -4.610000133514404,
+              -3.009999990463257
+            ],
+            [
+              14.100000381469727,
+              14.180000305175781
+            ]
+          ],
+          "evidence": "sampled_overlap_interior",
+          "exact_check": {
+            "volume_mm3": 0.159818,
+            "nonmanifold_edges": 0,
+            "classification": "penetration"
+          }
+        },
+        {
+          "part": "LCD solder pad.003",
+          "overlap_bounds_mm": [
+            1.6,
+            1.6,
+            0.08
+          ],
+          "overlap_box": [
+            [
+              -23.299999237060547,
+              -21.700000762939453
+            ],
+            [
+              -2.069999933242798,
+              -0.4699999690055847
+            ],
+            [
+              14.100000381469727,
+              14.180000305175781
+            ]
+          ],
+          "evidence": "sampled_overlap_interior",
+          "exact_check": {
+            "volume_mm3": 0.159818,
+            "nonmanifold_edges": 0,
+            "classification": "penetration"
+          }
+        },
+        {
+          "part": "LCD solder pad.004",
+          "overlap_bounds_mm": [
+            1.6,
+            1.6,
+            0.08
+          ],
+          "overlap_box": [
+            [
+              -23.299999237060547,
+              -21.700000762939453
+            ],
+            [
+              0.4699999690055847,
+              2.069999933242798
+            ],
+            [
+              14.100000381469727,
+              14.180000305175781
+            ]
+          ],
+          "evidence": "sampled_overlap_interior",
+          "exact_check": {
+            "volume_mm3": 0.159818,
+            "nonmanifold_edges": 0,
+            "classification": "penetration"
+          }
+        },
+        {
+          "part": "LCD solder pad.005",
+          "overlap_bounds_mm": [
+            1.6,
+            1.6,
+            0.08
+          ],
+          "overlap_box": [
+            [
+              -23.299999237060547,
+              -21.700000762939453
+            ],
+            [
+              3.009999990463257,
+              4.610000133514404
+            ],
+            [
+              14.100000381469727,
+              14.180000305175781
+            ]
+          ],
+          "evidence": "sampled_overlap_interior",
+          "exact_check": {
+            "volume_mm3": 0.159818,
+            "nonmanifold_edges": 0,
+            "classification": "penetration"
+          }
+        },
+        {
+          "part": "LCD solder pad.006",
+          "overlap_bounds_mm": [
+            1.6,
+            1.6,
+            0.08
+          ],
+          "overlap_box": [
+            [
+              -23.299999237060547,
+              -21.700000762939453
+            ],
+            [
+              5.549999713897705,
+              7.150000095367432
+            ],
+            [
+              14.100000381469727,
+              14.180000305175781
+            ]
+          ],
+          "evidence": "sampled_overlap_interior",
+          "exact_check": {
+            "volume_mm3": 0.159818,
+            "nonmanifold_edges": 0,
+            "classification": "penetration"
+          }
+        },
+        {
+          "part": "LCD solder pad.007",
+          "overlap_bounds_mm": [
+            1.6,
+            1.6,
+            0.08
+          ],
+          "overlap_box": [
+            [
+              -23.299999237060547,
+              -21.700000762939453
+            ],
+            [
+              8.09000015258789,
+              9.690000534057617
+            ],
+            [
+              14.100000381469727,
+              14.180000305175781
+            ]
+          ],
+          "evidence": "sampled_overlap_interior",
+          "exact_check": {
+            "volume_mm3": 0.159818,
+            "nonmanifold_edges": 0,
+            "classification": "penetration"
+          }
+        }
+      ]
+    },
+    {
+      "component": "ENCODER — bare blue push encoder, NO PCB",
+      "shell": "NEW FRONT COVER — screen aperture + four bolts",
+      "intersections": [
+        {
+          "part": "Encoder stamped metal face",
+          "overlap_bounds_mm": [
+            12.4,
+            0.8,
+            0.8
+          ],
+          "overlap_box": [
+            [
+              2.6000003814697266,
+              15.0
+            ],
+            [
+              15.700000762939453,
+              16.5
+            ],
+            [
+              11.649999618530273,
+              12.449999809265137
+            ]
+          ],
+          "evidence": "surface_intersection",
+          "exact_check": {
+            "volume_mm3": 7.192005,
+            "nonmanifold_edges": 0,
+            "classification": "penetration"
+          }
+        }
+      ]
+    },
+    {
+      "component": "ENCODER — bare blue push encoder, NO PCB",
+      "shell": "NEW REAR COVER — brass spacer seating holes",
+      "intersections": [
+        {
+          "part": "Encoder stamped metal face",
+          "overlap_bounds_mm": [
+            12.4,
+            0.8,
+            0.8
+          ],
+          "overlap_box": [
+            [
+              2.6000003814697266,
+              15.0
+            ],
+            [
+              15.700000762939453,
+              16.5
+            ],
+            [
+              0.05000019073486328,
+              0.8500000834465027
+            ]
+          ],
+          "evidence": "surface_intersection",
+          "exact_check": {
+            "volume_mm3": 7.192003,
+            "nonmanifold_edges": 0,
+            "classification": "penetration"
+          }
+        }
+      ]
+    }
+  ],
+  "collision_groups": [
+    "BATTERY — selected 28×27×5.7",
+    "DISPLAY — LCDWIKI MSP1691 reference, revision unconfirmed",
+    "ENCODER — bare blue push encoder, NO PCB",
+    "SD MODULE — 20×18, height assumed"
+  ],
+  "component_pair_count": 2,
+  "case_collision_group_count": 4,
+  "all_component_bounds": {
+    "DISPLAY — LCDWIKI MSP1691 reference, revision unconfirmed": [
+      [
+        -24.0,
+        24.0
+      ],
+      [
+        -15.5,
+        15.5
+      ],
+      [
+        12.5,
+        15.96
+      ]
+    ],
+    "ESP32-S3-Zero — official Waveshare v2 CAD": [
+      [
+        -20.448,
+        -2.43
+      ],
+      [
+        -17.825,
+        6.917
+      ],
+      [
+        3.805,
+        8.655
+      ]
+    ],
+    "SD MODULE — 20×18, height assumed": [
+      [
+        1.0,
+        19.0
+      ],
+      [
+        -16.5,
+        3.5
+      ],
+      [
+        6.1,
+        9.95
+      ]
+    ],
+    "ENCODER — bare blue push encoder, NO PCB": [
+      [
+        1.3,
+        16.3
+      ],
+      [
+        8.25,
+        27.3
+      ],
+      [
+        0.025,
+        12.475
+      ]
+    ],
+    "BATTERY — selected 28×27×5.7": [
+      [
+        -2.3,
+        24.7
+      ],
+      [
+        -16.0,
+        12.0
+      ],
+      [
+        0.9,
+        6.6
+      ]
+    ],
+    "TPS61023 — 18×11×5": [
+      [
+        -22.5,
+        -4.5
+      ],
+      [
+        5.0,
+        16.0
+      ],
+      [
+        6.65,
+        11.65
+      ]
+    ],
+    "HEATSINK — 15×10×5": [
+      [
+        -18.939,
+        -3.939
+      ],
+      [
+        -5.823,
+        4.177
+      ],
+      [
+        6.605,
+        11.605
+      ]
+    ]
+  },
+  "broad_phase_candidates": {
+    "component_collisions": [
+      {
+        "a": "SD MODULE — 20×18, height assumed",
+        "b": "BATTERY — selected 28×27×5.7",
+        "intersections": [
+          {
+            "a_part": "SD socket metal",
+            "b_part": "Battery pouch",
+            "overlap_bounds_mm": [
+              15.2,
+              17.5,
+              0.5
+            ],
+            "overlap_box": [
+              [
+                2.4000000953674316,
+                17.600000381469727
+              ],
+              [
+                -16.0,
+                1.5
+              ],
+              [
+                6.099998950958252,
+                6.599999904632568
+              ]
+            ],
+            "evidence": "surface_intersection",
+            "exact_check": {
+              "volume_mm3": 133.000062,
+              "nonmanifold_edges": 0,
+              "classification": "penetration"
+            }
+          }
+        ]
+      },
+      {
+        "a": "ENCODER — bare blue push encoder, NO PCB",
+        "b": "BATTERY — selected 28×27×5.7",
+        "intersections": [
+          {
+            "a_part": "Encoder A B C lead root",
+            "b_part": "Battery pouch",
+            "overlap_bounds_mm": [
+              0.6,
+              0.5,
+              0.25
+            ],
+            "overlap_box": [
+              [
+                6.0,
+                6.600000381469727
+              ],
+              [
+                10.75,
+                11.25
+              ],
+              [
+                0.9000000953674316,
+                1.1500000953674316
+              ]
+            ],
+            "evidence": "surface_intersection",
+            "exact_check": {
+              "volume_mm3": 0.075,
+              "nonmanifold_edges": 0,
+              "classification": "penetration"
+            }
+          },
+          {
+            "a_part": "Encoder A B C lead root.001",
+            "b_part": "Battery pouch",
+            "overlap_bounds_mm": [
+              0.6,
+              0.5,
+              0.25
+            ],
+            "overlap_box": [
+              [
+                8.5,
+                9.100000381469727
+              ],
+              [
+                10.75,
+                11.25
+              ],
+              [
+                0.9000000953674316,
+                1.1500000953674316
+              ]
+            ],
+            "evidence": "surface_intersection",
+            "exact_check": {
+              "volume_mm3": 0.075,
+              "nonmanifold_edges": 0,
+              "classification": "penetration"
+            }
+          },
+          {
+            "a_part": "Encoder A B C lead root.002",
+            "b_part": "Battery pouch",
+            "overlap_bounds_mm": [
+              0.6,
+              0.5,
+              0.25
+            ],
+            "overlap_box": [
+              [
+                11.0,
+                11.600000381469727
+              ],
+              [
+                10.75,
+                11.25
+              ],
+              [
+                0.9000000953674316,
+                1.1500000953674316
+              ]
+            ],
+            "evidence": "surface_intersection",
+            "exact_check": {
+              "volume_mm3": 0.075,
+              "nonmanifold_edges": 0,
+              "classification": "penetration"
+            }
+          },
+          {
+            "a_part": "Encoder blue insulating body",
+            "b_part": "Battery pouch",
+            "overlap_bounds_mm": [
+              12.0,
+              1.7,
+              5.7
+            ],
+            "overlap_box": [
+              [
+                2.8000001907348633,
+                14.800000190734863
+              ],
+              [
+                10.300000190734863,
+                12.000000953674316
+              ],
+              [
+                0.9000000953674316,
+                6.599999904632568
+              ]
+            ],
+            "evidence": "surface_intersection",
+            "exact_check": {
+              "volume_mm3": 116.27995,
+              "nonmanifold_edges": 0,
+              "classification": "penetration"
+            }
+          },
+          {
+            "a_part": "Encoder rear T-shaped retaining clip",
+            "b_part": "Battery pouch",
+            "overlap_bounds_mm": [
+              11.8,
+              0.35,
+              4.75
+            ],
+            "overlap_box": [
+              [
+                2.9000000953674316,
+                14.700000762939453
+              ],
+              [
+                10.15000057220459,
+                10.5
+              ],
+              [
+                1.8499999046325684,
+                6.599999904632568
+              ]
+            ],
+            "evidence": "surface_intersection",
+            "exact_check": {
+              "volume_mm3": 5.099492,
+              "nonmanifold_edges": 0,
+              "classification": "penetration"
+            }
+          }
+        ]
+      }
+    ],
+    "case_collisions": [
+      {
+        "component": "ESP32-S3-Zero — official Waveshare v2 CAD",
+        "intersections": [
+          {
+            "part": "ESP CAD 0",
+            "overlap_bounds_mm": [
+              18.017,
+              23.517,
+              1.6
+            ],
+            "overlap_box": [
+              [
+                -20.44763946533203,
+                -2.430295944213867
+              ],
+              [
+                -16.599863052368164,
+                6.917394161224365
+              ],
+              [
+                3.804640293121338,
+                5.404639720916748
+              ]
+            ],
+            "evidence": "sampled_containment",
+            "exact_check": {
+              "volume_mm3": 0.0,
+              "nonmanifold_edges": 0,
+              "classification": "no_volume"
+            }
+          }
+        ]
+      },
+      {
+        "component": "ENCODER — bare blue push encoder, NO PCB",
+        "intersections": [
+          {
+            "part": "Encoder mounting ear",
+            "overlap_bounds_mm": [
+              1.4,
+              2.4,
+              3.2
+            ],
+            "overlap_box": [
+              [
+                1.2999999523162842,
+                2.700000047683716
+              ],
+              [
+                12.90000057220459,
+                15.300000190734863
+              ],
+              [
+                4.650000095367432,
+                7.849999904632568
+              ]
+            ],
+            "evidence": "sampled_overlap_interior",
+            "exact_check": {
+              "volume_mm3": 0.0,
+              "nonmanifold_edges": 0,
+              "classification": "no_volume"
+            }
+          }
+        ]
+      },
+      {
+        "component": "BATTERY — selected 28×27×5.7",
+        "intersections": [
+          {
+            "part": "Battery pouch",
+            "overlap_bounds_mm": [
+              27.0,
+              28.0,
+              5.7
+            ],
+            "overlap_box": [
+              [
+                -2.3000009059906006,
+                24.700000762939453
+              ],
+              [
+                -16.0,
+                12.000000953674316
+              ],
+              [
+                0.9000000953674316,
+                6.599999904632568
+              ]
+            ],
+            "evidence": "surface_intersection",
+            "exact_check": {
+              "volume_mm3": 8.506522,
+              "nonmanifold_edges": 0,
+              "classification": "penetration"
+            }
+          }
+        ]
+      },
+      {
+        "component": "DISPLAY — LCDWIKI MSP1691 reference, revision unconfirmed",
+        "shell": "NEW FRONT COVER — screen aperture + four bolts",
+        "intersections": [
+          {
+            "part": "LCD adhesive — 0.30 mm",
+            "overlap_bounds_mm": [
+              37.43,
+              30.07,
+              0.25
+            ],
+            "overlap_box": [
+              [
+                -18.71000099182129,
+                18.719999313354492
+              ],
+              [
+                -15.039999961853027,
+                15.029999732971191
+              ],
+              [
+                14.100000381469727,
+                14.350000381469727
+              ]
+            ],
+            "evidence": "surface_intersection",
+            "exact_check": {
+              "volume_mm3": 24.09327,
+              "nonmanifold_edges": 0,
+              "classification": "penetration"
+            }
+          },
+          {
+            "part": "LCD PCB — 1.60 mm",
+            "overlap_bounds_mm": [
+              48.0,
+              31.0,
+              1.6
+            ],
+            "overlap_box": [
+              [
+                -24.0,
+                24.0
+              ],
+              [
+                -15.5,
+                15.5
+              ],
+              [
+                12.5,
+                14.100000381469727
+              ]
+            ],
+            "evidence": "surface_intersection",
+            "exact_check": {
+              "volume_mm3": 598.871629,
+              "nonmanifold_edges": 0,
+              "classification": "penetration"
+            }
+          },
+          {
+            "part": "LCD solder pad",
+            "overlap_bounds_mm": [
+              1.6,
+              1.6,
+              0.08
+            ],
+            "overlap_box": [
+              [
+                -23.299999237060547,
+                -21.700000762939453
+              ],
+              [
+                -9.690000534057617,
+                -8.09000015258789
+              ],
+              [
+                14.100000381469727,
+                14.180000305175781
+              ]
+            ],
+            "evidence": "sampled_overlap_interior",
+            "exact_check": {
+              "volume_mm3": 0.159818,
+              "nonmanifold_edges": 0,
+              "classification": "penetration"
+            }
+          },
+          {
+            "part": "LCD solder pad.001",
+            "overlap_bounds_mm": [
+              1.6,
+              1.6,
+              0.08
+            ],
+            "overlap_box": [
+              [
+                -23.299999237060547,
+                -21.700000762939453
+              ],
+              [
+                -7.150000095367432,
+                -5.549999713897705
+              ],
+              [
+                14.100000381469727,
+                14.180000305175781
+              ]
+            ],
+            "evidence": "sampled_overlap_interior",
+            "exact_check": {
+              "volume_mm3": 0.159818,
+              "nonmanifold_edges": 0,
+              "classification": "penetration"
+            }
+          },
+          {
+            "part": "LCD solder pad.002",
+            "overlap_bounds_mm": [
+              1.6,
+              1.6,
+              0.08
+            ],
+            "overlap_box": [
+              [
+                -23.299999237060547,
+                -21.700000762939453
+              ],
+              [
+                -4.610000133514404,
+                -3.009999990463257
+              ],
+              [
+                14.100000381469727,
+                14.180000305175781
+              ]
+            ],
+            "evidence": "sampled_overlap_interior",
+            "exact_check": {
+              "volume_mm3": 0.159818,
+              "nonmanifold_edges": 0,
+              "classification": "penetration"
+            }
+          },
+          {
+            "part": "LCD solder pad.003",
+            "overlap_bounds_mm": [
+              1.6,
+              1.6,
+              0.08
+            ],
+            "overlap_box": [
+              [
+                -23.299999237060547,
+                -21.700000762939453
+              ],
+              [
+                -2.069999933242798,
+                -0.4699999690055847
+              ],
+              [
+                14.100000381469727,
+                14.180000305175781
+              ]
+            ],
+            "evidence": "sampled_overlap_interior",
+            "exact_check": {
+              "volume_mm3": 0.159818,
+              "nonmanifold_edges": 0,
+              "classification": "penetration"
+            }
+          },
+          {
+            "part": "LCD solder pad.004",
+            "overlap_bounds_mm": [
+              1.6,
+              1.6,
+              0.08
+            ],
+            "overlap_box": [
+              [
+                -23.299999237060547,
+                -21.700000762939453
+              ],
+              [
+                0.4699999690055847,
+                2.069999933242798
+              ],
+              [
+                14.100000381469727,
+                14.180000305175781
+              ]
+            ],
+            "evidence": "sampled_overlap_interior",
+            "exact_check": {
+              "volume_mm3": 0.159818,
+              "nonmanifold_edges": 0,
+              "classification": "penetration"
+            }
+          },
+          {
+            "part": "LCD solder pad.005",
+            "overlap_bounds_mm": [
+              1.6,
+              1.6,
+              0.08
+            ],
+            "overlap_box": [
+              [
+                -23.299999237060547,
+                -21.700000762939453
+              ],
+              [
+                3.009999990463257,
+                4.610000133514404
+              ],
+              [
+                14.100000381469727,
+                14.180000305175781
+              ]
+            ],
+            "evidence": "sampled_overlap_interior",
+            "exact_check": {
+              "volume_mm3": 0.159818,
+              "nonmanifold_edges": 0,
+              "classification": "penetration"
+            }
+          },
+          {
+            "part": "LCD solder pad.006",
+            "overlap_bounds_mm": [
+              1.6,
+              1.6,
+              0.08
+            ],
+            "overlap_box": [
+              [
+                -23.299999237060547,
+                -21.700000762939453
+              ],
+              [
+                5.549999713897705,
+                7.150000095367432
+              ],
+              [
+                14.100000381469727,
+                14.180000305175781
+              ]
+            ],
+            "evidence": "sampled_overlap_interior",
+            "exact_check": {
+              "volume_mm3": 0.159818,
+              "nonmanifold_edges": 0,
+              "classification": "penetration"
+            }
+          },
+          {
+            "part": "LCD solder pad.007",
+            "overlap_bounds_mm": [
+              1.6,
+              1.6,
+              0.08
+            ],
+            "overlap_box": [
+              [
+                -23.299999237060547,
+                -21.700000762939453
+              ],
+              [
+                8.09000015258789,
+                9.690000534057617
+              ],
+              [
+                14.100000381469727,
+                14.180000305175781
+              ]
+            ],
+            "evidence": "sampled_overlap_interior",
+            "exact_check": {
+              "volume_mm3": 0.159818,
+              "nonmanifold_edges": 0,
+              "classification": "penetration"
+            }
+          }
+        ]
+      },
+      {
+        "component": "ENCODER — bare blue push encoder, NO PCB",
+        "shell": "NEW FRONT COVER — screen aperture + four bolts",
+        "intersections": [
+          {
+            "part": "Encoder stamped metal face",
+            "overlap_bounds_mm": [
+              12.4,
+              0.8,
+              0.8
+            ],
+            "overlap_box": [
+              [
+                2.6000003814697266,
+                15.0
+              ],
+              [
+                15.700000762939453,
+                16.5
+              ],
+              [
+                11.649999618530273,
+                12.449999809265137
+              ]
+            ],
+            "evidence": "surface_intersection",
+            "exact_check": {
+              "volume_mm3": 7.192005,
+              "nonmanifold_edges": 0,
+              "classification": "penetration"
+            }
+          }
+        ]
+      },
+      {
+        "component": "ENCODER — bare blue push encoder, NO PCB",
+        "shell": "NEW REAR COVER — brass spacer seating holes",
+        "intersections": [
+          {
+            "part": "Encoder stamped metal face",
+            "overlap_bounds_mm": [
+              12.4,
+              0.8,
+              0.8
+            ],
+            "overlap_box": [
+              [
+                2.6000003814697266,
+                15.0
+              ],
+              [
+                15.700000762939453,
+                16.5
+              ],
+              [
+                0.05000019073486328,
+                0.8500000834465027
+              ]
+            ],
+            "evidence": "surface_intersection",
+            "exact_check": {
+              "volume_mm3": 7.192003,
+              "nonmanifold_edges": 0,
+              "classification": "penetration"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "source_file": "esp32s3_watch_box_fit_check.blend",
+  "source_sha256": "e63eb3a5f81f529c3a0d3b2ab3257bdaf0663705aded3ea6150bd3fed5536b9c",
+  "original_objects_preserved": {
+    "CASE — move orange cutters to relocate openings": "7641c5be486afac90127eb8330cfd8c27533238167ea1ad740cc24056617e61d",
+    "ENCODER (move G to reposition)": "f6fc6c70806f9b470fcd3f0ccc2becc49d9c9212d227607b86c6089d3ddf61e2",
+    "USB-C (move G to reposition)": "e0b60149dcdb895eb7e7ce2a29dea7e3b6ea236af1a97536ffc4ab844f1a8765",
+    "microSD (move G to reposition)": "8b8a435bee2254a6b68beac571c73c713765cf0731f3c93fb764996b8105afaa",
+    "FRONT BEZEL — hide/show with eye": "b088b990b53d4da69d30da7b058a820e32acf1a87faea1bb301b8bc1d73f2ea5",
+    "REAR COVER — hide/show with eye": "d925f02aad5107f6de52ac7f025bc76db308028829111a834274c303e738d79d",
+    "NEW FRONT COVER — screen aperture + four bolts": "04bdcac6680ce5b7af5ebf28fac73ecc833a69aa152a95dc6dca2f2664cf6933",
+    "NEW REAR COVER — brass spacer seating holes": "7691204f4200ccc3b3486a618dca4cdba3b4de21216a909d23dc572b3638abf6",
+    "PCB 4-hole fit gauge — print first": "83535979a47fafaf5226ae0984dd4ca26f19af6ece18532d62968777722e86bb",
+    "T-track fit dummy — NOT real strap": "8ea1678ca80217e6c5eab7bd5a4250c0e24281e5ad3a9a99634236b5f38b41f3"
+  },
+  "user_cap_presence_preserved": false,
+  "readiness": "NOT_READY_FOR_FULL_PRINT",
+  "unplaced_components": [
+    "MCP73871 — dimensions unknown"
+  ],
+  "placements": {
+    "DISPLAY — LCDWIKI MSP1691 reference, revision unconfirmed": {
+      "location": [
+        0.0,
+        0.0,
+        12.5
+      ],
+      "rotation_rad": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "ESP32-S3-Zero — official Waveshare v2 CAD": {
+      "location": [
+        -11.438924789428711,
+        6.90876579284668,
+        5.404639720916748
+      ],
+      "rotation_rad": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "SD MODULE — 20×18, height assumed": {
+      "location": [
+        10.0,
+        -6.5,
+        9.949999809265137
+      ],
+      "rotation_rad": [
+        0.0,
+        3.1415927410125732,
+        0.0
+      ]
+    },
+    "ENCODER — bare blue push encoder, NO PCB": {
+      "location": [
+        8.800000190734863,
+        10.300000190734863,
+        6.25
+      ],
+      "rotation_rad": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "BATTERY — selected 28×27×5.7": {
+      "location": [
+        11.199999809265137,
+        -2.0,
+        0.8999999761581421
+      ],
+      "rotation_rad": [
+        0.0,
+        0.0,
+        1.5707963705062866
+      ]
+    },
+    "TPS61023 — 18×11×5": {
+      "location": [
+        -13.5,
+        10.5,
+        6.650000095367432
+      ],
+      "rotation_rad": [
+        0.0,
+        0.0,
+        1.5707963705062866
+      ]
+    },
+    "HEATSINK — 15×10×5": {
+      "location": [
+        -11.438924789428711,
+        -0.8227338790893555,
+        6.604639530181885
+      ],
+      "rotation_rad": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  }
+}
