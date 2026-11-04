@@ -111,6 +111,7 @@ mod tests {
     }
 }
 /// Сохраняет максимум одну запись за итерацию, без дискового I/O под global critical section.
+#[inline(never)]
 pub fn service<D: BlockDevice>(dev: &D) {
     if DISABLED.load(Ordering::Relaxed) {
         return;

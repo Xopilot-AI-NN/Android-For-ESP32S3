@@ -4,6 +4,9 @@ use alloc::{collections::VecDeque, format, string::String, sync::Arc, vec::Vec};
 use core::cell::RefCell;
 use critical_section::Mutex;
 use serde_json::{Value, json};
+#[path = "mail_image.rs"]
+mod image;
+pub use image::Preview as MailImage;
 pub const CONFIG_TAG: u32 = 0x4753_5731;
 pub const CONFIG_SLOTS: [u32; 2] = [76, 77];
 const LOGOUT_SLOTS: [u32; 2] = [78, 79];
@@ -90,7 +93,9 @@ struct State {
     serial: u32,
     revision: u32,
     message: &'static str,
-    caches: [Cache; 4],
+    caches: [Cache; 8],
+    image: Option<Arc<MailImage>>,
+    image_kind: u8,
     online: bool,
     last_sync: String,
     account_epoch: u32,
@@ -125,7 +130,9 @@ impl State {
                     value: Value::Null,
                     stamp: 0,
                 }
-            }; 4],
+            }; 8],
+            image: None,
+            image_kind: 0,
             online: false,
             last_sync: String::new(),
             account_epoch: 0,
@@ -138,6 +145,7 @@ impl State {
         self.revision = self.revision.wrapping_add(1);
     }
     fn forget(&mut self) {
+        self.image = None;
         self.account_epoch = self.account_epoch.wrapping_add(1);
         self.session.clear();
         self.session_until = 0;
@@ -238,6 +246,7 @@ pub(crate) fn parse_config(bytes: &[u8]) -> Option<Configuration> {
     })
 }
 /// Из двух резервных страниц выбирается последняя целая конфигурация. Через Files она недоступна.
+#[inline(never)]
 pub fn service_storage<D: embedded_sdmmc::BlockDevice>(dev: &D) {
     let (loaded, dirty, marker) = critical_section::with(|cs| {
         let s = STATE.borrow_ref(cs);
@@ -279,7 +288,7 @@ pub fn service_storage<D: embedded_sdmmc::BlockDevice>(dev: &D) {
             }
         }
         for slot in CONFIG_SLOTS {
-            let mut b = [0; 4080];
+            let mut b = alloc::vec![0; 4080];
             if let Ok(n) = p.read(dev, slot, CONFIG_TAG, &mut b) {
                 if let Some(c) = parse_config(&b[..n]) {
                     if best
@@ -330,6 +339,37 @@ pub fn snapshot() -> Snapshot {
     })
 }
 /// Кэш только RAM; содержимое писем не записывается в общедоступные документы.
+/// Invalidate only this app's request; a late network response must not reopen a closed page.
+pub fn cancel_data(kind: u8) {
+    critical_section::with(|cs| {
+        let mut s = STATE.borrow_ref_mut(cs);
+        s.queue
+            .retain(|op| !matches!(op, Operation::Data(k, _, _) if *k == kind));
+        if matches!(s.active.as_ref(), Some((_, Operation::Data(k, _, _))) if *k == kind) {
+            s.active = None;
+            s.serial = s.serial.wrapping_add(1);
+        }
+        s.changed();
+    });
+}
+pub fn clear_preview(kind: u8) {
+    critical_section::with(|cs| {
+        let mut s = STATE.borrow_ref_mut(cs);
+        if s.image_kind == kind {
+            s.image = None;
+        }
+    });
+}
+pub fn mail_image(kind: u8) -> Option<Arc<MailImage>> {
+    critical_section::with(|cs| {
+        let s = STATE.borrow_ref(cs);
+        if s.image_kind == kind {
+            s.image.clone()
+        } else {
+            None
+        }
+    })
+}
 pub fn cache(kind: u8) -> Cache {
     if !crate::file_store::external_access() {
         return Cache {
@@ -337,7 +377,7 @@ pub fn cache(kind: u8) -> Cache {
             stamp: 0,
         };
     }
-    critical_section::with(|cs| STATE.borrow_ref(cs).caches[usize::from(kind.min(3))].clone())
+    critical_section::with(|cs| STATE.borrow_ref(cs).caches[usize::from(kind.min(7))].clone())
 }
 pub fn request(op: Operation) -> bool {
     critical_section::with(|cs| {
@@ -376,7 +416,10 @@ pub fn request(op: Operation) -> bool {
         }
         if matches!(
             op,
-            Operation::Renew | Operation::Me | Operation::Sync | Operation::Data(1 | 2, _, _)
+            Operation::Renew
+                | Operation::Me
+                | Operation::Sync
+                | Operation::Data(1 | 2 | 4 | 5, _, _)
         ) && s.logout_marker != 0
         {
             s.message = "Войдите в Google";
@@ -390,7 +433,7 @@ pub fn request(op: Operation) -> bool {
             return false;
         }
         if let Operation::Pair(mask) = op {
-            let mask = (mask | s.services) & 3;
+            let mask = (mask | s.services) & 15;
             s.phase = Phase::Creating;
             s.pending_email.clear();
             s.pending_services = 0;
@@ -403,8 +446,15 @@ pub fn request(op: Operation) -> bool {
                 s.phase = Phase::Disconnected;
             }
             if let Operation::Data(kind, ref path, _) = op {
+                if kind == 7 {
+                    s.caches[7] = Cache {
+                        value: Value::Null,
+                        stamp: 0,
+                    };
+                    s.image = None;
+                }
                 if path.contains("/messages/") || path.contains("/search/pages/") {
-                    if let Some(value) = s.caches[kind.min(3) as usize].value.as_object_mut() {
+                    if let Some(value) = s.caches[kind.min(7) as usize].value.as_object_mut() {
                         value.remove("body");
                         value.remove("has_more");
                     }
@@ -420,6 +470,15 @@ pub fn request(op: Operation) -> bool {
 /// Сериализация URL/JSON централизована: приложения не задают адрес удалённого сервера.
 pub fn fetch(kind: u8, query: &str, id: &str, page: u16, source: &str, target: &str) -> bool {
     let (path, body) = match kind {
+        7 if id.is_empty() => ("/api/v1/browser/open".into(), query.as_bytes().to_vec()),
+        7 if query == "image" => (
+            format!("/api/v1/browser/documents/{}/images/{page}", encode(id)),
+            Vec::new(),
+        ),
+        7 => (
+            format!("/api/v1/browser/documents/{}?page={page}", encode(id)),
+            Vec::new(),
+        ),
         0 if id.is_empty() => (format!("/api/v1/search?q={}", encode(query)), Vec::new()),
         0 => (
             format!("/api/v1/search/pages/{}?page={page}", encode(id)),
@@ -438,13 +497,28 @@ pub fn fetch(kind: u8, query: &str, id: &str, page: u16, source: &str, target: &
         }
         2 if id.is_empty() => (
             format!(
-                "/api/v1/google/gmail/messages?limit=3&page={}",
+                "/api/v1/google/gmail/messages?limit=10&page={}",
                 encode(query)
             ),
             Vec::new(),
         ),
         2 => (
             format!("/api/v1/google/gmail/messages/{}?page={page}", encode(id)),
+            Vec::new(),
+        ),
+        4 => (
+            format!("/api/v1/google/contacts?page={}", encode(query)),
+            Vec::new(),
+        ),
+        5 if id.is_empty() && query == "choose" => {
+            ("/api/v1/google/photos/picker".into(), b"{}".to_vec())
+        }
+        5 if id.is_empty() => (
+            format!("/api/v1/google/photos?page={}", encode(query)),
+            Vec::new(),
+        ),
+        5 => (
+            format!("/api/v1/google/photos/items/{}", encode(id)),
             Vec::new(),
         ),
         3 => (
@@ -563,7 +637,7 @@ pub(crate) fn take_request() -> Option<Request> {
         let op = s.queue.pop_front()?;
         let session = matches!(
             op,
-            Operation::Me | Operation::Sync | Operation::Data(1 | 2, _, _)
+            Operation::Me | Operation::Sync | Operation::Data(1 | 2 | 4 | 5, _, _)
         );
         let op = if session && (s.session.is_empty() || now() + 30_000 >= s.session_until) {
             s.queue.push_front(op);
@@ -582,6 +656,12 @@ pub(crate) fn take_request() -> Option<Request> {
                 }
                 if mask & 2 != 0 {
                     services.push("gmail");
+                }
+                if mask & 4 != 0 {
+                    services.push("contacts");
+                }
+                if mask & 8 != 0 {
+                    services.push("photos");
                 }
                 body = serde_json::to_vec(&json!({"services":services})).ok()?;
                 "/api/v1/google/pairings".into()
@@ -623,7 +703,7 @@ pub(crate) fn take_request() -> Option<Request> {
         };
         let device = !matches!(
             op,
-            Operation::Me | Operation::Sync | Operation::Data(1 | 2, _, _)
+            Operation::Me | Operation::Sync | Operation::Data(1 | 2 | 4 | 5, _, _)
         );
         let authorization = if device {
             format!("Device {}", config.credential)
@@ -649,6 +729,8 @@ fn mask(v: &Value) -> u8 {
             n | match s.as_str() {
                 Some("calendar") => 1,
                 Some("gmail") => 2,
+                Some("contacts") => 4,
+                Some("photos") => 8,
                 _ => 0,
             }
         })
@@ -666,11 +748,23 @@ fn masked_email(v: &str) -> String {
 }
 /// Ответ ограничен до разбора; ID защищает от ответов старой привязки после отмены/выхода.
 pub(crate) fn complete(id: u32, status: u16, bytes: &[u8]) {
-    let value = if bytes.len() <= RESPONSE_LIMIT {
+    let mut value = if bytes.len() <= RESPONSE_LIMIT {
         serde_json::from_slice::<Value>(bytes).ok()
     } else {
         None
     };
+    let preview = value.as_ref().and_then(|v| image::decode(&v["image"]));
+    if let Some(v) = value.as_mut() {
+        if v.get("image").is_some() && preview.is_none() {
+            if let Some(object) = v.as_object_mut() {
+                object.remove("image");
+            }
+            v["image_unavailable"] = Value::Bool(true);
+        }
+        if let Some(image) = v.get_mut("image").and_then(Value::as_object_mut) {
+            image.remove("data"); // JSON snapshots share only metadata; pixels have one Arc owner.
+        }
+    }
     critical_section::with(|cs| {
         let mut s = STATE.borrow_ref_mut(cs);
         if !s.active.as_ref().is_some_and(|a| a.0 == id) {
@@ -686,7 +780,14 @@ pub(crate) fn complete(id: u32, status: u16, bytes: &[u8]) {
         };
         if !(200..300).contains(&status) {
             s.message = match v["error"].as_str() {
+                Some("BROWSER_PAGE_EXPIRED") => "Страница устарела · обновите",
+                Some("BROWSER_URL_INVALID") => "Нужен адрес HTTPS-сайта",
+                Some("PAGE_NOT_ALLOWED") => "Адрес недоступен браузеру",
+                Some("PAGE_NOT_READABLE") => "Формат сайта не поддерживается",
+                Some("SEARCH_VERIFICATION_REQUIRED") => "DuckDuckGo просит проверку",
                 Some("SCOPE_MISSING") => "Разрешите доступ к сервису",
+                Some("MAIL_RENDER_UNAVAILABLE") => "Проверьте Python на Gateway",
+                Some("GOOGLE_API_DISABLED") => "Включите API в Google Cloud",
                 Some("PROVIDER_NOT_CONFIGURED") => "Настройте ключ API на Gateway",
                 Some("RATE_LIMITED" | "BUDGET_EXCEEDED") => "Лимит API. Повторите позже",
                 Some("REAUTH_REQUIRED" | "UNAUTHORIZED") => "Повторите вход в Google",
@@ -716,6 +817,7 @@ pub(crate) fn complete(id: u32, status: u16, bytes: &[u8]) {
                 && !s.session.is_empty()
                 && matches!(op, Operation::Data(_, _, _) | Operation::Sync)
             {
+                s.image = None;
                 s.account_epoch = s.account_epoch.wrapping_add(1);
                 s.caches = core::array::from_fn(|_| Cache {
                     value: Value::Null,
@@ -799,6 +901,7 @@ pub(crate) fn complete(id: u32, status: u16, bytes: &[u8]) {
             Operation::Me => {
                 let identity = text(&v["account"], "sub", 255);
                 if !s.identity.is_empty() && s.identity != identity {
+                    s.image = None;
                     s.account_epoch = s.account_epoch.wrapping_add(1);
                     s.caches = core::array::from_fn(|_| Cache {
                         value: Value::Null,
@@ -824,20 +927,33 @@ pub(crate) fn complete(id: u32, status: u16, bytes: &[u8]) {
                 s.message = "Синхронизация завершена";
             }
             Operation::Data(kind, _, _) => {
+                if matches!(kind, 2 | 5 | 7) {
+                    s.image = preview;
+                    s.image_kind = kind;
+                }
                 let mut v = v;
                 if kind == 1 || kind == 2 {
                     s.last_sync = text(&v, "synced_at", 40);
                 }
                 if v.get("body").is_some() {
-                    if let Some(existing) = s.caches[kind.min(3) as usize].value.as_object() {
-                        for key in ["results", "messages", "events", "next_page", "provider"] {
+                    if let Some(existing) = s.caches[kind.min(7) as usize].value.as_object() {
+                        for key in [
+                            "results",
+                            "messages",
+                            "events",
+                            "contacts",
+                            "photos",
+                            "next_page",
+                            "page_token",
+                            "provider",
+                        ] {
                             if let Some(value) = existing.get(key) {
                                 v[key] = value.clone();
                             }
                         }
                     }
                 }
-                s.caches[kind.min(3) as usize] = Cache {
+                s.caches[kind.min(7) as usize] = Cache {
                     value: v,
                     stamp: now(),
                 };
@@ -904,6 +1020,11 @@ pub(crate) mod tests {
         );
         pair
     }
+    pub(crate) fn connected() {
+        setup();
+        pairing();
+        confirm();
+    }
     fn confirm() {
         crate::time::set_ms(4001);
         network(true);
@@ -923,6 +1044,35 @@ pub(crate) mod tests {
             r.id,
             json!({"account":{"email":"fixture@example.invalid"},"granted_services":["calendar","gmail"]}),
         );
+    }
+    #[test]
+    fn compressed_mail_preview_renders_real_pixels_and_is_cleared_on_logout() {
+        connected();
+        assert!(fetch(2, "", "mail-preview", 0, "", ""));
+        let r = take_request().unwrap();
+        reply(
+            r.id,
+            json!({"id":"mail-preview","body":"Fixture image","image":{
+            "codec":"rgb565-zlib","width":2,"height":1,"data":"eJxj+PGAHQAEswHg"}}),
+        );
+        let preview = mail_image(2).unwrap();
+        assert_eq!(preview.pixels, [0xf800, 0x07e0]);
+        assert!(mail_image(5).is_none());
+        assert!(cache(2).value["image"].get("data").is_none());
+        let mut frame =
+            crate::material::MaterialFrame::parse("M3|1|0|70|0|0|0|0|1|1|0|0|600|0|0|0|1|1|3")
+                .unwrap();
+        frame.app.id = crate::apps::GMAIL;
+        frame.app.remote.kind = 2;
+        frame.app.remote.mode = 4;
+        frame.app.remote.image = true;
+        let mut surface = crate::material::Surface::new();
+        surface.render(frame);
+        assert_eq!(surface.pixels()[163 * 240 + 118], 0xf800);
+        assert_eq!(surface.pixels()[163 * 240 + 120], 0x07e0);
+        assert!(request(Operation::Logout));
+        assert!(mail_image(2).is_none());
+        reset();
     }
     #[test]
     fn real_contract_requires_confirmation_preserves_mail_list_and_logs_out_offline() {

@@ -97,6 +97,7 @@ impl Default for View {
 pub fn set_allowed(allowed: bool) {
     ALLOWED.store(allowed, Ordering::Relaxed);
     if !allowed {
+        crate::apps::messages::clear();
         critical_section::with(|cs| {
             let mut s = STATE.borrow_ref_mut(cs);
             s.action = 0;
@@ -147,6 +148,7 @@ pub fn event(event: RuntimeEvent, text: Option<&str>) {
                 s.cursor = 0;
             }
             RuntimeEvent::Press if s.cursor == 3 => {
+                crate::apps::messages::clear();
                 s.session.clear();
                 s.candidate.clear();
                 s.online = false;
@@ -238,6 +240,14 @@ pub fn shell<const N: usize>(command: &str, out: &mut heapless::String<N>) {
             let _ = out.push_str("unpaired");
             return;
         }
+        if op.starts_with("sms-") {
+            let _ = out.push_str(if crate::apps::messages::receive(op, &mut words) {
+                "OK"
+            } else {
+                "invalid SMS batch"
+            });
+            return;
+        }
         match op {
             "update" => {
                 s.online = words.next() == Some("1");
@@ -314,13 +324,45 @@ mod tests {
         set_allowed(true);
         assert_eq!(call("hello 1234567890abcdef 4b4445"), "confirm on watch");
         assert_eq!(call("poll 1234567890abcdef"), "unpaired");
+        assert_eq!(call("sms-begin 1234567890abcdef 4"), "unpaired");
         event(RuntimeEvent::Rotate(-1), None);
         event(RuntimeEvent::Press, None);
         assert_eq!(call("hello 1234567890abcdef"), "approved");
         assert_eq!(call("update 1234567890abcdef 1"), "OK");
+        assert_eq!(call("sms-begin ffffffffffffffff 4"), "unpaired");
+        let payload = br#"{"available":true,"messages":[{"sender":"Fixture","body":"Hello","date":"2026-11-04"}]}"#;
+        assert_eq!(
+            call(&alloc::format!(
+                "sms-begin 1234567890abcdef {}",
+                payload.len()
+            )),
+            "OK"
+        );
+        for (i, chunk) in payload.chunks(16).enumerate() {
+            let mut hex = heapless::String::<32>::new();
+            for byte in chunk {
+                let _ = write!(hex, "{:02x}", byte);
+            }
+            assert_eq!(
+                call(&alloc::format!(
+                    "sms-data 1234567890abcdef {} {}",
+                    i * 16,
+                    hex
+                )),
+                "OK"
+            );
+        }
+        assert_eq!(call("sms-end 1234567890abcdef"), "OK");
+        assert_eq!(crate::apps::messages::Controller::default().view().count, 1);
+        assert_eq!(call("sms-begin 1234567890abcdef 4"), "OK");
+        assert_eq!(call("sms-data 1234567890abcdef 0 00000000"), "OK");
+        assert_eq!(call("sms-end 1234567890abcdef"), "invalid SMS batch");
+        assert_eq!(crate::apps::messages::Controller::default().view().count, 1);
         event(RuntimeEvent::Press, None);
         assert!(call("poll 1234567890abcdef").contains("ring"));
         set_allowed(false);
+        assert_eq!(crate::apps::messages::Controller::default().view().count, 0);
+        assert_eq!(call("sms-begin 1234567890abcdef 4"), "locked");
         assert_eq!(call("poll 1234567890abcdef"), "locked");
         set_allowed(true);
         assert!(call("poll 1234567890abcdef").contains("none"));

@@ -308,7 +308,7 @@ mod tft {
             s.cmd(0xC2, &[0x01, 0xFF])?;
             s.cmd(0xC3, &[0x10])?;
             s.cmd(0xC4, &[0x20])?;
-            s.cmd(0xC6, &[0x0F])?;
+            s.cmd(0xC6, &[crate::config::TFT_FRAME_CONTROL])?;
             s.cmd(0xD0, &[0xA4, 0xA1])?;
             s.cmd(
                 0xE0,
@@ -358,20 +358,34 @@ mod tft {
             Ok(s)
         }
 
+        /// Finish every transaction, including failed writes, before releasing CS.
+        fn finish_spi(&mut self, result: Result<(), DisplayError>) -> Result<(), DisplayError> {
+            let flush = self.spi.flush().map_err(|_| DisplayError::Bus);
+            let deselect = self.cs.set_high().map_err(|_| DisplayError::Bus);
+            let result = result.and(flush).and(deselect);
+            if result.is_err() {
+                self.frame_valid = false;
+                self.last_scene = None;
+            }
+            result
+        }
+
         /// Отправляет команду дисплея с параметрами.
         fn cmd(&mut self, cmd: u8, data: &[u8]) -> Result<(), DisplayError> {
-            self.cs.set_low().map_err(|_| DisplayError::Bus)?;
-            self.dc.set_low().map_err(|_| DisplayError::Bus)?;
-            self.spi.write(&[cmd]).map_err(|_| DisplayError::Bus)?;
-            // SpiBus::write may return with the final byte still on the wire.
-            // DC must remain command-low until that byte has completed.
-            self.spi.flush().map_err(|_| DisplayError::Bus)?;
-            if !data.is_empty() {
-                self.dc.set_high().map_err(|_| DisplayError::Bus)?;
-                self.spi.write(data).map_err(|_| DisplayError::Bus)?;
+            let result = (|| {
+                self.cs.set_low().map_err(|_| DisplayError::Bus)?;
+                self.dc.set_low().map_err(|_| DisplayError::Bus)?;
+                self.spi.write(&[cmd]).map_err(|_| DisplayError::Bus)?;
+                // SpiBus::write may return with the final byte still on the wire.
+                // DC must remain command-low until that byte has completed.
                 self.spi.flush().map_err(|_| DisplayError::Bus)?;
-            }
-            self.cs.set_high().map_err(|_| DisplayError::Bus)
+                if !data.is_empty() {
+                    self.dc.set_high().map_err(|_| DisplayError::Bus)?;
+                    self.spi.write(data).map_err(|_| DisplayError::Bus)?;
+                }
+                Ok(())
+            })();
+            self.finish_spi(result)
         }
 
         /// Задаёт прямоугольник записи пикселей контроллера дисплея.
@@ -404,30 +418,32 @@ mod tft {
             h: i32,
             color: u16,
         ) -> Result<(), DisplayError> {
-            if w <= 0 || h <= 0 || x >= W || y >= H || x + w <= 0 || y + h <= 0 {
-                return Ok(());
-            }
-            let x0 = x.max(0);
-            let y0 = y.max(0);
-            let x1 = (x + w - 1).min(W - 1);
-            let y1 = (y + h - 1).min(H - 1);
-            self.set_window(x0, y0, x1, y1)?;
-            let count = ((x1 - x0 + 1) * (y1 - y0 + 1)) as usize;
-            let px = [(color >> 8) as u8, color as u8];
-            let mut buf = [0u8; 128];
-            for p in buf.chunks_exact_mut(2) {
-                p.copy_from_slice(&px);
-            }
-            let mut left = count;
-            while left != 0 {
-                let pixels = left.min(buf.len() / 2);
-                self.spi
-                    .write(&buf[..pixels * 2])
-                    .map_err(|_| DisplayError::Bus)?;
-                left -= pixels;
-            }
-            self.spi.flush().map_err(|_| DisplayError::Bus)?;
-            self.cs.set_high().map_err(|_| DisplayError::Bus)
+            let result = (|| {
+                if w <= 0 || h <= 0 || x >= W || y >= H || x + w <= 0 || y + h <= 0 {
+                    return Ok(());
+                }
+                let x0 = x.max(0);
+                let y0 = y.max(0);
+                let x1 = (x + w - 1).min(W - 1);
+                let y1 = (y + h - 1).min(H - 1);
+                self.set_window(x0, y0, x1, y1)?;
+                let count = ((x1 - x0 + 1) * (y1 - y0 + 1)) as usize;
+                let px = [(color >> 8) as u8, color as u8];
+                let mut buf = [0u8; 1024];
+                for p in buf.chunks_exact_mut(2) {
+                    p.copy_from_slice(&px);
+                }
+                let mut left = count;
+                while left != 0 {
+                    let pixels = left.min(buf.len() / 2);
+                    self.spi
+                        .write(&buf[..pixels * 2])
+                        .map_err(|_| DisplayError::Bus)?;
+                    left -= pixels;
+                }
+                Ok(())
+            })();
+            self.finish_spi(result)
         }
 
         /// Очищает временное состояние или буфер компонента.
@@ -438,39 +454,70 @@ mod tft {
 
         /// Передаёт только изменившуюся область Material-кадра.
         fn flush_material_rect(&mut self, rect: Rect) -> Result<(), DisplayError> {
-            let x0 = rect.x.max(0);
-            let y0 = rect.y.max(0);
-            let x1 = rect.x1().min(W - 1);
-            let y1 = rect.y1().min(H - 1);
-            if x1 < x0 || y1 < y0 {
-                return Ok(());
-            }
-            self.set_window(x0, y0, x1, y1)?;
-            let pixels = self.material_surface.pixels();
-            // Carry the buffer across row boundaries: full chunks match SPI FIFO
-            // sizing and avoid two short writes for every 240-pixel row.
-            let mut buf = [0u8; 1024];
-            let mut used = 0;
-            for y in y0..=y1 {
-                let row = &pixels[y as usize * W as usize + x0 as usize
-                    ..y as usize * W as usize + x1 as usize + 1];
-                for &px in row {
-                    buf[used] = (px >> 8) as u8;
-                    buf[used + 1] = px as u8;
-                    used += 2;
-                    if used == buf.len() {
-                        self.spi.write(&buf).map_err(|_| DisplayError::Bus)?;
-                        used = 0;
+            let result = (|| {
+                let x0 = rect.x.max(0);
+                let y0 = rect.y.max(0);
+                let x1 = rect.x1().min(W - 1);
+                let y1 = rect.y1().min(H - 1);
+                if x1 < x0 || y1 < y0 {
+                    return Ok(());
+                }
+                self.set_window(x0, y0, x1, y1)?;
+                let pixels = self.material_surface.pixels();
+                // Carry the buffer across row boundaries: full chunks match SPI FIFO
+                // sizing and avoid two short writes for every 240-pixel row.
+                let mut buf = [0u8; 1024];
+                let mut used = 0;
+                for y in y0..=y1 {
+                    let row = &pixels[y as usize * W as usize + x0 as usize
+                        ..y as usize * W as usize + x1 as usize + 1];
+                    for &px in row {
+                        buf[used] = (px >> 8) as u8;
+                        buf[used + 1] = px as u8;
+                        used += 2;
+                        if used == buf.len() {
+                            self.spi.write(&buf).map_err(|_| DisplayError::Bus)?;
+                            used = 0;
+                        }
                     }
                 }
+                if used != 0 {
+                    self.spi
+                        .write(&buf[..used])
+                        .map_err(|_| DisplayError::Bus)?;
+                }
+                Ok(())
+            })();
+            self.finish_spi(result)
+        }
+
+        fn present_regions(&mut self, dirty: &[Rect]) -> Result<(), DisplayError> {
+            for rect in dirty {
+                if let Err(error) = self.flush_material_rect(*rect) {
+                    self.frame_valid = false;
+                    self.last_scene = None;
+                    return Err(error);
+                }
             }
-            if used != 0 {
-                self.spi
-                    .write(&buf[..used])
-                    .map_err(|_| DisplayError::Bus)?;
+            let pixels = self.material_surface.pixels();
+            for rect in dirty {
+                for y in rect.y..rect.y + rect.h {
+                    let start = y as usize * W as usize + rect.x as usize;
+                    let end = start + rect.w as usize;
+                    self.displayed[start..end].copy_from_slice(&pixels[start..end]);
+                }
             }
-            self.spi.flush().map_err(|_| DisplayError::Bus)?;
-            self.cs.set_high().map_err(|_| DisplayError::Bus)
+            self.frame_valid = true;
+            Ok(())
+        }
+        fn present_boot(&mut self) -> Result<(), DisplayError> {
+            self.last_scene = None;
+            if self.frame_valid {
+                let dirty = self.material_surface.damage_regions(&self.displayed);
+                self.present_regions(&dirty)
+            } else {
+                self.present_regions(&[Rect::FULL])
+            }
         }
 
         /// Рисует один символ выбранного шрифта.
@@ -565,15 +612,13 @@ mod tft {
         }
         /// Показывает стартовый логотип.
         fn boot_logo(&mut self) -> Result<(), DisplayError> {
-            self.frame_valid = false;
             self.material_surface.boot_frame(255);
-            self.flush_material_rect(Rect::FULL)
+            self.present_boot()
         }
         /// Показывает этап и прогресс загрузки.
         fn boot_progress(&mut self, label: &str, phase: u8) -> Result<(), DisplayError> {
-            self.frame_valid = false;
             self.material_surface.boot_progress_frame(label, phase);
-            self.flush_material_rect(Rect::FULL)
+            self.present_boot()
         }
         /// Рисует меню выбора режима загрузки.
         fn boot_menu(&mut self, kind: u8, cursor: u8) -> Result<(), DisplayError> {
@@ -640,20 +685,17 @@ mod tft {
                             .blend_from(&self.displayed, scene.transition_alpha.max(64));
                     }
                     let dirty = if self.frame_valid {
-                        self.material_surface.changes_from(&self.displayed)
+                        self.material_surface.damage_regions(&self.displayed)
                     } else {
-                        Some(Rect::FULL)
+                        let mut full = heapless::Vec::<Rect, 18>::new();
+                        let _ = full.push(Rect::FULL);
+                        full
                     };
-                    self.stats.last_pixels = dirty.map(|r| (r.w * r.h) as u32).unwrap_or(0);
+                    self.stats.last_pixels = dirty.iter().map(|r| (r.w * r.h) as u32).sum();
                     let compose_end = esp_hal::time::Instant::now()
                         .duration_since_epoch()
                         .as_micros() as u64;
-                    if let Some(dirty) = dirty {
-                        self.flush_material_rect(dirty)?;
-                        self.displayed
-                            .copy_from_slice(self.material_surface.pixels());
-                        self.frame_valid = true;
-                    }
+                    self.present_regions(&dirty)?;
                     self.last_scene = Some(key);
                     self.stats.drawn = self.stats.drawn.saturating_add(1);
                     self.stats.last_us = (esp_hal::time::Instant::now()
@@ -701,6 +743,7 @@ mod tft {
             /// Текущее количество байтов пользовательского ввода.
             bytes: usize,
             writes: usize,
+            fail_after: Option<usize>,
             ram: Vec<u8>,
             /// Пользовательское значение яркости.
             brightness: u8,
@@ -713,17 +756,25 @@ mod tft {
         struct Bus(Rc<RefCell<Wire>>);
         impl SpiErrorType for Bus {
             /// Причины отказа операций компонента вывода на физический экран.
-            type Error = Infallible;
+            type Error = embedded_hal::spi::ErrorKind;
         }
         impl SpiBus for Bus {
             /// Считывает запрошенные данные через интерфейс текущего транспорта.
-            fn read(&mut self, _: &mut [u8]) -> Result<(), Infallible> {
+            fn read(&mut self, _: &mut [u8]) -> Result<(), embedded_hal::spi::ErrorKind> {
                 unreachable!()
             }
             /// Передаёт данные через интерфейс текущего транспорта.
-            fn write(&mut self, bytes: &[u8]) -> Result<(), Infallible> {
+            fn write(&mut self, bytes: &[u8]) -> Result<(), embedded_hal::spi::ErrorKind> {
                 let mut wire = self.0.borrow_mut();
                 assert!(!wire.cs_high, "writing with CS deasserted");
+                if let Some(left) = wire.fail_after.as_mut() {
+                    if *left == 0 {
+                        wire.fail_after = None;
+                        wire.busy = true;
+                        return Err(embedded_hal::spi::ErrorKind::Other);
+                    }
+                    *left -= 1;
+                }
                 wire.bytes += bytes.len();
                 wire.writes += 1;
                 if !wire.dc_high {
@@ -742,15 +793,22 @@ mod tft {
                 Ok(())
             }
             /// Передаёт выходные байты и одновременно считывает входные.
-            fn transfer(&mut self, _: &mut [u8], _: &[u8]) -> Result<(), Infallible> {
+            fn transfer(
+                &mut self,
+                _: &mut [u8],
+                _: &[u8],
+            ) -> Result<(), embedded_hal::spi::ErrorKind> {
                 unreachable!()
             }
             /// Выполняет полнодуплексный обмен, заменяя исходный буфер принятыми байтами.
-            fn transfer_in_place(&mut self, _: &mut [u8]) -> Result<(), Infallible> {
+            fn transfer_in_place(
+                &mut self,
+                _: &mut [u8],
+            ) -> Result<(), embedded_hal::spi::ErrorKind> {
                 unreachable!()
             }
             /// Завершает отложенную передачу данных.
-            fn flush(&mut self) -> Result<(), Infallible> {
+            fn flush(&mut self) -> Result<(), embedded_hal::spi::ErrorKind> {
                 self.0.borrow_mut().busy = false;
                 Ok(())
             }
@@ -805,6 +863,61 @@ mod tft {
         impl DelayNs for NoDelay {
             /// Выполняет задержку, заданную в наносекундах.
             fn delay_ns(&mut self, _: u32) {}
+        }
+
+        #[test]
+        fn failed_spi_write_releases_cs_and_next_frame_recovers() {
+            let wire = Rc::new(RefCell::new(Wire::default()));
+            let pin = |kind| Pin {
+                wire: wire.clone(),
+                kind,
+            };
+            let mut display = St7789Display::new(
+                Bus(wire.clone()),
+                pin(0),
+                pin(1),
+                pin(2),
+                pin(3),
+                &mut NoDelay,
+            )
+            .unwrap();
+            let frame =
+                crate::material::MaterialFrame::parse("M3|5|0|70|0|0|0|0|1|1|0|0|600|0|0|0|1|1|3")
+                    .unwrap();
+            for writes_before_failure in [0, 5, 10] {
+                display.frame_valid = false;
+                wire.borrow_mut().fail_after = Some(writes_before_failure);
+                assert!(display.runtime(&RuntimeFrame::Material(frame)).is_err());
+                assert!(wire.borrow().cs_high);
+                assert!(!wire.borrow().busy);
+                assert!(!display.frame_valid);
+                display.runtime(&RuntimeFrame::Material(frame)).unwrap();
+                assert!(display.frame_valid);
+                assert_eq!(display.displayed, display.material_surface.pixels());
+            }
+        }
+        #[test]
+        fn identical_boot_frame_has_no_spi_writes() {
+            let wire = Rc::new(RefCell::new(Wire::default()));
+            let pin = |kind| Pin {
+                wire: wire.clone(),
+                kind,
+            };
+            let mut display = St7789Display::new(
+                Bus(wire.clone()),
+                pin(0),
+                pin(1),
+                pin(2),
+                pin(3),
+                &mut NoDelay,
+            )
+            .unwrap();
+            display.material_surface.boot_frame(31);
+            display.present_boot().unwrap();
+            let writes = wire.borrow().writes;
+            display.material_surface.boot_frame(31);
+            display.present_boot().unwrap();
+            assert_eq!(wire.borrow().writes, writes);
         }
 
         #[test]
@@ -864,6 +977,7 @@ mod tft {
             frame.brightness = 25;
             display.runtime(&RuntimeFrame::Material(frame)).unwrap();
             assert_eq!(display.stats.drawn, drawn + 1);
+            assert_eq!(display.displayed, display.material_surface.pixels());
         }
 
         #[test]

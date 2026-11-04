@@ -230,6 +230,7 @@ pub fn failed(index: u8) -> bool {
     })
 }
 /// Main-loop disk owner services at most one image, outside any critical section.
+#[inline(never)]
 pub fn service<D: BlockDevice>(dev: &D) -> bool {
     let job = critical_section::with(|cs| {
         let mut cache = CACHE.borrow_ref_mut(cs);

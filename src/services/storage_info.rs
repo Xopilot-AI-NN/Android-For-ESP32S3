@@ -41,3 +41,33 @@ pub fn sample<D: BlockDevice>(dev: &D, frame_us: u64) {
     }
     READY.store(true, Ordering::Release);
 }
+
+/// Copied by the disk/display owner; painting diagnostics never touches either bus.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DisplaySnapshot {
+    pub drawn: u32,
+    pub skipped: u32,
+    pub last_us: u64,
+    pub max_us: u64,
+    pub pixels: u32,
+    pub raster_us: u64,
+    pub compose_us: u64,
+    pub transfer_us: u64,
+}
+static DISPLAY: critical_section::Mutex<core::cell::RefCell<DisplaySnapshot>> =
+    critical_section::Mutex::new(core::cell::RefCell::new(DisplaySnapshot {
+        drawn: 0,
+        skipped: 0,
+        last_us: 0,
+        max_us: 0,
+        pixels: 0,
+        raster_us: 0,
+        compose_us: 0,
+        transfer_us: 0,
+    }));
+pub fn display_snapshot() -> DisplaySnapshot {
+    critical_section::with(|cs| *DISPLAY.borrow_ref(cs))
+}
+pub fn sample_display(value: DisplaySnapshot) {
+    critical_section::with(|cs| *DISPLAY.borrow_ref_mut(cs) = value);
+}

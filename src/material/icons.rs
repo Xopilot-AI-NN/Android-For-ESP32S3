@@ -176,7 +176,11 @@ impl Surface {
                 self.line(cx - 7, cy + 6, cx + 7, cy + 6, 2, ink);
                 return;
             }
-            crate::apps::GMAIL => {
+            crate::apps::CONTACTS => {
+                self.symbol(Symbol::Person, cx, cy, c);
+                return;
+            }
+            crate::apps::GMAIL | crate::apps::MESSAGES => {
                 self.line(cx - 13, cy - 9, cx + 13, cy - 9, 2, c);
                 self.line(cx - 13, cy + 9, cx + 13, cy + 9, 2, c);
                 self.line(cx - 13, cy - 9, cx - 13, cy + 9, 2, c);
@@ -237,6 +241,7 @@ impl Surface {
             21 => Symbol::Timer,
             22 => Symbol::Devices,
             25 => Symbol::Search,
+            31 => Symbol::World,
             28 => Symbol::Language,
             _ => Symbol::Grid,
         };

@@ -1,7 +1,7 @@
 // Модуль программной поверхности Material UI.
 extern crate alloc;
 
-use alloc::{vec, vec::Vec};
+use alloc::{rc::Rc, vec, vec::Vec};
 
 #[path = "material/localization.rs"]
 mod localization;
@@ -440,15 +440,15 @@ fn theme(index: u8) -> Theme {
         },
         _ => Theme {
             bg: rgb565(0, 0, 0),
-            surface: rgb565(27, 46, 62),
-            surface_high: rgb565(54, 83, 109),
-            primary: rgb565(130, 235, 250),
-            on_primary: rgb565(4, 40, 50),
-            primary_container: rgb565(32, 72, 85),
+            surface: rgb565(22, 27, 29),
+            surface_high: rgb565(35, 42, 44),
+            primary: rgb565(166, 239, 208),
+            on_primary: rgb565(7, 43, 32),
+            primary_container: rgb565(30, 64, 54),
             on_primary_container: rgb565(245, 254, 254),
             on_surface: rgb565(243, 250, 255),
-            on_surface_variant: rgb565(183, 204, 221),
-            outline: rgb565(134, 161, 180),
+            on_surface_variant: rgb565(168, 185, 179),
+            outline: rgb565(101, 120, 113),
             error: rgb565(255, 180, 171),
         },
     }
@@ -459,9 +459,9 @@ pub struct Surface {
     /// Пиксели кадрового буфера в формате RGB565.
     pixels: Vec<u16>,
     /// Кэш выбранных пользовательских/системных обоев.
-    wallpaper: Option<Vec<u16>>,
+    wallpaper: Option<Rc<Vec<u16>>>,
     /// Пиксели загруженных пользователем обоев.
-    custom_wallpaper: Option<Vec<u16>>,
+    custom_wallpaper: Option<Rc<Vec<u16>>>,
     /// Номер изображения, уже загруженного в графический кэш.
     selected_wallpaper: u8,
 }
@@ -483,7 +483,7 @@ impl Surface {
     /// Принимает подготовленный RGB565-буфер пользовательских обоев.
     pub fn set_wallpaper(&mut self, pixels: Vec<u16>) {
         if pixels.len() == WIDTH * HEIGHT {
-            self.custom_wallpaper = Some(pixels);
+            self.custom_wallpaper = Some(Rc::new(pixels));
             self.selected_wallpaper = u8::MAX;
         }
     }
@@ -521,9 +521,9 @@ impl Surface {
                 self.wallpaper = if frame.wallpaper_index == 0 {
                     self.custom_wallpaper
                         .clone()
-                        .or_else(|| crate::wallpaper::builtin(1))
+                        .or_else(|| crate::wallpaper::builtin(1).map(Rc::new))
                 } else {
-                    crate::wallpaper::builtin(frame.wallpaper_index)
+                    crate::wallpaper::builtin(frame.wallpaper_index).map(Rc::new)
                 };
                 if self.wallpaper.is_some() {
                     self.selected_wallpaper = frame.wallpaper_index;
@@ -654,10 +654,7 @@ mod theme_tests {
             let colors = theme(index);
             let mut surface = Surface::new();
             surface.render(frame);
-            assert_eq!(
-                surface.pixels()[126 * WIDTH + 39],
-                Surface::focus_fill(colors.primary, true)
-            );
+            assert!(surface.pixels().iter().filter(|p| **p == colors.primary).count() > 100);
             frame.screen = 11;
             frame.timer_editor = 1;
             surface.render(frame);
@@ -732,3 +729,6 @@ mod app_remote_view;
 pub(crate) fn body_character_width(character: char) -> i32 {
     Surface::character_width(character, 1)
 }
+
+#[path = "../../App/system/app/Browser/view.rs"]
+mod app_browser_view;

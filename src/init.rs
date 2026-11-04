@@ -14,7 +14,11 @@ pub(crate) fn run() -> ! {
     // the N4R2 board's 2 MiB PSRAM as a second global allocator region.
     // Rhai's parser/AST is allocation-heavy and the previous 96 KiB-only
     // heap exhausted while compiling the ~8 KiB AOSP userspace bundle.
-    esp_alloc::heap_allocator!(size: 96 * 1024);
+    // The linker gives the remaining DRAM to the main stack. Reserving 96 KiB
+    // here left only ~121 KiB, less than init + disk service + USB/IRQ frames.
+    // Ordinary allocations spill into PSRAM; keep the separate 64 KiB region
+    // below available for capability-constrained radio/RTOS allocations.
+    esp_alloc::heap_allocator!(size: 64 * 1024);
     let hal_cfg = esp_hal::Config::default()
         .with_cpu_clock(CpuClock::max())
         .with_psram(esp_hal::psram::PsramConfig::default());
@@ -55,7 +59,7 @@ pub(crate) fn run() -> ! {
     // Keep a second INTERNAL heap region exclusively useful to capability-
     // constrained allocations (esp-rtos task stacks, radio/DMA internals).
     // It is deliberately registered *after* PSRAM: ordinary GlobalAlloc
-    // allocations spill from the primary 96 KiB heap into PSRAM first, while
+    // allocations spill from the primary 64 KiB heap into PSRAM first, while
     // esp_alloc::InternalMemory skips PSRAM and can use this reclaimed RAM.
     // This prevents Rhai/SystemUI from consuming the memory Wi-Fi needs later.
     #[cfg(feature = "radio-services")]

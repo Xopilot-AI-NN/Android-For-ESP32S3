@@ -238,6 +238,17 @@ impl GoogleClient {
                     return;
                 }
                 self.deadline = now_ms() + 25000;
+                // LAN gateways use a literal IPv4; asking DNS for it fails on many routers.
+                if let Ok(address) = r.config.host.parse::<smoltcp::wire::Ipv4Address>() {
+                    let port = r.config.port;
+                    self.request = Some(r);
+                    match sockets.get_mut::<tcp::Socket>(self.tcp).connect(
+                        iface.context(), (address, port), 50001,
+                    ) {
+                        Ok(()) => self.phase = Phase::Connecting,
+                        Err(_) => self.error(sockets, "Не удалось подключиться"),
+                    }
+                } else {
                 match sockets.get_mut::<dns::Socket>(self.dns).start_query(
                     iface.context(),
                     &r.config.host,
@@ -248,6 +259,7 @@ impl GoogleClient {
                         self.request = Some(r);
                     }
                     Err(_) => account::fail(r.id, "Ошибка DNS Gateway"),
+                }
                 }
             }
         }

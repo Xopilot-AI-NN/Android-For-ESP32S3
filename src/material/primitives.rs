@@ -71,31 +71,6 @@ impl Surface {
         }
     }
 
-    /// Рисует декоративную подложку основной медиакнопки.
-    pub(super) fn scallop(&mut self, cx: i32, cy: i32, fill: u16, outline: u16) {
-        for (shrink, color) in [(0, outline), (3, fill)] {
-            self.circle(cx, cy, 34 - shrink, color);
-            for (x, y) in [
-                (0, -31),
-                (18, -25),
-                (30, -10),
-                (30, 10),
-                (18, 25),
-                (0, 31),
-                (-18, 25),
-                (-30, 10),
-                (-30, -10),
-                (-18, -25),
-            ] {
-                self.circle(
-                    cx + x * (100 - shrink * 3) / 100,
-                    cy + y * (100 - shrink * 3) / 100,
-                    12 - shrink,
-                    color,
-                );
-            }
-        }
-    }
     /// Смешивает пиксель RGB565 с фоном по 4-битному покрытию.
     pub(super) fn coverage_pixel(&mut self, x: i32, y: i32, color: u16, alpha: u8) {
         if alpha == 0 || x < 0 || y < 0 || x >= WIDTH as i32 || y >= HEIGHT as i32 {

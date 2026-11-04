@@ -6,37 +6,29 @@ impl Surface {
     pub fn boot_frame(&mut self, phase: u8) {
         self.fill_rect(0, 0, 240, 280, 0);
 
-        // Геометрия Wear OS из референса: две наклонные капсулы и две точки.
-        // Векторное построение не требует SD, PNG-декодера или загрузки ресурсов.
+        // Android head only: vector geometry, no disk I/O or bitmap allocation.
+        let green = rgb565(61, 220, 132);
+        self.line(95, 105, 80, 80, 4, green);
+        self.line(145, 105, 160, 80, 4, green);
+        self.circle(120, 150, 52, green);
+        self.fill_rect(66, 151, 108, 53, 0); // flat lower edge of the head
+        self.circle(100, 131, 4, 0);
+        self.circle(140, 131, 4, 0);
         let tick = if phase == 255 {
-            (esp_hal::time::Instant::now()
-                .duration_since_epoch()
-                .as_millis()
-                / 80
-                % 32) as u8
+            crate::startup::animation_phase()
         } else {
-            phase % 32
+            phase.min(31)
         };
-        let lift = match tick {
-            0..=7 => 0,
-            8..=15 => -1,
-            16..=23 => 0,
-            _ => 1,
-        };
-        self.line(78, 91 + lift, 107, 151 + lift, 19, rgb565(0, 135, 245));
-        self.line(106, 91 - lift, 135, 151 - lift, 19, rgb565(255, 190, 0));
-        self.circle(159, 91 + lift, 10, rgb565(255, 60, 48));
-        self.circle(147, 118 - lift, 11, rgb565(0, 168, 70));
-        self.text_center_raw(181, "Wear OS", 2, 0xffff);
-        self.text_center_raw(207, "by Google", 1, 0xffff);
+        // Integer smoothstep, held at full opacity once the fade finishes.
+        let p = u32::from(tick);
+        let alpha = (p * p * (93 - 2 * p) * 255 / (31 * 31 * 31)) as u8;
+        self.text_center_raw(211, "WearOS by AOSP", 2, rgb565(alpha, alpha, alpha));
     }
-    /// Единый экран на всех стадиях; технические статусы идут в logcat, не во второй splash.
-    pub fn boot_progress_frame(&mut self, label: &str, _phase: u8) {
+    /// One clean splash; technical boot states remain in the log.
+    pub fn boot_progress_frame(&mut self, _label: &str, _phase: u8) {
         self.boot_frame(255);
-        if label.starts_with("CROWN") {
-            self.text_center_raw(259, "+ Fastboot / - Recovery", 1, rgb565(120, 120, 120));
-        }
     }
+
     /// Рисует меню fastboot/recovery с выбранной строкой.
     pub fn boot_menu_frame(&mut self, kind: u8, cursor: u8) {
         let green = rgb565(134, 238, 167);
@@ -99,5 +91,30 @@ impl Surface {
             self.wear_row(67 + row as i32 * 63, label, start + row == cur, t);
         }
         self.scroll_indicator(cur as u8, labels.len() as u8, t);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn android_is_static_and_only_caption_fades_monotonically() {
+        let mut surface = Surface::new();
+        surface.boot_frame(0);
+        let logo = surface.pixels()[..200 * WIDTH].to_vec();
+        let mut caption = surface.pixels()[200 * WIDTH..].to_vec();
+        assert!(caption.iter().all(|p| *p == 0));
+        assert!(logo.iter().any(|p| *p == rgb565(61, 220, 132)));
+        for phase in 1..=31 {
+            surface.boot_frame(phase);
+            assert_eq!(&surface.pixels()[..200 * WIDTH], logo.as_slice());
+            let next = &surface.pixels()[200 * WIDTH..];
+            assert!(next.iter().zip(&caption).all(|(a, b)| a >= b));
+            caption.copy_from_slice(next);
+        }
+        assert!(caption.contains(&0xffff));
+        let finished = surface.pixels().to_vec();
+        surface.boot_frame(100);
+        assert_eq!(surface.pixels(), finished);
     }
 }

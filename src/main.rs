@@ -46,6 +46,8 @@ mod ble_bonds;
 #[path = "services/ble_host.rs"]
 mod ble_host;
 use aosp_wear_loader::boot_control;
+#[path = "hal/temperature.rs"]
+mod temperature;
 mod config;
 use aosp_wear_loader::cpio;
 mod desktop;
@@ -123,6 +125,8 @@ mod companion;
 #[path = "services/file_store.rs"]
 mod file_store;
 mod init;
+#[path = "services/activity_pages.rs"]
+mod activity_pages;
 #[path = "services/persistence.rs"]
 mod persistence;
 #[path = "services/power.rs"]
@@ -147,6 +151,7 @@ pub mod storage_info;
 mod emergency;
 
 mod boot_policy;
+mod block_lines;
 
 mod panic_record;
 #[path = "services/persistent_log.rs"]

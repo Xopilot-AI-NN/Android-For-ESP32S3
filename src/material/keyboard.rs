@@ -95,7 +95,7 @@ impl Surface {
                 74,
                 26,
                 10,
-                Self::focus_fill(t.surface_high, selected),
+                if selected { t.primary } else { t.surface_high },
             );
             self.text_fitted_raw(x + 5, 93, word, 1, 64, Self::focus_ink(t, selected));
         }
@@ -149,7 +149,14 @@ impl Surface {
             } else {
                 t.surface_high
             };
-            self.round_rect(x, 234, width, 37, 10, Self::focus_fill(base, selected));
+            self.round_rect(
+                x,
+                234,
+                width,
+                37,
+                10,
+                if selected { t.primary } else { base },
+            );
             let ink = if selected {
                 Self::focus_ink(t, true)
             } else if action == SUBMIT || (action == SHIFT && keyboard.upper) {

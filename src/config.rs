@@ -46,3 +46,7 @@ pub const SD_INIT_KHZ: u32 = if cfg!(feature = "sd-checked-startup") {
 pub const SD_DATA_MHZ: u32 = 10; // Safer for external microSD modules and jumper wires.
 /// Интервал/срок BOOT_KEY_SAMPLE в миллисекундах.
 pub const BOOT_KEY_SAMPLE_MS: u32 = 2500;
+
+/// FRCTRL2 nominal panel scan rate. This is independent of SPI throughput and UI FPS.
+pub const TFT_FRAME_CONTROL: u8 = 0x0f;
+pub const TFT_NOMINAL_HZ: u16 = 60;

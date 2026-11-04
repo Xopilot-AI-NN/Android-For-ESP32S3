@@ -3,6 +3,13 @@
 //! only the ESP monotonic counter. Run with one test thread (shared clock state).
 #![allow(dead_code)]
 extern crate alloc;
+#[path = "../../../src/hal/temperature.rs"]
+mod temperature;
+#[path = "../../../src/block_lines.rs"]
+mod block_lines;
+#[path = "../../../src/services/activity_pages.rs"]
+pub mod activity_pages;
+
 #[path = "../../../../Firmware/src/services/adb.rs"]
 pub mod adb;
 #[path = "../../../../Firmware/src/services/ble_recovery.rs"]
@@ -570,7 +577,6 @@ mod tests {
                 apps::GALLERY,
                 apps::BT_KEYBOARD,
                 apps::GOOGLE,
-                apps::GOOGLE_CALENDAR,
                 apps::GMAIL,
                 apps::TRANSLATOR,
             ] {
@@ -585,6 +591,25 @@ mod tests {
         }
     }
     #[test]
+    fn unified_calendar_switches_month_events_and_back() {
+        let mut state = apps::State::default();
+        assert!(!apps::LAUNCHER.contains(&apps::GOOGLE_CALENDAR));
+        state.open(apps::GOOGLE_CALENDAR); // old package ID remains compatible
+        assert_eq!(state.id(), apps::CALENDAR);
+        state.event(RuntimeEvent::Rotate(2));
+        let month = state.view().tools.month;
+        state.event(RuntimeEvent::Click(2));
+        assert_eq!(state.view().cursor, 1);
+        assert_eq!(state.view().remote.kind, 1);
+        assert!(state.cancel_editor());
+        assert_eq!(state.view().cursor, 0);
+        assert_eq!(state.view().tools.month, month);
+        state.event(RuntimeEvent::Click(2));
+        state.event(RuntimeEvent::Click(2));
+        assert_eq!(state.view().cursor, 0);
+    }
+
+    #[test]
     /// Проверяет выбор приложений за пределами четырёх бит курсора без изменения яркости.
     fn launcher_reaches_apps_beyond_the_legacy_four_bit_cursor() {
         let mut os = start();
@@ -594,7 +619,7 @@ mod tests {
             .unwrap();
         assert_eq!(frame(&mut os).cursor, apps::COUNT - 1);
         os.dispatch(RuntimeEvent::Press).unwrap();
-        assert_eq!(frame(&mut os).app.id, apps::TRANSLATOR);
+        assert_eq!(frame(&mut os).app.id, apps::BROWSER);
         assert_eq!(os.state() & (127 << 9), brightness);
         os.dispatch(RuntimeEvent::Back).unwrap();
         os.dispatch(RuntimeEvent::Rotate(1)).unwrap();

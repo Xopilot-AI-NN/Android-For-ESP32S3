@@ -18,7 +18,7 @@ pub struct ScriptStats {
 /// Кэш подготовленного Rhai-кадра по состоянию компонента кэша результатов Rhai.
 pub(super) struct SceneCache {
     /// Закэшированный кадр и ключ состояния.
-    scene: Option<(i32, MaterialFrame)>,
+    scene: Option<alloc::boxed::Box<(i32, MaterialFrame)>>,
     /// Счётчики вызовов, попаданий кэша и времени обработки.
     pub stats: ScriptStats,
 }
@@ -33,10 +33,10 @@ impl SceneCache {
         ast: &AST,
         state: i32,
     ) -> Result<RuntimeFrame, RuntimeError> {
-        if let Some((key, scene)) = self.scene {
-            if key == state {
+        if let Some((key, scene)) = self.scene.as_deref() {
+            if *key == state {
                 self.stats.cache_hits = self.stats.cache_hits.saturating_add(1);
-                return Ok(RuntimeFrame::Material(scene));
+                return Ok(RuntimeFrame::Material(*scene));
             }
         }
         let began = Instant::now().duration_since_epoch().as_micros() as u64;
@@ -53,10 +53,16 @@ impl SceneCache {
         let frame = RuntimeFrame::parse(raw.as_str())?;
         // Legacy text can depend on arbitrary script data; only the Material
         // ABI has native live-field refresh and is safe to reuse this way.
-        self.scene = match &frame {
-            RuntimeFrame::Material(scene) => Some((state, *scene)),
-            _ => None,
-        };
+        match &frame {
+            RuntimeFrame::Material(scene) => {
+                if let Some(cached) = self.scene.as_mut() {
+                    **cached = (state, *scene);
+                } else {
+                    self.scene = Some(alloc::boxed::Box::new((state, *scene)));
+                }
+            }
+            _ => self.scene = None,
+        }
         Ok(frame)
     }
 }

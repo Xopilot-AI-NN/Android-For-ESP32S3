@@ -102,7 +102,15 @@ impl PageStore {
             return Err(PageStoreError::TooLarge);
         }
 
-        let mut page = [0u8; PAGE_SIZE];
+        let used = (HEADER_SIZE + payload.len()).div_ceil(gpt::SECTOR_SIZE) * gpt::SECTOR_SIZE;
+        let mut sector = [0u8; gpt::SECTOR_SIZE];
+        let mut large = alloc::vec::Vec::new();
+        let page = if used == gpt::SECTOR_SIZE {
+            &mut sector[..]
+        } else {
+            large.resize(used, 0);
+            &mut large[..]
+        };
         page[0..4].copy_from_slice(&MAGIC);
         page[4..8].copy_from_slice(&tag.to_le_bytes());
         page[8..10].copy_from_slice(&(payload.len() as u16).to_le_bytes());
@@ -111,7 +119,6 @@ impl PageStore {
         page[HEADER_SIZE..HEADER_SIZE + payload.len()].copy_from_slice(payload);
         // Slot spacing and record format stay unchanged. A four-byte cursor
         // record needs one sector, not an entire 4 KiB transfer over USB/SD.
-        let used = (HEADER_SIZE + payload.len()).div_ceil(gpt::SECTOR_SIZE) * gpt::SECTOR_SIZE;
         let (part, offset) = self.slot_location(slot);
         gpt::write_partition(dev, part, offset, &page[..used]).map_err(PageStoreError::Gpt)
     }
@@ -127,7 +134,9 @@ impl PageStore {
         if slot >= self.slots {
             return Err(PageStoreError::BadSlot);
         }
-        let mut page = [0u8; PAGE_SIZE];
+        let mut sector = [0u8; gpt::SECTOR_SIZE];
+        let mut page = &mut sector[..];
+        let mut large = alloc::vec::Vec::new();
         let (part, offset) = self.slot_location(slot);
         gpt::read_partition(dev, part, offset, &mut page[..gpt::SECTOR_SIZE])
             .map_err(PageStoreError::Gpt)?;
@@ -145,6 +154,9 @@ impl PageStore {
         }
         let used = (HEADER_SIZE + len).div_ceil(gpt::SECTOR_SIZE) * gpt::SECTOR_SIZE;
         if used > gpt::SECTOR_SIZE {
+            large.resize(used, 0);
+            large[..gpt::SECTOR_SIZE].copy_from_slice(page);
+            page = &mut large[..];
             gpt::read_partition(
                 dev,
                 part,
@@ -277,6 +289,22 @@ mod tests {
         d.reads.set(0);
         d.writes.set(0);
         (d, p)
+    }
+    #[test]
+    fn sector_boundaries_and_full_page_preserve_format() {
+        let (disk, pager) = fixture();
+        for len in [0, 1, 496, 497, 1000, 4080] {
+            let payload: alloc::vec::Vec<u8> = (0..len).map(|i| (i % 251) as u8).collect();
+            pager.write(&disk, 0, 19, &payload).unwrap();
+            let mut out = alloc::vec![0xa5; 4080];
+            assert_eq!(pager.read(&disk, 0, 19, &mut out).unwrap(), len);
+            assert_eq!(&out[..len], payload.as_slice());
+            assert!(out[len..].iter().all(|b| *b == 0xa5));
+        }
+        assert_eq!(
+            pager.write(&disk, 0, 19, &[0; 4081]),
+            Err(PageStoreError::TooLarge)
+        );
     }
     #[test]
     /// Проверяет сокращение секторных операций для небольшой записи курсора.

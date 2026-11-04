@@ -712,6 +712,7 @@ pub fn cancel(token: u32) {
     });
 }
 /// Обрабатывает отложенный дисковый запрос и публикует результат.
+#[inline(never)]
 pub fn service<D: BlockDevice>(dev: &D) -> bool {
     let Some((token, op, fs)) = critical_section::with(|cs| {
         let mut c = CONTROL.borrow_ref_mut(cs);

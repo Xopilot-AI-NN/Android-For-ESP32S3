@@ -96,7 +96,7 @@ pub fn execute<D: BlockDevice, B: BootDisplay>(
             }
         }
         "help" => {
-            let _=out.push_str("state display input clock home back press rotate N power-menu reboot [recovery|fastboot] poweroff screencap wallpaper-reload");
+            let _=out.push_str("state display memory input clock home back press rotate N power-menu reboot [recovery|fastboot] poweroff screencap wallpaper-reload");
         }
         _ => adb::shell_command(cmd, &mut out),
     }

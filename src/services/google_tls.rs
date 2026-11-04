@@ -119,7 +119,7 @@ mod tests {
                 "-subj",
                 "/CN=localhost",
                 "-addext",
-                "subjectAltName=DNS:localhost",
+                "subjectAltName=DNS:localhost,IP:127.0.0.1",
                 "-keyout",
             ])
             .arg(dir.join(format!("{name}.key")))
@@ -212,6 +212,8 @@ mod tests {
             serde_json::from_slice::<serde_json::Value>(&response.1).unwrap()["ok"],
             true
         );
+        assert_eq!(run(tls, config("127.0.0.1", "server")).unwrap().0, 200);
+        assert!(run(tls, config("127.0.0.2", "server")).is_err());
         assert!(run(tls, config("wrong.example.invalid", "server")).is_err());
         assert!(run(tls, config("localhost", "other")).is_err());
         unsafe {

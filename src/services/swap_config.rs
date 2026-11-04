@@ -217,6 +217,7 @@ fn apply<D: BlockDevice>(dev: &D, size: u16) -> Result<(), u8> {
     Ok(())
 }
 /// Apply one explicit UI request through the existing main-loop disk owner.
+#[inline(never)]
 pub fn service<D: BlockDevice>(dev: &D) -> bool {
     let Some(size) = critical_section::with(|cs| CONTROL.borrow_ref_mut(cs).pending.take()) else {
         return false;

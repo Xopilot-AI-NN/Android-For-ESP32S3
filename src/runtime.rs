@@ -2,6 +2,7 @@
 extern crate alloc;
 
 use alloc::{
+    boxed::Box,
     format,
     string::{String, ToString},
 };
@@ -191,7 +192,7 @@ pub struct Runtime {
     /// explicitly instead of relying on closure/global-variable semantics.
     state: i32,
     /// Контроллер нативных приложений поверх старого ABI экранов.
-    native_app: crate::apps::State,
+    native_app: Box<crate::apps::State>,
     /// Состояние списка сетей, пароля и ожидающих действий Wi-Fi.
     wifi_ui: WifiUi,
     flashlight_since_secs: Option<u64>,
@@ -344,7 +345,7 @@ impl Runtime {
             scope,
             ast,
             state,
-            native_app: crate::apps::State::default(),
+            native_app: Box::new(crate::apps::State::default()),
             wifi_ui: WifiUi::new(),
             flashlight_since_secs: None,
             bluetooth_action: None,
@@ -454,6 +455,8 @@ impl Runtime {
                 m.app.memory = crate::swap_config::snapshot();
             }
             if m.app.id == crate::apps::DIAGNOSTICS {
+                m.app.temperature_deci_c = crate::temperature::snapshot();
+                m.app.memory = crate::swap_config::snapshot();
                 m.app.uptime = Instant::now().duration_since_epoch().as_secs();
                 m.app.free_kib = (esp_alloc::HEAP.free() / 1024) as u32;
                 m.app.internal_kib = (esp_alloc::HEAP
@@ -556,10 +559,11 @@ impl Runtime {
 
     /// Только списки файлов и строк используют один/два/три клика.
     pub fn file_gestures_active(&self) -> bool {
-        matches!(
-            self.native_app.id(),
-            crate::apps::FILES | crate::apps::EDITOR
-        ) && matches!(self.native_app.view().files.mode, 0 | 3)
+        self.native_app.id() == crate::apps::CALENDAR
+            || (matches!(
+                self.native_app.id(),
+                crate::apps::FILES | crate::apps::EDITOR
+            ) && matches!(self.native_app.view().files.mode, 0 | 3))
     }
     /// Возвращает счётчики работы Rhai и кэша.
     pub fn script_stats(&self) -> ScriptStats {

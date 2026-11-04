@@ -25,8 +25,15 @@ pub(crate) fn sample_boot_mode<D: BootDisplay>(
     delay: &Delay,
     window_ms: u32,
 ) -> BootMode {
-    let ticks = (window_ms / 10).max(1);
-    for _ in 0..ticks {
+    let began = esp_hal::time::Instant::now().duration_since_epoch().as_millis();
+    let mut next_logo = began;
+    loop {
+        let time = esp_hal::time::Instant::now().duration_since_epoch().as_millis();
+        if time.saturating_sub(began) >= u64::from(window_ms) { break; }
+        if time >= next_logo && crate::startup::animation_phase() < 31 {
+            let _ = display.boot_logo();
+            next_logo = time + 50;
+        }
         if keys.power_pressed() {
             return BootMode::Fastboot;
         }

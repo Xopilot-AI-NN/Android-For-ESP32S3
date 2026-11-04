@@ -13,11 +13,7 @@ impl Surface {
     }
     /// Выбирает контрастный текст для обычной или светлой подложки.
     pub(super) fn focus_ink(t: Theme, selected: bool) -> u16 {
-        if selected {
-            rgb565(8, 20, 17)
-        } else {
-            t.on_surface
-        }
+        if selected { t.on_primary } else { t.on_surface }
     }
     /// Накладывает полупрозрачную строку времени, Wi-Fi и Bluetooth поверх кадра.
     pub(super) fn status_strip(&mut self, f: MaterialFrame, t: Theme) {
@@ -73,14 +69,32 @@ impl Surface {
         );
     }
 
-    /// Рисует единообразный заголовок приложения.
-    pub(super) fn photo_header(&mut self, _frame: MaterialFrame, title: &str, t: Theme) {
-        self.text_center_raw(
-            29,
-            title,
-            if title.chars().count() > 19 { 1 } else { 2 },
-            t.on_surface,
-        );
+    /// Rectangular 240x280 app bar: typography, not a colored button container.
+    pub(super) fn photo_header(&mut self, frame: MaterialFrame, title: &str, t: Theme) {
+        let file = matches!(frame.app.id, crate::apps::FILES | crate::apps::EDITOR);
+        let title = if file {
+            title
+        } else {
+            localization::label(title)
+        };
+        let width = if file { 188 } else { 216 };
+        let scale = if Self::text_width(title, 2) <= width {
+            2
+        } else {
+            1
+        };
+        self.text_fitted_raw(12, 31, title, scale, width, t.on_surface);
+    }
+
+    /// Full-width Wear chip adapted to the rectangular display and crown focus.
+    pub(super) fn action_chip(&mut self, y: i32, h: i32, label: &str, selected: bool, t: Theme) {
+        self.keyboard_key(12, y, 216, h, label, selected, t);
+    }
+    pub(super) fn empty_state(&mut self, icon: Symbol, title: &str, detail: &str, t: Theme) {
+        self.round_rect(88, 81, 64, 64, 22, t.primary_container);
+        self.symbol(icon, 120, 113, t.primary);
+        self.text_center_raw(165, title, 2, t.on_surface);
+        self.text_fitted_raw(16, 194, detail, 1, 208, t.on_surface_variant);
     }
 
     /// Рисует клавишу с подсветкой фокуса и центрированной подписью.
@@ -94,21 +108,29 @@ impl Surface {
         selected: bool,
         t: Theme,
     ) {
-        let bg = Self::focus_fill(t.surface_high, selected);
+        let bg = if selected { t.primary } else { t.surface_high };
         let fg = Self::focus_ink(t, selected);
-        self.round_rect(x, y, w, h, 7, bg);
-        self.text_center_x(x + w / 2, y + (h - 14) / 2, label, 1, fg);
+        self.round_rect(x, y, w, h, (h / 2).min(16), bg);
+        let available = w - if label.chars().count() == 1 { 2 } else { 8 };
+        let width = Self::text_width(label, 1).min(available);
+        self.text_fitted_raw(
+            x + (w - width) / 2,
+            y + (h - 14) / 2,
+            label,
+            1,
+            available,
+            fg,
+        );
     }
 
     /// Рисует строку меню с иконкой и подходящим размером текста.
     pub(super) fn wear_row(&mut self, y: i32, label: &str, selected: bool, t: Theme) {
         // Wide, muted slate pills from the lost firmware photos.
-        let (x, w, h) = (19, 202, 55);
-        let bg = Self::focus_fill(t.surface_high, selected);
-        self.round_rect(x, y, w, h, 27, bg);
+        let (x, w, h) = (12, 216, 52);
+        let bg = if selected { t.primary } else { t.surface_high };
+        self.round_rect(x, y, w, h, 16, bg);
         let cy = y + h / 2;
-        self.circle(x + 28, cy, 18, t.surface);
-        self.row_icon(label, x + 28, cy, t.primary);
+        self.row_icon(label, x + 25, cy, Self::focus_ink(t, selected));
         let scale = if Self::text_width(label, 2) <= w - 72 {
             2
         } else {
@@ -150,8 +172,15 @@ impl Surface {
 
     /// Рисует строку приложения с его иконкой и названием.
     pub(super) fn app_row(&mut self, y: i32, label: &str, selected: bool, icon: u8, t: Theme) {
-        let (x, w, h) = (19, 202, 54);
-        self.round_rect(x, y, w, h, 26, Self::focus_fill(t.surface_high, selected));
+        let (x, w, h) = (12, 216, 52);
+        self.round_rect(
+            x,
+            y,
+            w,
+            h,
+            16,
+            if selected { t.primary } else { t.surface_high },
+        );
         self.circle(
             x + 28,
             y + h / 2,
@@ -191,6 +220,21 @@ impl Surface {
             } else {
                 t.on_surface_variant
             },
+        );
+    }
+
+    /// Keep the switch track distinct from a focused primary-color chip.
+    pub(super) fn focused_toggle(&mut self, x: i32, y: i32, on: bool, selected: bool, t: Theme) {
+        if !selected {
+            self.toggle(x, y, on, t);
+            return;
+        }
+        self.round_rect(x, y, 42, 24, 12, t.on_primary);
+        self.circle(
+            if on { x + 30 } else { x + 12 },
+            y + 12,
+            8,
+            if on { t.primary } else { t.on_surface_variant },
         );
     }
 
@@ -239,10 +283,17 @@ impl Surface {
 
     /// Рисует карточку с раздельными строками заголовка и значения.
     pub(super) fn info_card(&mut self, y: i32, title: &str, value: &str, active: bool, t: Theme) {
-        let x = 18;
-        let w = 204;
+        let x = 12;
+        let w = 216;
         let h = 57;
-        self.round_rect(x, y, w, h, h / 2, Self::focus_fill(t.surface_high, active));
+        self.round_rect(
+            x,
+            y,
+            w,
+            h,
+            16,
+            if active { t.primary } else { t.surface_high },
+        );
         self.circle(
             x + 27,
             y + h / 2,

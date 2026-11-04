@@ -4,13 +4,19 @@ use super::*;
 impl Surface {
     /// Выводит строку сведений в стандартной позиции утилиты.
     pub(super) fn utility_line(&mut self, row: i32, text: &str, t: Theme) {
-        self.text_center_raw(77 + row * 34, text, 1, t.on_surface);
+        let y = 68 + row * 36;
+        self.round_rect(10, y, 220, 31, 10, t.surface_high);
+        self.text_fitted_raw(20, y + 8, text, 1, 200, t.on_surface);
     }
     /// Выбирает отрисовку активного нативного приложения.
     pub(super) fn native_application(&mut self, f: MaterialFrame, t: Theme) {
         use crate::apps::*;
         let a = f.app;
         match a.id {
+            BROWSER => {
+                self.browser_page(f, t);
+                return;
+            }
             FILES | EDITOR => {
                 self.files_page(f, t);
                 return;
@@ -28,7 +34,11 @@ impl Surface {
                 return;
             }
             CALENDAR => {
-                self.calendar_page(f, t);
+                if a.cursor == 1 {
+                    self.remote_app_page(f, t);
+                } else {
+                    self.calendar_page(f, t);
+                }
                 return;
             }
             GALLERY => {
@@ -39,7 +49,7 @@ impl Surface {
                 self.keyboard_app_page(f, t);
                 return;
             }
-            GOOGLE | GOOGLE_CALENDAR | GMAIL | TRANSLATOR => {
+            GOOGLE | GOOGLE_CALENDAR | GMAIL | TRANSLATOR | CONTACTS | MESSAGES => {
                 self.remote_app_page(f, t);
                 return;
             }

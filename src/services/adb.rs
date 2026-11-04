@@ -200,6 +200,14 @@ pub fn shell_command<const N: usize>(service: &str, out: &mut heapless::String<N
         return;
     }
 
+    if cmd == "memory" || cmd == "dumpsys meminfo" {
+        let _ = writeln!(out, "heap_used={} heap_free={} internal_free={} psram_free={} zpager_active_mib={}",
+            esp_alloc::HEAP.used(), esp_alloc::HEAP.free(),
+            esp_alloc::HEAP.free_caps(esp_alloc::MemoryCapability::Internal.into()),
+            esp_alloc::HEAP.free_caps(esp_alloc::MemoryCapability::External.into()),
+            crate::swap_config::snapshot().active);
+        return;
+    }
     if cmd == "getprop" {
         for key in PROPS {
             if *key == "persist.sys.device_name" {
@@ -274,10 +282,12 @@ pub fn shell_command<const N: usize>(service: &str, out: &mut heapless::String<N
                 system,
                 frame_us
             );
-            let _ = writeln!(
-                out,
-                "temperature=unavailable (S3 driver pending); current=unavailable (no sensor)"
-            );
+            if let Some(value) = crate::temperature::snapshot() {
+                let _ = writeln!(out, "chip_temperature_deci_c={} (ESP32-S3 die)", value);
+            } else {
+                let _ = writeln!(out, "chip_temperature=unavailable");
+            }
+            let _ = writeln!(out, "current=unavailable (no sensor)");
         }
         "service list" => {
             for (idx, item) in services().split(' ').enumerate() {

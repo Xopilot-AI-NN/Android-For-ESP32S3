@@ -28,7 +28,7 @@ const SECTOR_SIZE: usize = 512;
 /// Параметр RX_PACKET компонента блочного накопителя через USB/PC.
 const RX_PACKET: usize = 64;
 /// Параметр LINE_CAP компонента блочного накопителя через USB/PC.
-const LINE_CAP: usize = 192;
+const LINE_CAP: usize = 256;
 /// Параметр WAIT_STEP_US компонента блочного накопителя через USB/PC.
 const WAIT_STEP_US: u32 = 100;
 /// Параметр WAIT_STEPS компонента блочного накопителя через USB/PC.
@@ -82,6 +82,7 @@ struct Link<'d> {
     pending: [Option<DesktopEvent>; EVENT_QUEUE_CAP],
     pending_head: usize,
     pending_tail: usize,
+    poll_input: bool,
 }
 
 impl<'d> Link<'d> {
@@ -147,6 +148,22 @@ impl<'d> Link<'d> {
         }
     }
 
+    /// Request one input at a safe boundary. The host never injects bytes into
+    /// disk responses in polling mode; IDLE terminates even an empty poll.
+    fn poll_event(&mut self) -> Option<DesktopEvent> {
+        if let Some(event) = self.pop_event() { return Some(event); }
+        if !self.poll_input { return self.poll_event_nonblocking(); }
+        if self.send(b"@ZBLK|POLL\r\n").is_err() { return None; }
+        let mut line = [0; LINE_CAP];
+        if let Ok(len) = self.read_line(&mut line) {
+            if line[..len].starts_with(b"@ZBLK|FAIL|") {
+                // Legacy PC server: consume its error, then use its async input.
+                self.poll_input = false;
+            }
+        }
+        self.pop_event()
+    }
+
     /// Забирает событие, не ожидая новые байты бесконечно.
     fn poll_event_nonblocking(&mut self) -> Option<DesktopEvent> {
         if let Some(event) = self.pop_event() {
@@ -199,17 +216,23 @@ impl<'d> Link<'d> {
 
     /// Читает ограниченную строку управляющего протокола.
     fn read_line(&mut self, out: &mut [u8; LINE_CAP]) -> Result<usize, PcBlockError> {
-        let mut len = 0usize;
+        // A viewer command may have been partially consumed by poll_event.
+        // Finish that same line before looking for a block response header.
+        out[..self.control_len].copy_from_slice(&self.control_line[..self.control_len]);
+        let mut lines = crate::block_lines::Lines::with_prefix(self.control_len);
+        self.control_len = 0;
         loop {
             let byte = self.read_byte()?;
-            match byte {
-                b'\n' => return Ok(len),
-                b'\r' => {}
-                _ if len < out.len() => {
-                    out[len] = byte;
-                    len += 1;
+            if let Some(len) = lines.push(out, byte).map_err(|_| PcBlockError::Protocol)? {
+                if let Ok(text) = core::str::from_utf8(&out[..len]) {
+                    if let Some(event) = desktop::parse_event(text) {
+                        // UI commands can precede DATA/OK on the shared wire.
+                        // Queue them; never mistake them for a failed disk I/O.
+                        self.push_event(event);
+                        continue;
+                    }
                 }
-                _ => return Err(PcBlockError::Protocol),
+                return Ok(len);
             }
         }
     }
@@ -334,6 +357,7 @@ impl<'d> UsbPcBlockDevice<'d> {
                 pending: [None; EVENT_QUEUE_CAP],
                 pending_head: 0,
                 pending_tail: 0,
+                poll_input: true,
             }),
             blocks: RefCell::new(None),
             viewer: RefCell::new(crate::viewer_stream::ViewerStream::default()),
@@ -474,12 +498,14 @@ impl<'d> UsbPcBlockDevice<'d> {
     /// Until this point the server deliberately queues them so block protocol
     /// traffic cannot be interleaved with UI control lines.
     pub fn viewer_interactive(&self) {
-        let _ = self.link.borrow_mut().send(b"@ZBLK|INTERACTIVE\r\n");
+        let mut link = self.link.borrow_mut();
+        let _ = link.send(b"@ZWUI|INPUT_POLL|1\r\n");
+        let _ = link.send(b"@ZBLK|INTERACTIVE\r\n");
     }
 
     /// Забирает следующее событие настольного интерфейса.
     pub fn poll_desktop_event(&self) -> Option<DesktopEvent> {
-        let event = self.link.borrow_mut().poll_event_nonblocking();
+        let event = self.link.borrow_mut().poll_event();
         if matches!(event, Some(DesktopEvent::Sync | DesktopEvent::Ping)) {
             self.viewer.borrow_mut().touch(
                 esp_hal::time::Instant::now()

@@ -51,6 +51,8 @@ fn main() {
         ("complications", 1, 0),
         ("power", 1, 0),
         ("splash", 1, 0),
+        ("splash-start", 1, 0),
+        ("splash-mid", 1, 0),
         ("fastboot", 1, 0),
         ("recovery", 1, 0),
         ("display", 14, 3),
@@ -74,6 +76,11 @@ fn main() {
         ("world", 6, 3),
         ("calendar", 1, 0),
         ("gallery", 1, 0),
+        ("gallery-local", 1, 0),
+        ("contacts", 1, 0),
+        ("contacts-list", 1, 0),
+        ("messages", 1, 0),
+        ("photos", 1, 0),
         ("bt-keyboard", 1, 0),
         ("google", 1, 0),
         ("google-calendar", 1, 0),
@@ -88,6 +95,24 @@ fn main() {
         ("new-apps", 2, 11),
         ("calculator", 1, 0),
         ("files", 1, 0),
+        ("files-last", 1, 0),
+        ("files-toolbar", 1, 0),
+        ("files-properties", 1, 0),
+        ("share", 1, 0),
+        ("share-offline", 1, 0),
+        ("flashlight", 29, 0),
+        ("memory", 1, 0),
+        ("diagnostics", 1, 0),
+        ("diagnostics-display",1,0),
+        ("diagnostics-render",1,0),
+        ("diagnostics-network",1,0),
+        ("browser",1,0),
+        ("browser-page",1,0),
+        ("browser-light",1,0),
+        ("browser-menu",1,0),
+        ("chip-temperature", 1, 0),
+        ("editor-long", 1, 0),
+        ("phone-pair", 1, 0),
         ("editor", 1, 0),
         ("tasks", 1, 0),
         ("focus", 1, 0),
@@ -108,6 +133,13 @@ fn main() {
         ("pin-entry", 0, 0),
         ("lock-timeout", 20, 0),
     ] {
+        let scenario = name;
+        let name = match name {
+            "files-last" | "files-toolbar" | "files-properties" => "files",
+            "editor-long" => "editor",
+            "phone-pair" => "phone",
+            _ => name,
+        };
         let raw = format!("M3|{screen}|{cursor}|60|0|0|0|0|1|1|0|0|131|0|0|1|1|1|3");
         let mut frame = material::MaterialFrame::parse(&raw).unwrap();
         use watch_runtime_check::apps;
@@ -187,21 +219,36 @@ fn main() {
         if name == "focus" {
             frame.app.id = apps::FOCUS;
         }
-        if name == "gallery" {
+        if name == "gallery" || name == "gallery-local" {
             frame.app.id = apps::GALLERY;
+            frame.app.gallery.source = if name == "gallery-local" { 1 } else { 0 };
+        }
+        if name == "contacts" || name == "contacts-list" {
+            frame.app.id=apps::CONTACTS;frame.app.remote.kind=4;
+        }
+        if name == "photos" {
+            frame.app.id=apps::GALLERY;frame.app.gallery.source=2;frame.app.remote.kind=5;
+        }
+        if name == "contacts-list" || name == "messages" {
+            if name == "messages" {frame.app.id=apps::MESSAGES;frame.app.remote.kind=6;}
+            let v=&mut frame.app.remote;v.mode=2;v.count=3;v.cursor=1;v.message="Только синтетические данные";
+            for (i,line) in ["Алексей","+000 123 456","Мария","fixture@example.invalid","Служба уведомлений","Это тестовый текст"].iter().enumerate() {
+                v.lengths[i]=apps::files::copy_text(&mut v.lines[i],line);
+            }
         }
         if name == "bt-keyboard" {
             frame.app.id = apps::BT_KEYBOARD;
         }
         for (label, id, kind) in [
             ("google", apps::GOOGLE, 0),
-            ("google-calendar", apps::GOOGLE_CALENDAR, 1),
+            ("google-calendar", apps::CALENDAR, 1),
             ("gmail", apps::GMAIL, 2),
             ("translator", apps::TRANSLATOR, 3),
         ] {
             if name == label {
                 frame.app.id = id;
                 frame.app.remote.kind = kind;
+                if kind == 1 { frame.app.cursor = 1; }
                 frame.app.remote.message = "HTTPS Gateway ещё не настроен";
             }
         }
@@ -219,10 +266,11 @@ fn main() {
             frame.app.id = if name.starts_with("gmail-") {
                 apps::GMAIL
             } else if name == "google-month" {
-                apps::GOOGLE_CALENDAR
+                apps::CALENDAR
             } else {
                 apps::GOOGLE
             };
+            if name == "google-month" { frame.app.cursor = 1; }
             let v = &mut frame.app.remote;
             v.kind = if name.starts_with("gmail-") {
                 2
@@ -294,7 +342,7 @@ fn main() {
                     v.lengths[i] = n as u8;
                 }
                 if name == "google-results" {
-                    let label = "Brave Search";
+                    let label = "DuckDuckGo";
                     v.provider[..label.len()].copy_from_slice(label.as_bytes());
                     v.provider_len = label.len() as u8;
                 }
@@ -393,9 +441,55 @@ fn main() {
             frame.media_progress = 420;
             frame.animation_phase = 100;
         }
+        if scenario.starts_with("diagnostics-") {
+            frame.app.id=apps::DIAGNOSTICS;
+            frame.app.cursor=match scenario {"diagnostics-display"=>5,"diagnostics-render"=>6,_=>7};
+        }
+        if scenario.starts_with("browser") {
+            frame.app.id=apps::BROWSER;
+            if scenario!="browser" {
+                let v=&mut frame.app.browser;
+                v.mode=if scenario=="browser-menu"{3}else{2};
+                v.cursor=3;v.pages=3;v.light=scenario=="browser-light";
+                let title="Пример HTML-сайта";v.title[..title.len()].copy_from_slice(title.as_bytes());v.title_len=title.len() as u8;
+                for (i,(text,kind,height)) in [("Заголовок",1,31),("Текст сайта на русском языке.",0,18),("• Первый пункт списка",0,18),("Открыть следующую страницу",3,18),("Фото · нажмите для просмотра",4,42)].iter().enumerate(){
+                    let row=&mut v.rows[i]; row.text[..text.len()].copy_from_slice(text.as_bytes());row.len=text.len() as u8;row.kind=*kind;row.height=*height;row.selected=i==3;
+                }
+                v.rows_len=5;
+            }
+        }
+        match scenario {
+            "share" | "share-offline" => { frame.app.id = apps::SHARE; if scenario == "share" { frame.wifi_ip = Some([192, 0, 2, 1]); frame.adb = true; } }
+            "memory" => frame.app.id = apps::MEMORY,
+            "diagnostics" => frame.app.id = apps::DIAGNOSTICS,
+            "chip-temperature" => {
+                frame.app.id = apps::DIAGNOSTICS;
+                frame.app.cursor = 4;
+                frame.app.temperature_deci_c = Some(453);
+            }
+            "files-properties" => { frame.app.files.mode = 10; frame.app.files.title_len = apps::files::copy_text(&mut frame.app.files.title, "Документ.txt"); frame.app.files.selected_size = 4096; }
+            _ => {}
+        }
+        if matches!(scenario, "files-last" | "files-toolbar") {
+            let v = &mut frame.app.files;
+            for (i, row) in v.rows.iter_mut().enumerate() { row.selected = scenario == "files-last" && i == 3; }
+            v.selected_len = apps::files::copy_text(&mut v.selected_name, "photo.png");
+            v.toolbar = if scenario == "files-toolbar" { 1 } else { 255 };
+        }
+        if scenario == "editor-long" {
+            let v = &mut frame.app.files;
+            v.title_len = apps::files::copy_text(&mut v.title, "Очень длинное имя документа.txt");
+        }
+        if scenario == "phone-pair" {
+            frame.app.phone.pending = true;
+            frame.app.phone.code = *b"1234";
+        }
+        if let Some(theme) = std::env::var("WATCH_PREVIEW_THEME").ok().and_then(|s| s.parse::<u8>().ok()) {
+            frame.theme = theme.min(3);
+        }
         let mut surface = material::Surface::new();
-        if name == "splash" {
-            surface.boot_frame(255);
+        if name.starts_with("splash") {
+            surface.boot_frame(match name { "splash-start" => 0, "splash-mid" => 15, _ => 31 });
         } else if name == "fastboot" {
             surface.boot_menu_frame(1, 2);
         } else if name == "recovery" {
@@ -409,7 +503,7 @@ fn main() {
                 surface.render(frame);
             }
         }
-        let mut file = fs::File::create(format!("{out}/{name}.ppm")).unwrap();
+        let mut file = fs::File::create(format!("{out}/{scenario}.ppm")).unwrap();
         write!(file, "P6\n240 280\n255\n").unwrap();
         for &p in surface.pixels() {
             file.write_all(&[

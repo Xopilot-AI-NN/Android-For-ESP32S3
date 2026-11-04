@@ -153,8 +153,8 @@ def validate_app_packages() -> list[dict]:
             if manifest.get("nativeApp") != entry["id"]:
                 raise ValueError(f"Native ID mismatch: {directory}")
             launcher_ids.append(entry["id"])
-    if len(launcher_ids) != 19 or len(set(launcher_ids)) != 19:
-        raise ValueError("The launcher must contain all 19 distinct applications")
+    if len(launcher_ids) != 21 or len(set(launcher_ids)) != 21:
+        raise ValueError("The launcher must contain all 21 distinct applications")
     actual = {p.parent.resolve() for p in (APP_ROOT / "system").glob("*/*/manifest.json")}
     expected = {(APP_ROOT / e["directory"]).resolve() for e in catalog}
     if actual != expected:
