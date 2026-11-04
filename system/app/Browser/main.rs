@@ -150,8 +150,11 @@ impl Controller {
         web::clear_preview(7);
         self.active = false;
         self.pending = None;
-        self.layout.lines.clear();
-        self.history.clear();
+        // Closing the app must return its layout/history capacity to the heap.
+        self.layout = Layout::default();
+        self.history = Vec::new();
+        self.pages = 0;
+        self.cursor = 0;
         self.current = 0;
     }
     fn navigate(&mut self, value: serde_json::Value, action: Pending) {
@@ -294,6 +297,7 @@ impl Controller {
             web::cancel_data(7);
             self.pending = None;
             self.message = "Загрузка отменена";
+            self.mode = if self.history.is_empty() { 0 } else { 2 };
             return true;
         }
         match self.mode {
@@ -425,6 +429,8 @@ impl Controller {
                 0 => self.address(),
                 1 if self.current > 0 => self.history(self.current - 1),
                 2 if self.current + 1 < self.history.len() => self.history(self.current + 1),
+                1 => self.message = "В истории нет предыдущей страницы",
+                2 => self.message = "В истории нет следующей страницы",
                 3 => {
                     if let Some(v) = self.history.get(self.current) {
                         self.navigate(serde_json::json!({"url":v.url}), Pending::Reload);
@@ -432,7 +438,7 @@ impl Controller {
                 }
                 4 => {
                     self.light = !self.light;
-                    self.mode = 2;
+                    self.mode = if self.history.is_empty() { 0 } else { 2 };
                 }
                 5 => {
                     self.mode = 0;
@@ -535,6 +541,34 @@ mod tests {
     fn reply(request: crate::google_gateway::Request, page: u16, blocks: serde_json::Value) {
         web::complete(request.id,200,&serde_json::to_vec(&serde_json::json!({"kind":"browser-page","document":"fixture-document-123456","url":"https://example.org/","title":"Fixture","page":page,"page_count":2,"blocks":blocks})).unwrap());
     }
+    #[test]
+    fn cancelling_first_navigation_returns_home_and_close_releases_buffers() {
+        web::tests::setup();
+        let mut browser = Controller::default();
+        browser.open_result("fixture".into());
+        let request = web::take_request().unwrap();
+        assert!(browser.back());
+        assert_eq!(browser.view().mode, 0);
+        reply(request, 0, serde_json::json!([]));
+        browser.poll();
+        assert!(browser.history.is_empty());
+        browser.open_result("fixture".into());
+        let request = web::take_request().unwrap();
+        reply(
+            request,
+            0,
+            serde_json::json!([{"index":0,"type":"paragraph","text":"Content"}]),
+        );
+        browser.poll();
+        assert!(browser.history.capacity() > 0);
+        assert!(browser.layout.lines.capacity() > 0);
+        browser.close();
+        assert_eq!(browser.history.capacity(), 0);
+        assert_eq!(browser.layout.lines.capacity(), 0);
+        assert_eq!(browser.view().pages, 0);
+        web::tests::reset();
+    }
+
     #[test]
     fn browser_preview_decodes_once_paints_pixels_and_is_released_on_back() {
         web::tests::setup();

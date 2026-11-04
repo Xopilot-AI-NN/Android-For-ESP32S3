@@ -309,11 +309,38 @@ impl Surface {
                         if v.busy {
                             "Подождите"
                         } else {
-                            "Список пуст"
+                            match v.kind {
+                                1 => "Нет событий",
+                                2 => "Нет писем",
+                                4 => "Нет контактов",
+                                5 => "Фото ещё не выбраны",
+                                6 => "Нет сообщений",
+                                _ => "Ничего не найдено",
+                            }
                         },
                         1,
                         t.on_surface_variant,
                     );
+                }
+                if v.count > 0 {
+                    // Three cards fit the rectangular display. The track and
+                    // counter describe this loaded page, not the whole mailbox.
+                    let thumb = (152 * 3 / i32::from(v.count)).clamp(12, 152);
+                    let position = i32::from(v.cursor.min(v.count.saturating_sub(1)));
+                    let top =
+                        (152 - thumb) * position / i32::from(v.count.saturating_sub(1).max(1));
+                    self.round_rect(236, 84, 2, 152, 1, t.surface_high);
+                    self.round_rect(236, 84 + top, 2, thumb, 1, t.primary);
+                    if matches!(v.kind, 2 | 4 | 5 | 6) {
+                        self.text_fitted_raw(
+                            12,
+                            256,
+                            &alloc::format!("{} / {} · Колесо: листать", position + 1, v.count),
+                            1,
+                            216,
+                            t.on_surface_variant,
+                        );
+                    }
                 }
                 if !matches!(v.kind, 2 | 4 | 5 | 6) && v.lengths[6] != 0 {
                     let text =

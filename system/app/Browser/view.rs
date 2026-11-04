@@ -42,7 +42,11 @@ impl Surface {
                 self.action_chip(
                     66 + row as i32 * 36,
                     32,
-                    labels[index],
+                    match index {
+                        1 if !v.can_back => "Назад · недоступно",
+                        2 if !v.can_forward => "Вперёд · недоступно",
+                        _ => labels[index],
+                    },
                     v.cursor as usize == index,
                     t,
                 );
@@ -134,6 +138,16 @@ impl Surface {
                         ink,
                     );
                 }
+            }
+            // Position within this document page stays separate from the page
+            // counter: long HTML pages otherwise give no scrolling feedback.
+            if v.mode == 2 && v.total > 0 {
+                let track = 160;
+                let thumb = (track * i32::from(v.rows_len) / i32::from(v.total)).clamp(8, track);
+                let top = (track - thumb) * i32::from(v.cursor)
+                    / i32::from(v.total.saturating_sub(1).max(1));
+                self.round_rect(236, 80, 2, track, 1, t.surface_high);
+                self.round_rect(236, 80 + top, 2, thumb, 1, t.primary);
             }
             self.text_fitted_raw(10, 246, v.message, 1, 220, t.on_surface_variant);
             self.text_center_raw(
