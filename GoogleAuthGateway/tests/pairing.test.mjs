@@ -370,3 +370,21 @@ test("AEAD prevents moving encrypted credentials between devices", () => {
     store.close();
   }
 });
+
+test("new read-only Contacts and Photos grants survive the same watch confirmation flow",async t=>{
+  const s=await setup(t,{
+    ...mockGoogle,
+    async exchange(){return {...await mockGoogle.exchange(),scope:Object.values(SCOPES).join(" ")};},
+    async contacts(){return {contacts:[{id:"people/fixture",title:"Fixture",body:"+000"}],page_token:"",next_page:null};}
+  });
+  const pairing=await s.create(["calendar","gmail","contacts","photos"]), login=await s.login(pairing);
+  const callback=await fetch(s.base+"/oauth/callback?state="+login.state+"&code=fixture",{headers:{Cookie:login.cookie}});
+  assert.equal(callback.status,200);
+  const confirmation=await fetch(s.base+"/api/v1/google/pairings/"+pairing.pairing_id+"/confirm",{method:"POST",headers:s.auth(s.device),body:"{}"});
+  assert.equal(confirmation.status,200);
+  const session=await confirmation.json();
+  const response=await fetch(s.base+"/api/v1/google/contacts",{headers:{"X-Device-ID":s.device.device_id,Authorization:"Bearer "+session.session}});
+  assert.equal(response.status,200);
+  assert.equal((await response.json()).contacts[0].title,"Fixture");
+  assert.deepEqual(s.store.account(s.device.device_id).services,["calendar","gmail","contacts","photos"]);
+});

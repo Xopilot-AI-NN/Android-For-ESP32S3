@@ -26,11 +26,13 @@ try {
   };
   if (Object.keys(values).some((key) => !Object.hasOwn(allowed, key)))
     throw Error(
-      "Only brave_search_api_key and google_translate_api_key are accepted",
+      "Use google_translate_api_key; DuckDuckGo search needs no key",
     );
   let contents = readFileSync(join(directory, "config.env"), "utf8");
   for (const [key, name] of Object.entries(allowed)) {
     if (!Object.hasOwn(values, key)) continue;
+    // Accept old private JSON files without ever using or importing a paid search key.
+    if (key === "brave_search_api_key") continue;
     const value = values[key];
     if (
       typeof value !== "string" ||
@@ -57,7 +59,7 @@ try {
   writeFileSync(temporary, contents, { mode: 0o600, flag: "wx" });
   chmodSync(temporary, 0o600);
   renameSync(temporary, join(directory, "config.env"));
-  console.log("Provider keys saved outside Git. Restart Gateway to apply.");
+  console.log("Provider keys saved outside Git. A running Gateway reloads these keys automatically.");
 } catch {
   console.error(
     "Provider import failed: check the private JSON path, fields and config directory. Values were not logged.",

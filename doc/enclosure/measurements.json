@@ -1,0 +1,100 @@
+{
+  "units": "mm",
+  "source": "User measurements and photographs; nominal values, not manufacturing tolerances",
+  "components": {
+    "display_pcb": {
+      "size": [
+        48,
+        31,
+        null
+      ],
+      "glass_and_active_area": null,
+      "mounting_holes": null
+    },
+    "esp_with_usb_c": {
+      "size": [
+        26,
+        18,
+        null
+      ]
+    },
+    "sd_board": {
+      "size": [
+        20,
+        18,
+        null
+      ],
+      "additional_card_envelope": 15,
+      "conservative_xy_envelope": [
+        35,
+        18
+      ],
+      "inserted_card_projection_needs_measurement": true,
+      "reference_listing": "https://ozon.by/product/2924415710/"
+    },
+    "encoder": {
+      "size": [
+        15,
+        17,
+        null
+      ],
+      "shaft_axis_and_protrusion": null,
+      "module_name": "KY-040",
+      "identification_source": "User: blue PCB, push-button encoder; EC12E listing is only a similar example",
+      "reference_listing": "https://ozon.by/product/2158237959/"
+    },
+    "tps61023_module": {
+      "size": [
+        18,
+        11,
+        5
+      ],
+      "output_setting_needs_verification": true
+    },
+    "heatsink": {
+      "size": [
+        15,
+        10,
+        5
+      ]
+    },
+    "battery_selected": {
+      "size": [
+        28,
+        27,
+        5.7
+      ],
+      "capacity_mah": null,
+      "nominal_voltage": null,
+      "max_charge_current_ma": null,
+      "protection": null
+    },
+    "battery_alternative_not_selected": {
+      "size": [
+        40,
+        25,
+        8
+      ]
+    },
+    "tp4056_existing": {
+      "size": [
+        29,
+        18,
+        5
+      ],
+      "power_path_builtin": false
+    },
+    "replacement_power_path_module": {
+      "size": [
+        null,
+        null,
+        null
+      ],
+      "marketplace": "Ozon",
+      "selected": false,
+      "reference_listing": "https://ozon.by/product/1964855217/"
+    }
+  },
+  "fit_status": "Concept only: no verified assembled Z stack, mounting coordinates, print clearance, or selected power module",
+  "original_blend": "../../esp32s3_watch_box.blend"
+}

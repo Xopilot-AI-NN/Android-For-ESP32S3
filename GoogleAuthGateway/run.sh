@@ -3,6 +3,13 @@
 set -eu
 GATEWAY_ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/aosp-wear-gateway/config.env"
+# Node's normal certificate verification remains enabled for the private LAN CA.
+if [ -f "$(dirname "$CONFIG_FILE")/local-ca.pem" ]; then
+  NODE_EXTRA_CA_CERTS="$(dirname "$CONFIG_FILE")/local-ca.pem"
+  export NODE_EXTRA_CA_CERTS
+fi
+GATEWAY_CONFIG_FILE="$CONFIG_FILE"
+export GATEWAY_CONFIG_FILE
 ACTION="${1:-start}"
 if [ "$#" -gt 0 ]; then shift; fi
 case "$ACTION" in
@@ -19,6 +26,7 @@ case "$ACTION" in
     ;;
   help|-h|--help)
     echo 'Usage: bash run.sh init OAUTH_JSON [--base-url HTTPS_ORIGIN]'
+    echo '       bash run.sh init OAUTH_JSON --local-ip PRIVATE_LAN_IP'
     echo '       bash run.sh start | check | test'
     echo '       bash run.sh register [name]'
     echo '       bash run.sh providers PRIVATE_KEYS_JSON'

@@ -1,11 +1,17 @@
 // QR pairing, browser OAuth and watch sessions share one state machine.
 // Google refresh/access tokens are encrypted in SQLite and never returned to a watch.
 import http from "node:http";
+import https from "node:https";
+import { readFileSync } from "node:fs";
 import { timingSafeEqual } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
+import { homedir } from "node:os";
+import { watchProviderKeys } from "./provider-config.mjs";
 import { Store, opaque, hash } from "./store.mjs";
 import { Google, ApiError, SCOPES } from "./google.mjs";
+import { Browser } from "./browser.mjs";
+import { Photos } from "./photos.mjs";
 import { Providers } from "./providers.mjs";
 import { config as loadConfig } from "./config.mjs";
 const equal = (a, b) =>
@@ -62,9 +68,13 @@ export function createGateway({
   store,
   google = new Google(config),
   providers,
+  browser,
   now = () => Date.now(),
+  tls,
 }) {
   providers ||= new Providers(config, { now, store });
+  browser ||= new Browser({providers,now});
+  const photos = new Photos({store, google, now});
   const limits = new Map(),
     refreshing = new Map();
   function rate(key, max) {
@@ -116,7 +126,7 @@ export function createGateway({
     return row;
   }
   function cookie(value) {
-    return `watch_oauth=${value}; HttpOnly; SameSite=Lax; Path=/oauth; Max-Age=300${config.dev ? "" : "; Secure"}`;
+    return `watch_oauth=${value}; HttpOnly; SameSite=Lax; Path=/oauth; Max-Age=300${config.dev || config.localIp ? "" : "; Secure"}`;
   }
   function issue(id) {
     const token = opaque();
@@ -205,11 +215,18 @@ export function createGateway({
       throw error;
     }
   }
-  const server = http.createServer(async (req, res) => {
+  const handler = async (req, res) => {
     const requestId = opaque(6);
     try {
       // Only Caddy on loopback may terminate HTTPS. Never trust a remote Forwarded header.
-      if (!config.dev) {
+      // Loopback HTTP serves browser login only. Device credentials always use HTTPS.
+      const browserLocal = config.localIp && !req.socket.encrypted &&
+        req.socket.remoteAddress === "127.0.0.1" && req.headers.host === "localhost:8080";
+      if (config.localIp && !req.socket.encrypted && !browserLocal)
+        throw new ApiError("HTTPS_REQUIRED", 400);
+      if (browserLocal && req.url !== "/" && !/^\/(?:p\/[A-Za-z0-9_-]{16,64}(?:\/start)?|oauth\/callback)(?:\?|$)/.test(req.url))
+        throw new ApiError("LOCAL_BROWSER_ONLY", 403);
+      if (!config.dev && !browserLocal) {
         const local = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(
           req.socket.remoteAddress,
         );
@@ -236,6 +253,20 @@ export function createGateway({
         send(res, 200, { status: "ok", version: 1 });
         return;
       }
+      if (path === "/" && method === "GET" && browserLocal) {
+        const pending = store.db.prepare(
+          "SELECT p.id,d.name FROM pairings p JOIN devices d ON d.id=p.device WHERE p.status='waiting_for_phone' AND p.expires>?",
+        ).all(now());
+        const pickers = store.db.prepare("SELECT id,name FROM devices WHERE account IS NOT NULL").all()
+          .map(device => ({...device, picker:store.account(device.id)?.picker}))
+          .filter(item => item.picker && !item.picker.selected && item.picker.expires > now());
+        const pickerLinks = pickers.map(item => `<p><a href="${escape(item.picker.uri)}">Выбрать Google Фото: ${escape(item.name)}</a></p>`).join("");
+        page(res, "Локальный вход Google", pickerLinks + (pending.length
+          ? "<p>Выберите запрос с ваших часов:</p><ul>" + pending.map(row =>
+            `<li><a href="/p/${escape(row.id)}">${escape(row.name)}</a></li>`).join("") + "</ul>"
+          : "<p>Откройте Google на часах и начните подключение аккаунта. Затем обновите эту страницу.</p>"));
+        return;
+      }
       if (path === "/" && method === "GET") {
         page(
           res,
@@ -252,7 +283,7 @@ export function createGateway({
         const services = data.services ?? ["calendar"];
         if (
           !Array.isArray(services) ||
-          services.length > 2 ||
+          services.length > 4 ||
           !services.length ||
           services.some((s) => !Object.hasOwn(SCOPES, s))
         )
@@ -280,6 +311,11 @@ export function createGateway({
       }
       const publicPair = /^\/p\/([A-Za-z0-9_-]{16,64})(\/start)?$/.exec(path);
       if (publicPair) {
+        if (config.localIp && !browserLocal) {
+          page(res, "Локальный вход Google",
+            `<p>Откройте эту ссылку в браузере на компьютере с Gateway:</p><p>${escape("http://localhost:8080" + path)}</p><p>После входа подтвердите аккаунт на часах.</p>`);
+          return;
+        }
         const pair = pairing(publicPair[1]);
         if (method === "GET" && !publicPair[2]) {
           if (pair.status !== "waiting_for_phone") {
@@ -320,7 +356,7 @@ export function createGateway({
           const auth = new URL("https://accounts.google.com/o/oauth2/v2/auth");
           auth.search = new URLSearchParams({
             client_id: config.clientId,
-            redirect_uri: config.base + "/oauth/callback",
+            redirect_uri: config.oauthRedirect || config.base + "/oauth/callback",
             response_type: "code",
             scope:
               "openid email profile " +
@@ -492,6 +528,18 @@ export function createGateway({
           return;
         }
       }
+      if (path === "/api/v1/browser/open" && method === "POST") {
+        const owner=device(req);rate("browser:"+owner.id,30);
+        send(res,200,await browser.open(owner.id,await body(req)));return;
+      }
+      const documentRoute=/^\/api\/v1\/browser\/documents\/([A-Za-z0-9_-]{16,64})(?:\/images\/(\d+))?$/.exec(path);
+      if (documentRoute && method === "GET") {
+        const owner=device(req);rate("browser:"+owner.id,30);
+        send(res,200,documentRoute[2]!==undefined
+          ? await browser.image(owner.id,documentRoute[1],Number(documentRoute[2]))
+          : browser.page(owner.id,documentRoute[1],Number(url.searchParams.get("page")||0)));
+        return;
+      }
       // Independent search/translation require device auth, not a personal Google login.
       if (path === "/api/v1/search" && method === "GET") {
         const owner = device(req);
@@ -567,6 +615,14 @@ export function createGateway({
           result = await readService(active.device, "calendar", (token) =>
             google.events(token, url.searchParams),
           );
+        else if (path === "/api/v1/google/contacts" && method === "GET")
+          result = await readService(active.device, "contacts", token => google.contacts(token, url.searchParams));
+        else if (path === "/api/v1/google/photos/picker" && method === "POST")
+          result = await readService(active.device, "photos", token => photos.create(active.device, token));
+        else if (path === "/api/v1/google/photos" && method === "GET")
+          result = await readService(active.device, "photos", token => photos.list(active.device, token, url.searchParams));
+        else if (/^\/api\/v1\/google\/photos\/items\/[A-Za-z0-9_-]{32}$/.test(path) && method === "GET")
+          result = await readService(active.device, "photos", token => photos.image(active.device, token, path.split("/").at(-1)));
         else if (path === "/api/v1/google/gmail/messages" && method === "GET")
           result = await readService(active.device, "gmail", (token) =>
             google.messages(token, url.searchParams),
@@ -607,7 +663,8 @@ export function createGateway({
         request_id: requestId,
       }); /* No URLs, bodies, tokens, emails or raw upstream errors in console logs. */
     }
-  });
+  };
+  const server = tls ? https.createServer(tls, handler) : http.createServer(handler);
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
   return server;
@@ -618,10 +675,20 @@ if (
 ) {
   const cfg = loadConfig(),
     store = new Store(join(cfg.data, "gateway.sqlite"), cfg.key);
-  const server = createGateway({ config: cfg, store });
-  server.listen(cfg.port, "127.0.0.1", () =>
+  const providerFile = process.env.GATEWAY_CONFIG_FILE || join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "aosp-wear-gateway", "config.env");
+  watchProviderKeys(providerFile, cfg);
+  const tls = cfg.localIp ? { cert: readFileSync(cfg.tlsCert), key: readFileSync(cfg.tlsKey) } : undefined;
+  const server = createGateway({ config: cfg, store, tls });
+  if (cfg.localIp) {
+    // Reuse the state machine, but expose only the browser routes over loopback HTTP.
+    const browser = http.createServer(server.listeners("request")[0]);
+    browser.requestTimeout = 15000;
+    browser.headersTimeout = 10000;
+    browser.listen(8080, "127.0.0.1");
+  }
+  server.listen(cfg.port, cfg.localIp || "127.0.0.1", () =>
     console.log(
-      `Gateway listening on loopback:${cfg.port}; public origin configured; request bodies and tokens are never logged`,
+      `Gateway listening on ${cfg.localIp || "127.0.0.1"}:${cfg.port}; provider key reload enabled; request bodies and tokens are never logged`,
     ),
   );
 }

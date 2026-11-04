@@ -57,7 +57,7 @@ try {
         "POST",
         { device_id: credential.device_id, services },
       );
-      console.log("Open this one-time URL in your browser:", result.qr_url);
+      console.log("Open this one-time URL in your browser:", cfg.localIp ? "http://localhost:8080/p/" + result.pairing_id : result.qr_url);
       console.log("Pairing ID:", result.pairing_id);
       console.log(
         "Expires in 5 minutes. Localhost works only on the phone or PC running Gateway; another device needs HTTPS.",

@@ -21,6 +21,9 @@ if ($Action -eq "test") {
     exit $LASTEXITCODE
 }
 if (-not (Test-Path $ConfigFile)) { throw "Run init OAUTH_JSON first; never paste secrets into source" }
+$LocalCA = Join-Path (Split-Path $ConfigFile) "local-ca.pem"
+if (Test-Path $LocalCA) { $env:NODE_EXTRA_CA_CERTS = $LocalCA }
+$env:GATEWAY_CONFIG_FILE = $ConfigFile
 $NodeCheck = "const [major,minor]=process.versions.node.split('.').map(Number);if(major<22||(major===22&&minor<13))throw Error('Node.js 22.13+ required');require('node:sqlite')"
 & node -e $NodeCheck
 if ($LASTEXITCODE -ne 0) { throw "Node.js 22.13+ with node:sqlite is required" }

@@ -1,7 +1,10 @@
+import { mailPages, mailImage } from "./mail.mjs";
 // Fixed upstream hosts only. No endpoint accepts a URL supplied by a watch or email.
 export const SCOPES = {
   calendar: "https://www.googleapis.com/auth/calendar.events.readonly",
   gmail: "https://www.googleapis.com/auth/gmail.readonly",
+  contacts: "https://www.googleapis.com/auth/contacts.readonly",
+  photos: "https://www.googleapis.com/auth/photospicker.mediaitems.readonly",
 };
 export class ApiError extends Error {
   constructor(code, status = 502) {
@@ -10,7 +13,7 @@ export class ApiError extends Error {
     this.status = status;
   }
 }
-async function json(url, options = {}, limit = 1024 * 1024) {
+export async function json(url, options = {}, limit = 1024 * 1024) {
   let response;
   try {
     response = await fetch(url, {
@@ -36,6 +39,12 @@ async function json(url, options = {}, limit = 1024 * 1024) {
   }
   if (!response.ok) {
     const reasons = (data.error?.errors || []).map((item) => item.reason);
+    const details = (data.error?.details || []).map((item) => item.reason);
+    // Consent grants account access, but the API must also be enabled in its Cloud project.
+    // This is configuration trouble: keep the account and its granted scopes intact.
+    if (response.status === 403 &&
+        (reasons.includes("accessNotConfigured") || details.includes("SERVICE_DISABLED")))
+      throw new ApiError("GOOGLE_API_DISABLED", 503);
     if (
       reasons.some((reason) =>
         [
@@ -59,6 +68,14 @@ async function json(url, options = {}, limit = 1024 * 1024) {
   }
   return data;
 }
+function calendarWhen(start, timeZone = "UTC") {
+  if (start?.date) return start.date.split("-").reverse().join(".") + " · весь день";
+  if (!start?.dateTime) return "";
+  try {
+    return new Intl.DateTimeFormat("ru-RU", {day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit",
+      timeZone:start.timeZone || timeZone}).format(new Date(start.dateTime));
+  } catch { return String(start.dateTime).slice(0,32); }
+}
 export class Google {
   constructor(config) {
     this.config = config;
@@ -73,7 +90,7 @@ export class Google {
         code_verifier: verifier,
         client_id: this.config.clientId,
         client_secret: this.config.clientSecret,
-        redirect_uri: this.config.base + "/oauth/callback",
+        redirect_uri: this.config.oauthRedirect || this.config.base + "/oauth/callback",
       }),
     });
   }
@@ -155,6 +172,7 @@ export class Google {
         title: String(e.summary || "Без названия").slice(0, 160),
         start: e.start,
         end: e.end,
+        when: calendarWhen(e.start, data.timeZone),
         location: String(e.location || "").slice(0, 160),
         reminders: e.reminders
           ? {
@@ -169,6 +187,21 @@ export class Google {
           : null,
       })),
     };
+  }
+  async contacts(token, query) {
+    const page = query.get("page") || "";
+    if (page.length > 512 || !/^[\w+/=-]*$/.test(page)) throw new ApiError("INVALID_PAGE", 400);
+    const params = new URLSearchParams({pageSize:"10",personFields:"names,emailAddresses,phoneNumbers",sortOrder:"FIRST_NAME_ASCENDING"});
+    if (page) params.set("pageToken", page);
+    const data = await json("https://people.googleapis.com/v1/people/me/connections?" + params,
+      {headers:{Authorization:`Bearer ${token}`}});
+    return {contacts:(data.connections || []).slice(0,10).map(person => ({
+      id:String(person.resourceName || "").slice(0,128),
+      title:String(person.names?.[0]?.displayName || person.emailAddresses?.[0]?.value || "Без имени").slice(0,160),
+      subtitle:String(person.phoneNumbers?.[0]?.value || person.emailAddresses?.[0]?.value || "").slice(0,200),
+      body:[...(person.phoneNumbers || []).slice(0,3).map(p => p.value),
+        ...(person.emailAddresses || []).slice(0,3).map(p => p.value)].join("\n").slice(0,1024),
+    })),page_token:page,next_page:data.nextPageToken || null};
   }
   async messages(token, query) {
     const limit = Math.min(Math.max(Number(query.get("limit") || 10), 1), 20);
@@ -208,7 +241,7 @@ export class Google {
         unread: (detail.labelIds || []).includes("UNREAD"),
       });
     }
-    return { messages: items, next_page: data.nextPageToken || null };
+    return { messages: items, page_token: page, next_page: data.nextPageToken || null };
   }
   async message(token, id, query) {
     if (!/^[\w-]{1,128}$/.test(id))
@@ -224,10 +257,12 @@ export class Google {
       2 * 1024 * 1024,
     );
     const plain = [],
-      html = [];
+      html = [], inline = new Map();
     function visit(part, depth = 0) {
       if (depth > 10 || !part) return;
       const headers = part.headers || [];
+      const cid = headers.find(h => String(h.name).toLowerCase() === "content-id")?.value?.replace(/^<|>$/g, "");
+      if (cid && /^image\/(jpeg|png|gif|webp)$/.test(part.mimeType || "")) inline.set(cid, part);
       if (
         part.filename ||
         headers.some(
@@ -256,24 +291,20 @@ export class Google {
       for (const child of part.parts || []) visit(child, depth + 1);
     }
     visit(data.payload);
-    let text = plain.join("\n");
-    if (!text)
-      text = html
-        .join("\n")
-        .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
-        .replace(/<[^>]*>/g, " ")
-        .replace(/&nbsp;/gi, " ")
-        .replace(/&lt;/gi, "<")
-        .replace(/&gt;/gi, ">")
-        .replace(/&amp;/gi, "&");
-    const chars = Array.from(text);
-    const body = chars.slice(page * 4096, (page + 1) * 4096).join("");
-    return {
-      id,
-      body,
-      page,
-      has_more: chars.length > (page + 1) * 4096,
-      format: "text/plain",
-    };
+    const pages = await mailPages(html.join("\n"), plain.join("\n"));
+    const selected = pages[page] || {type:"text",text:""};
+    const result = {id,body:selected.text || "",page,has_more:pages.length > page+1,
+      page_count:pages.length,format:html.length ? "text/html-native" : "text/plain"};
+    if(selected.type === "image") {
+      result.body = String(selected.alt || "Изображение").slice(0,120);
+      try {
+        result.image = await mailImage(selected,inline,async attachmentId => {
+          const value = await json("https://gmail.googleapis.com/gmail/v1/users/me/messages/" + id +
+            "/attachments/" + encodeURIComponent(attachmentId),{headers:{Authorization:`Bearer ${token}`}},3*1024*1024);
+          return Buffer.from(value.data || "","base64url");
+        });
+      } catch { result.image_unavailable = true; }
+    }
+    return result;
   }
 }

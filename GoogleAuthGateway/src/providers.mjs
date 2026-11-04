@@ -1,4 +1,5 @@
 // Independent services use server API keys, never Gmail OAuth tokens.
+import { duckSearch } from "./duckduckgo.mjs";
 import https from "node:https";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
@@ -52,10 +53,15 @@ export function publicAddress(address) {
     (a === 203 && b === 0 && c === 113)
   );
 }
-export async function pageText(
-  raw,
+export async function pageText(raw, dependencies = {}, depth = 0) {
+  return plainText((await publicResource(raw, "text", dependencies, depth)).toString("utf8"));
+}
+// Image downloads share the reader's DNS pinning, redirect checks and absolute deadline.
+export async function publicResource(
+  raw, kind = "text",
   { resolve = lookup, request = https.request } = {},
   depth = 0,
+  metadata = false,
 ) {
   let url;
   try {
@@ -100,7 +106,7 @@ export async function pageText(
       {
         method: "GET",
         headers: {
-          Accept: "text/html,text/plain",
+          Accept: kind === "image" ? "image/jpeg,image/png,image/gif,image/webp" : "text/html,text/plain",
           "Accept-Encoding": "identity",
           "User-Agent": "AOSP-Wear-Text/1",
         },
@@ -118,7 +124,7 @@ export async function pageText(
         }
         if (
           res.statusCode !== 200 ||
-          !/^text\/(html|plain)(;|$)/i.test(
+          !(kind === "image" ? /^image\/(jpeg|png|gif|webp)(;|$)/i : /^text\/(html|plain)(;|$)/i).test(
             res.headers["content-type"] || "",
           ) ||
           (res.headers["content-encoding"] &&
@@ -132,12 +138,12 @@ export async function pageText(
         const chunks = [];
         res.on("data", (chunk) => {
           size += chunk.length;
-          if (size > 256 * 1024) {
+          if (size > (kind === "image" ? 2 * 1024 * 1024 : 256 * 1024)) {
             req.destroy(new ApiError("PAGE_TOO_LARGE", 413));
           } else chunks.push(chunk);
         });
         res.on("end", () =>
-          resolve({ text: plainText(Buffer.concat(chunks).toString("utf8")) }),
+          resolve({ bytes: Buffer.concat(chunks), contentType: res.headers["content-type"] || "" }),
         );
         res.on("error", () => reject(new ApiError("UPSTREAM_UNAVAILABLE")));
       },
@@ -159,13 +165,13 @@ export async function pageText(
   });
   if (result.redirect) {
     if (depth >= 3) throw new ApiError("TOO_MANY_REDIRECTS", 422);
-    return pageText(
-      new URL(result.redirect, url).href,
+    return publicResource(
+      new URL(result.redirect, url).href, kind,
       { resolve, request },
-      depth + 1,
+      depth + 1, metadata,
     );
   }
-  return result.text;
+  return metadata ? {bytes:result.bytes,url:url.href,contentType:result.contentType} : result.bytes;
 }
 async function json(url, options) {
   let response;
@@ -199,11 +205,14 @@ async function json(url, options) {
 export class Providers {
   constructor(
     config,
-    { now = () => Date.now(), readPage = pageText, store } = {},
+    { now = () => Date.now(), readPage = pageText, search = duckSearch, store } = {},
   ) {
     this.config = config;
     this.now = now;
     this.readPage = readPage;
+    this.searchProvider = search;
+    this.searchCache = new Map();
+    this.searchBlockedUntil = 0;
     this.store = store;
     this.pages = new Map();
     this.budgets = new Map();
@@ -234,30 +243,24 @@ export class Providers {
     entry.spent += amount;
   }
   async search(device, query) {
-    if (!this.config.searchKey)
-      throw new ApiError("PROVIDER_NOT_CONFIGURED", 503);
     if (
       typeof query !== "string" ||
       !query.trim() ||
       Array.from(query).length > 512
     )
       throw new ApiError("INVALID_QUERY", 400);
+    const cacheKey = JSON.stringify([device, query.trim()]);
+    const cached = this.searchCache.get(cacheKey);
+    if (cached?.expires > this.now()) return cached.result;
+    if (this.searchBlockedUntil > this.now()) throw new ApiError("SEARCH_VERIFICATION_REQUIRED", 429);
     this.charge(device, "search", 1, 100);
     this.charge("global", "search", 1, 200);
-    const params = new URLSearchParams({
-      q: query.trim(),
-      count: "5",
-      safesearch: "moderate",
-    });
-    const data = await json(
-      "https://api.search.brave.com/res/v1/web/search?" + params,
-      {
-        headers: {
-          "X-Subscription-Token": this.config.searchKey,
-          Accept: "application/json",
-        },
-      },
-    );
+    let data;
+    try { data = await this.searchProvider(query.trim()); }
+    catch (error) {
+      if (error.code === "SEARCH_VERIFICATION_REQUIRED") this.searchBlockedUntil = this.now() + 60000;
+      throw error;
+    }
     for (const [id, page] of this.pages) {
       if (page.expires <= this.now()) this.pages.delete(id);
     }
@@ -265,7 +268,7 @@ export class Providers {
     while (this.pages.size > 500)
       this.pages.delete(this.pages.keys().next().value);
     const results = [];
-    for (const item of (data.web?.results || []).slice(0, 5)) {
+    for (const item of data.slice(0, 5)) {
       let url;
       try {
         url = new URL(item.url);
@@ -286,7 +289,18 @@ export class Providers {
         url: url.href.slice(0, 200),
       });
     }
-    return { provider: "Brave Search", results };
+    const result = { provider: "DuckDuckGo", results };
+    for (const [key, value] of this.searchCache) {
+      if (value.expires <= this.now()) this.searchCache.delete(key);
+    }
+    while (this.searchCache.size >= 100) this.searchCache.delete(this.searchCache.keys().next().value);
+    this.searchCache.set(cacheKey, {result,expires:this.now()+60000});
+    return result;
+  }
+  resultUrl(device, id) {
+    const item = this.pages.get(id);
+    if (!item || item.device !== device || item.expires <= this.now()) throw new ApiError("PAGE_EXPIRED", 410);
+    return item.url;
   }
   async page(device, id, page) {
     if (!Number.isInteger(page) || page < 0 || page > 255)

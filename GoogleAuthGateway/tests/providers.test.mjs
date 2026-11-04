@@ -48,31 +48,17 @@ test("text reader rejects private, mapped, obfuscated and credential-bearing tar
   );
 });
 
-test("Brave results are labelled and page capabilities are bound to device and expiry", async () => {
+test("DuckDuckGo results are labelled and page capabilities are bound to device and expiry", async () => {
   const original = globalThis.fetch;
   let now = 1000;
-  globalThis.fetch = async (url, options) => {
-    assert.ok(url.startsWith("https://api.search.brave.com/"));
-    assert.equal(options.headers["X-Subscription-Token"], "synthetic-search");
-    return Response.json({
-      web: {
-        results: [
-          {
-            title: "Fixture",
-            description: "Text",
-            url: "https://example.org/article",
-          },
-        ],
-      },
-    });
-  };
   try {
     const p = new Providers(
-      { searchKey: "synthetic-search" },
-      { now: () => now, readPage: async () => "x".repeat(2048) + "tail" },
+      {},
+      { now: () => now, readPage: async () => "x".repeat(2048) + "tail",
+        search: async () => [{title:"Fixture",description:"Text",url:"https://example.org/article"}] },
     );
     const result = await p.search("watch-one", "fixture");
-    assert.equal(result.provider, "Brave Search");
+    assert.equal(result.provider, "DuckDuckGo");
     const id = result.results[0].id;
     await assert.rejects(p.page("watch-two", id, 0), /PAGE_EXPIRED/);
     assert.equal((await p.page("watch-one", id, 0)).has_more, true);
@@ -129,10 +115,6 @@ test("Cloud Translation uses a separate key, validates Unicode length, applies a
       /BUDGET_EXCEEDED/,
     );
     assert.equal(calls, 5);
-    await assert.rejects(
-      new Providers({}).search("watch", "fixture"),
-      /PROVIDER_NOT_CONFIGURED/,
-    );
     await assert.rejects(
       new Providers({}).translate("watch", { text: "text" }),
       /PROVIDER_NOT_CONFIGURED/,

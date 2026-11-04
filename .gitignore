@@ -62,3 +62,6 @@ __pycache__/
 **/provider-keys*.json
 **/*.device.json
 **/*.session.*.json
+
+# Blender recovery copies; editable source .blend files remain tracked.
+*.blend[0-9]

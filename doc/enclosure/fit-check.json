@@ -1,0 +1,1587 @@
+{
+  "method": "mesh surface intersections + sampled containment; 0.02 mm contact threshold",
+  "limits": "Conservative blockers, not exact overlap volumes. Missing components, model identity, clearances and tolerances are not verified.",
+  "component_collisions": [
+    {
+      "a": "ESP32-S3-Zero — official Waveshare v2 CAD",
+      "b": "SD MODULE — 20×18, height assumed",
+      "intersections": [
+        {
+          "a_part": "ESP CAD 0",
+          "b_part": "SD PCB",
+          "overlap_bounds_mm": [
+            3.009,
+            19.775,
+            0.18
+          ],
+          "overlap_box": [
+            [
+              1.0,
+              4.008628845214844
+            ],
+            [
+              -16.874608993530273,
+              2.9000000953674316
+            ],
+            [
+              5.0,
+              5.18048095703125
+            ]
+          ],
+          "evidence": "surface_intersection"
+        },
+        {
+          "a_part": "ESP CAD 1",
+          "b_part": "SD PCB",
+          "overlap_bounds_mm": [
+            0.104,
+            0.61,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              1.0,
+              1.1043968200683594
+            ],
+            [
+              -15.514776229858398,
+              -14.905176162719727
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "surface_intersection"
+        },
+        {
+          "a_part": "ESP CAD 12",
+          "b_part": "SD PCB",
+          "overlap_bounds_mm": [
+            0.104,
+            0.61,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              1.0,
+              1.1043968200683594
+            ],
+            [
+              -13.224966049194336,
+              -12.615365982055664
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "surface_intersection"
+        },
+        {
+          "a_part": "ESP CAD 14",
+          "b_part": "SD PCB",
+          "overlap_bounds_mm": [
+            0.079,
+            0.61,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              1.0,
+              1.0789985656738281
+            ],
+            [
+              -12.055295944213867,
+              -11.445695877075195
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "surface_intersection"
+        },
+        {
+          "a_part": "ESP CAD 16",
+          "b_part": "SD PCB",
+          "overlap_bounds_mm": [
+            0.104,
+            0.61,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              1.0,
+              1.1043815612792969
+            ],
+            [
+              -14.369878768920898,
+              -13.760278701782227
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "surface_intersection"
+        },
+        {
+          "a_part": "ESP CAD 18",
+          "b_part": "SD PCB",
+          "overlap_bounds_mm": [
+            0.264,
+            2.0,
+            0.6
+          ],
+          "overlap_box": [
+            [
+              1.0,
+              1.2643213272094727
+            ],
+            [
+              -6.3420796394348145,
+              -4.342078685760498
+            ],
+            [
+              5.18048095703125,
+              5.780481338500977
+            ]
+          ],
+          "evidence": "surface_intersection"
+        },
+        {
+          "a_part": "ESP CAD 23",
+          "b_part": "SD PCB",
+          "overlap_bounds_mm": [
+            0.516,
+            0.584,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              1.0,
+              1.5158777236938477
+            ],
+            [
+              -1.9181599617004395,
+              -1.3339600563049316
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "surface_intersection"
+        },
+        {
+          "a_part": "ESP CAD 24",
+          "b_part": "SD PCB",
+          "overlap_bounds_mm": [
+            0.516,
+            0.584,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              1.0,
+              1.5158777236938477
+            ],
+            [
+              -3.582581043243408,
+              -2.9983811378479004
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "surface_intersection"
+        }
+      ]
+    },
+    {
+      "a": "ESP32-S3-Zero — official Waveshare v2 CAD",
+      "b": "ENCODER — board 15×17, height assumed",
+      "intersections": [
+        {
+          "a_part": "ESP CAD 0",
+          "b_part": "Encoder metal body",
+          "overlap_bounds_mm": [
+            1.209,
+            1.543,
+            1.6
+          ],
+          "overlap_box": [
+            [
+              2.8000001907348633,
+              4.008628845214844
+            ],
+            [
+              5.100000381469727,
+              6.642647743225098
+            ],
+            [
+              3.58048152923584,
+              5.18048095703125
+            ]
+          ],
+          "evidence": "surface_intersection"
+        }
+      ]
+    },
+    {
+      "a": "ESP32-S3-Zero — official Waveshare v2 CAD",
+      "b": "BATTERY — selected 28×27×5.7",
+      "intersections": [
+        {
+          "a_part": "ESP CAD 0",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            18.017,
+            18.643,
+            1.6
+          ],
+          "overlap_box": [
+            [
+              -14.00871467590332,
+              4.008628845214844
+            ],
+            [
+              -12.0,
+              6.642647743225098
+            ],
+            [
+              3.58048152923584,
+              5.18048095703125
+            ]
+          ],
+          "evidence": "surface_intersection"
+        },
+        {
+          "a_part": "ESP CAD 10",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.61,
+            0.584,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              -1.3721036911010742,
+              -0.7625036239624023
+            ],
+            [
+              -5.494476795196533,
+              -4.910276889801025
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 11",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.61,
+            0.508,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              -0.11799144744873047,
+              0.4915904998779297
+            ],
+            [
+              3.0525875091552734,
+              3.5606155395507812
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 14",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.584,
+            0.554,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              0.4947986602783203,
+              1.0789985656738281
+            ],
+            [
+              -12.0,
+              -11.445695877075195
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "surface_intersection"
+        },
+        {
+          "a_part": "ESP CAD 17",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            2.888,
+            1.194,
+            1.2
+          ],
+          "overlap_box": [
+            [
+              -11.574902534484863,
+              -8.687300682067871
+            ],
+            [
+              -5.530043125152588,
+              -4.336243152618408
+            ],
+            [
+              5.18048095703125,
+              6.380480766296387
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 18",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            1.6,
+            2.0,
+            0.6
+          ],
+          "overlap_box": [
+            [
+              -0.3356804847717285,
+              1.2643213272094727
+            ],
+            [
+              -6.3420796394348145,
+              -4.342078685760498
+            ],
+            [
+              5.18048095703125,
+              5.780481338500977
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 19",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.6,
+            0.5,
+            0.5
+          ],
+          "overlap_box": [
+            [
+              -10.887178421020508,
+              -10.287178039550781
+            ],
+            [
+              -0.08023786544799805,
+              0.41976213455200195
+            ],
+            [
+              5.205881118774414,
+              5.705881118774414
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 2",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.61,
+            0.584,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              -0.11734294891357422,
+              0.49225711822509766
+            ],
+            [
+              0.5380167961120605,
+              1.1222167015075684
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 20",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.2,
+            0.52,
+            0.52
+          ],
+          "overlap_box": [
+            [
+              -10.287178039550781,
+              -10.087178230285645
+            ],
+            [
+              -0.09023809432983398,
+              0.4297618865966797
+            ],
+            [
+              5.195880889892578,
+              5.715880870819092
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 21",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.2,
+            0.52,
+            0.52
+          ],
+          "overlap_box": [
+            [
+              -11.087178230285645,
+              -10.887178421020508
+            ],
+            [
+              -0.09023809432983398,
+              0.4297618865966797
+            ],
+            [
+              5.195880889892578,
+              5.715880870819092
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 22",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.584,
+            0.61,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              -11.001241683959961,
+              -10.417041778564453
+            ],
+            [
+              -2.596341609954834,
+              -1.986741542816162
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 23",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.61,
+            0.584,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              0.9062776565551758,
+              1.5158777236938477
+            ],
+            [
+              -1.9181599617004395,
+              -1.3339600563049316
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 24",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.61,
+            0.584,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              0.9062776565551758,
+              1.5158777236938477
+            ],
+            [
+              -3.582581043243408,
+              -2.9983811378479004
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 25",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.61,
+            0.584,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              -2.220461845397949,
+              -1.6108617782592773
+            ],
+            [
+              1.787696361541748,
+              2.371896266937256
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 26",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.61,
+            0.508,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              -1.2787809371948242,
+              -0.6691985130310059
+            ],
+            [
+              1.0840892791748047,
+              1.5921173095703125
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 27",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            1.5,
+            1.8,
+            1.0
+          ],
+          "overlap_box": [
+            [
+              -5.842371940612793,
+              -4.342372894287109
+            ],
+            [
+              -9.081378936767578,
+              -7.2813801765441895
+            ],
+            [
+              5.18048095703125,
+              6.180481433868408
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 28",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.6,
+            0.5,
+            0.5
+          ],
+          "overlap_box": [
+            [
+              -2.710916519165039,
+              -2.1109161376953125
+            ],
+            [
+              2.8458409309387207,
+              3.3458409309387207
+            ],
+            [
+              5.205881118774414,
+              5.705881118774414
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 29",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.2,
+            0.52,
+            0.52
+          ],
+          "overlap_box": [
+            [
+              -2.1109161376953125,
+              -1.9109163284301758
+            ],
+            [
+              2.835840940475464,
+              3.3558409214019775
+            ],
+            [
+              5.195880889892578,
+              5.715880870819092
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 3",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.584,
+            0.61,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              0.18238258361816406,
+              0.7665824890136719
+            ],
+            [
+              1.8029427528381348,
+              2.4125428199768066
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 30",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.2,
+            0.52,
+            0.52
+          ],
+          "overlap_box": [
+            [
+              -2.910916328430176,
+              -2.710916042327881
+            ],
+            [
+              2.8358407020568848,
+              3.3558409214019775
+            ],
+            [
+              5.195880889892578,
+              5.715880870819092
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 31",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.584,
+            0.61,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              -10.907262802124023,
+              -10.323062896728516
+            ],
+            [
+              0.8351998329162598,
+              1.4447999000549316
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 32",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.61,
+            0.584,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              -2.339838981628418,
+              -1.730238914489746
+            ],
+            [
+              -5.499557971954346,
+              -4.915358066558838
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 33",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.584,
+            0.554,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              -11.110586166381836,
+              -10.526386260986328
+            ],
+            [
+              -12.0,
+              -11.445703506469727
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "surface_intersection"
+        },
+        {
+          "a_part": "ESP CAD 35",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            8.94,
+            1.5,
+            2.231
+          ],
+          "overlap_box": [
+            [
+              -9.470040321350098,
+              -0.5300402641296387
+            ],
+            [
+              -12.0,
+              -10.5
+            ],
+            [
+              4.369331359863281,
+              6.599999904632568
+            ]
+          ],
+          "evidence": "surface_intersection"
+        },
+        {
+          "a_part": "ESP CAD 36",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            10.112,
+            10.112,
+            1.0
+          ],
+          "overlap_box": [
+            [
+              -10.055813789367676,
+              0.05581378936767578
+            ],
+            [
+              -6.153294086456299,
+              3.9583332538604736
+            ],
+            [
+              5.18048095703125,
+              6.18048095703125
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 37",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            7.0,
+            2.0,
+            1.0
+          ],
+          "overlap_box": [
+            [
+              -5.981223106384277,
+              1.0187768936157227
+            ],
+            [
+              4.419807434082031,
+              6.419807434082031
+            ],
+            [
+              5.18048095703125,
+              6.18048095703125
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 38",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            3.0,
+            2.5,
+            1.42
+          ],
+          "overlap_box": [
+            [
+              -2.369999885559082,
+              0.630000114440918
+            ],
+            [
+              -9.454608917236328,
+              -6.954610347747803
+            ],
+            [
+              5.18048095703125,
+              6.599999904632568
+            ]
+          ],
+          "evidence": "surface_intersection"
+        },
+        {
+          "a_part": "ESP CAD 39",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            3.0,
+            2.5,
+            1.42
+          ],
+          "overlap_box": [
+            [
+              -10.720000267028809,
+              -7.720000267028809
+            ],
+            [
+              -9.454608917236328,
+              -6.954610347747803
+            ],
+            [
+              5.18048095703125,
+              6.599999904632568
+            ]
+          ],
+          "evidence": "surface_intersection"
+        },
+        {
+          "a_part": "ESP CAD 4",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.584,
+            0.61,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              -0.26799583435058594,
+              0.3162040710449219
+            ],
+            [
+              -3.8790411949157715,
+              -3.2694411277770996
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 5",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.584,
+            0.61,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              -7.11250114440918,
+              -6.528301239013672
+            ],
+            [
+              -6.891477108001709,
+              -6.281877040863037
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 6",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.5,
+            0.6,
+            0.5
+          ],
+          "overlap_box": [
+            [
+              -8.09264087677002,
+              -7.5926408767700195
+            ],
+            [
+              -5.595837116241455,
+              -4.9958367347717285
+            ],
+            [
+              5.205881118774414,
+              5.705881118774414
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 7",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.52,
+            0.2,
+            0.52
+          ],
+          "overlap_box": [
+            [
+              -8.102641105651855,
+              -7.582640647888184
+            ],
+            [
+              -5.795836925506592,
+              -5.595837116241455
+            ],
+            [
+              5.195880889892578,
+              5.715880870819092
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 8",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.52,
+            0.2,
+            0.52
+          ],
+          "overlap_box": [
+            [
+              -8.102641105651855,
+              -7.582640647888184
+            ],
+            [
+              -4.9958367347717285,
+              -4.795836925506592
+            ],
+            [
+              5.195880889892578,
+              5.715880870819092
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "ESP CAD 9",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            0.61,
+            0.584,
+            0.254
+          ],
+          "overlap_box": [
+            [
+              -1.2787961959838867,
+              -0.6691961288452148
+            ],
+            [
+              2.554778575897217,
+              3.1389784812927246
+            ],
+            [
+              5.18048095703125,
+              5.434481143951416
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        }
+      ]
+    },
+    {
+      "a": "SD MODULE — 20×18, height assumed",
+      "b": "BATTERY — selected 28×27×5.7",
+      "intersections": [
+        {
+          "a_part": "SD PCB",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            4.0,
+            14.9,
+            1.0
+          ],
+          "overlap_box": [
+            [
+              1.0,
+              5.0
+            ],
+            [
+              -12.0,
+              2.9000000953674316
+            ],
+            [
+              5.0,
+              6.0
+            ]
+          ],
+          "evidence": "surface_intersection"
+        },
+        {
+          "a_part": "SD socket metal",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            2.6,
+            12.9,
+            0.15
+          ],
+          "overlap_box": [
+            [
+              2.4000000953674316,
+              5.0
+            ],
+            [
+              -12.0,
+              0.8999996185302734
+            ],
+            [
+              6.449999809265137,
+              6.599999904632568
+            ]
+          ],
+          "evidence": "surface_intersection"
+        }
+      ]
+    },
+    {
+      "a": "SD MODULE — 20×18, height assumed",
+      "b": "TPS61023 — 18×11×5",
+      "intersections": [
+        {
+          "a_part": "SD PCB",
+          "b_part": "TPS inductor",
+          "overlap_bounds_mm": [
+            5.5,
+            7.0,
+            0.8
+          ],
+          "overlap_box": [
+            [
+              13.5,
+              19.0
+            ],
+            [
+              -9.5,
+              -2.5
+            ],
+            [
+              5.0,
+              5.800000190734863
+            ]
+          ],
+          "evidence": "surface_intersection"
+        }
+      ]
+    },
+    {
+      "a": "SD MODULE — 20×18, height assumed",
+      "b": "HEATSINK — 15×10×5",
+      "intersections": [
+        {
+          "a_part": "SD socket metal",
+          "b_part": "Heatsink base",
+          "overlap_bounds_mm": [
+            0.1,
+            6.997,
+            0.93
+          ],
+          "overlap_box": [
+            [
+              2.4000000953674316,
+              2.5
+            ],
+            [
+              -6.097480297088623,
+              0.8999996185302734
+            ],
+            [
+              6.449999809265137,
+              7.380480766296387
+            ]
+          ],
+          "evidence": "surface_intersection"
+        }
+      ]
+    },
+    {
+      "a": "ENCODER — board 15×17, height assumed",
+      "b": "BATTERY — selected 28×27×5.7",
+      "intersections": [
+        {
+          "a_part": "Encoder metal body",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            2.2,
+            9.9,
+            3.6
+          ],
+          "overlap_box": [
+            [
+              2.8000001907348633,
+              5.0
+            ],
+            [
+              5.100000381469727,
+              15.0
+            ],
+            [
+              3.0,
+              6.599999904632568
+            ]
+          ],
+          "evidence": "surface_intersection"
+        },
+        {
+          "a_part": "Encoder PCB",
+          "b_part": "Battery pouch",
+          "overlap_bounds_mm": [
+            3.7,
+            14.9,
+            1.0
+          ],
+          "overlap_box": [
+            [
+              1.3000001907348633,
+              5.0
+            ],
+            [
+              0.10000038146972656,
+              15.0
+            ],
+            [
+              2.0,
+              3.0
+            ]
+          ],
+          "evidence": "surface_intersection"
+        }
+      ]
+    },
+    {
+      "a": "ENCODER — board 15×17, height assumed",
+      "b": "TPS61023 — 18×11×5",
+      "intersections": [
+        {
+          "a_part": "Encoder PCB",
+          "b_part": "TPS input capacitor — visual approximation",
+          "overlap_bounds_mm": [
+            1.6,
+            1.3,
+            1.0
+          ],
+          "overlap_box": [
+            [
+              14.699999809265137,
+              16.299999237060547
+            ],
+            [
+              0.10000038146972656,
+              1.3999998569488525
+            ],
+            [
+              2.0,
+              3.0
+            ]
+          ],
+          "evidence": "surface_intersection"
+        }
+      ]
+    },
+    {
+      "a": "BATTERY — selected 28×27×5.7",
+      "b": "HEATSINK — 15×10×5",
+      "intersections": [
+        {
+          "a_part": "Battery pouch",
+          "b_part": "Heatsink base",
+          "overlap_bounds_mm": [
+            15.0,
+            10.0,
+            0.22
+          ],
+          "overlap_box": [
+            [
+              -12.5,
+              2.5
+            ],
+            [
+              -6.097480297088623,
+              3.902519702911377
+            ],
+            [
+              6.380480766296387,
+              6.599999904632568
+            ]
+          ],
+          "evidence": "surface_intersection"
+        }
+      ]
+    }
+  ],
+  "case_collisions": [
+    {
+      "component": "DISPLAY — LCDWIKI MSP1691 reference, revision unconfirmed",
+      "intersections": [
+        {
+          "part": "LCD rear SMD <=1.10 — clearance only",
+          "overlap_bounds_mm": [
+            48.0,
+            31.0,
+            1.1
+          ],
+          "overlap_box": [
+            [
+              -24.0,
+              24.0
+            ],
+            [
+              -15.5,
+              15.5
+            ],
+            [
+              11.399999618530273,
+              12.5
+            ]
+          ],
+          "evidence": "surface_intersection"
+        }
+      ]
+    },
+    {
+      "component": "ESP32-S3-Zero — official Waveshare v2 CAD",
+      "intersections": [
+        {
+          "part": "ESP CAD 0",
+          "overlap_bounds_mm": [
+            18.017,
+            23.517,
+            1.6
+          ],
+          "overlap_box": [
+            [
+              -14.00871467590332,
+              4.008628845214844
+            ],
+            [
+              -16.874608993530273,
+              6.642647743225098
+            ],
+            [
+              3.58048152923584,
+              5.18048095703125
+            ]
+          ],
+          "evidence": "surface_intersection"
+        },
+        {
+          "part": "ESP CAD 35",
+          "overlap_bounds_mm": [
+            8.94,
+            7.6,
+            4.061
+          ],
+          "overlap_box": [
+            [
+              -9.470040321350098,
+              -0.5300402641296387
+            ],
+            [
+              -18.100000381469727,
+              -10.5
+            ],
+            [
+              4.369331359863281,
+              8.430668830871582
+            ]
+          ],
+          "evidence": "surface_intersection"
+        }
+      ]
+    },
+    {
+      "component": "SD MODULE — 20×18, height assumed",
+      "intersections": [
+        {
+          "part": "SD PCB",
+          "overlap_bounds_mm": [
+            18.0,
+            20.0,
+            1.0
+          ],
+          "overlap_box": [
+            [
+              1.0,
+              19.0
+            ],
+            [
+              -17.100000381469727,
+              2.9000000953674316
+            ],
+            [
+              5.0,
+              6.0
+            ]
+          ],
+          "evidence": "surface_intersection"
+        },
+        {
+          "part": "SD socket metal",
+          "overlap_bounds_mm": [
+            15.2,
+            18.0,
+            2.4
+          ],
+          "overlap_box": [
+            [
+              2.4000000953674316,
+              17.600000381469727
+            ],
+            [
+              -17.100000381469727,
+              0.8999996185302734
+            ],
+            [
+              6.449999809265137,
+              8.850000381469727
+            ]
+          ],
+          "evidence": "surface_intersection"
+        }
+      ]
+    },
+    {
+      "component": "ENCODER — board 15×17, height assumed",
+      "intersections": [
+        {
+          "part": "Encoder PCB",
+          "overlap_bounds_mm": [
+            15.0,
+            17.0,
+            1.0
+          ],
+          "overlap_box": [
+            [
+              1.3000001907348633,
+              16.299999237060547
+            ],
+            [
+              0.10000038146972656,
+              17.100000381469727
+            ],
+            [
+              2.0,
+              3.0
+            ]
+          ],
+          "evidence": "surface_intersection"
+        }
+      ]
+    },
+    {
+      "component": "TPS61023 — 18×11×5",
+      "intersections": [
+        {
+          "part": "TPS solder pad.001",
+          "overlap_bounds_mm": [
+            2.0,
+            2.0,
+            0.08
+          ],
+          "overlap_box": [
+            [
+              19.5,
+              21.5
+            ],
+            [
+              -15.0,
+              -13.0
+            ],
+            [
+              1.7999999523162842,
+              1.8799998760223389
+            ]
+          ],
+          "evidence": "sampled_containment"
+        }
+      ]
+    }
+  ],
+  "collision_groups": [
+    "BATTERY — selected 28×27×5.7",
+    "DISPLAY — LCDWIKI MSP1691 reference, revision unconfirmed",
+    "ENCODER — board 15×17, height assumed",
+    "ESP32-S3-Zero — official Waveshare v2 CAD",
+    "HEATSINK — 15×10×5",
+    "SD MODULE — 20×18, height assumed",
+    "TPS61023 — 18×11×5"
+  ],
+  "component_pair_count": 9,
+  "case_collision_group_count": 5,
+  "all_component_bounds": {
+    "DISPLAY — LCDWIKI MSP1691 reference, revision unconfirmed": [
+      [
+        -24.0,
+        24.0
+      ],
+      [
+        -15.5,
+        15.5
+      ],
+      [
+        11.4,
+        15.96
+      ]
+    ],
+    "ESP32-S3-Zero — official Waveshare v2 CAD": [
+      [
+        -14.009,
+        4.009
+      ],
+      [
+        -18.1,
+        6.643
+      ],
+      [
+        3.58,
+        8.431
+      ]
+    ],
+    "SD MODULE — 20×18, height assumed": [
+      [
+        1.0,
+        19.0
+      ],
+      [
+        -17.225,
+        2.9
+      ],
+      [
+        5.0,
+        8.85
+      ]
+    ],
+    "ENCODER — board 15×17, height assumed": [
+      [
+        1.3,
+        16.3
+      ],
+      [
+        0.1,
+        23.1
+      ],
+      [
+        2.0,
+        10.0
+      ]
+    ],
+    "BATTERY — selected 28×27×5.7": [
+      [
+        -23.0,
+        5.0
+      ],
+      [
+        -12.0,
+        15.0
+      ],
+      [
+        0.9,
+        6.8
+      ]
+    ],
+    "TPS61023 — 18×11×5": [
+      [
+        11.5,
+        22.5
+      ],
+      [
+        -16.0,
+        2.0
+      ],
+      [
+        0.8,
+        5.8
+      ]
+    ],
+    "HEATSINK — 15×10×5": [
+      [
+        -12.5,
+        2.5
+      ],
+      [
+        -6.097,
+        3.903
+      ],
+      [
+        6.38,
+        11.38
+      ]
+    ]
+  },
+  "unplaced_components": [
+    "MCP73871 — NOT PLACED / dimensions unknown"
+  ],
+  "readiness": "NOT_READY_FOR_PRINT"
+}

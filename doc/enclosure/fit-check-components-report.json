@@ -1,0 +1,165 @@
+{
+  "source": "esp32s3_watch_box.blend",
+  "original_objects_verified_unchanged": 10,
+  "source_geometry_sha256": "3b1965dcbb6c9126a97cd06c3800a10e8d5e4ad44734e7911b4c2f3b4a103663",
+  "case_dimensions_mm": [
+    63.70000076293945,
+    36.79999923706055,
+    12.949999809265137
+  ],
+  "components": [
+    {
+      "name": "DISPLAY — LCDWIKI MSP1691 reference, revision unconfirmed",
+      "size_mm": [
+        48,
+        31,
+        4.56
+      ],
+      "known_xyz": false,
+      "note": "Candidate drawing: PCB 1.60, adhesive 0.30, LCD 1.56, rear SMD <=1.10; no headers",
+      "position_mm": [
+        0,
+        0,
+        12.5
+      ]
+    },
+    {
+      "name": "ESP32-S3-Zero — official Waveshare v2 CAD",
+      "size_mm": [
+        18.017343,
+        24.742648,
+        4.912132
+      ],
+      "known_xyz": false,
+      "note": "Official STEP, unscaled. Confirm board revision; hand-soldered wires not included",
+      "position_mm": [
+        -5,
+        6.6340194800009975,
+        5.1804809342415
+      ]
+    },
+    {
+      "name": "SD MODULE — 20×18, height assumed",
+      "size_mm": [
+        18,
+        20,
+        3.85
+      ],
+      "known_xyz": false,
+      "note": "Port alignment and inserted-card projection remain approximate",
+      "position_mm": [
+        10,
+        -7.1,
+        5.0
+      ]
+    },
+    {
+      "name": "SD card reserve +15 mm",
+      "size_mm": [
+        18,
+        35,
+        1
+      ],
+      "known_xyz": false,
+      "note": "Conservative 20+15 envelope requested by user; not an actual card dimension",
+      "position_mm": [
+        10,
+        -0.6,
+        6.9
+      ]
+    },
+    {
+      "name": "ENCODER — board 15×17, height assumed",
+      "size_mm": [
+        15,
+        17,
+        8.2
+      ],
+      "known_xyz": false,
+      "note": "Shaft follows existing cutter axis; board/body/shaft dimensions are approximate",
+      "position_mm": [
+        8.8,
+        8.6,
+        2
+      ]
+    },
+    {
+      "name": "BATTERY — selected 28×27×5.7",
+      "size_mm": [
+        28,
+        27,
+        5.7
+      ],
+      "known_xyz": true,
+      "note": "Placed for inspection; overlaps are not resolved; wire exit and protection unknown",
+      "position_mm": [
+        -9,
+        1.5,
+        0.9
+      ]
+    },
+    {
+      "name": "TPS61023 — 18×11×5",
+      "size_mm": [
+        11,
+        18,
+        5
+      ],
+      "known_xyz": true,
+      "note": "Rotated XY; external envelope known, visual internals approximate",
+      "position_mm": [
+        17,
+        -7,
+        0.8
+      ]
+    },
+    {
+      "name": "HEATSINK — 15×10×5",
+      "size_mm": [
+        15,
+        10,
+        5
+      ],
+      "known_xyz": true,
+      "note": "Aligned to official CAD chip; assumed thermal pad 0.20 mm; actual module identity unconfirmed",
+      "position_mm": [
+        -4.999999999998,
+        -1.0974802283375027,
+        6.3804809342415005
+      ]
+    },
+    {
+      "name": "MCP73871 — NOT PLACED / dimensions unknown",
+      "size_mm": null,
+      "known_xyz": false,
+      "note": "Proxy ONLY; ALL dimensions unknown; capacitor not included; Ozon 1964855217",
+      "position_mm": [
+        60,
+        0,
+        0
+      ],
+      "visual_proxy_size_mm": [
+        32,
+        30,
+        3
+      ]
+    },
+    {
+      "name": "TP4056 — existing alternative 29×18×5",
+      "size_mm": [
+        29,
+        18,
+        5
+      ],
+      "known_xyz": true,
+      "note": "Alternative only; do not treat as a second parallel charger",
+      "position_mm": [
+        45,
+        0,
+        0
+      ]
+    }
+  ],
+  "fit_verified": false,
+  "warning": "Placement is an editable draft. Parts may overlap each other or the original shell. No case resizing or port changes were made."
+}

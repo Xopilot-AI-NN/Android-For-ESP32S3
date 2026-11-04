@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { homedir } from "node:os";
 import { join, resolve, dirname, sep } from "node:path";
 import { existsSync, realpathSync } from "node:fs";
@@ -68,7 +69,19 @@ export function config(env = process.env) {
     repo = repository();
   if (destination === repo || destination.startsWith(repo + sep))
     throw new Error("Runtime account data must be outside the Git checkout");
+  const localIp = env.LOCAL_IP || "";
+  const oauthRedirect = env.OAUTH_REDIRECT_URL || base + "/oauth/callback";
+  if (localIp) {
+    const octets = localIp.split(".").map(Number);
+    const privateLan = octets[0] === 10 || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) || (octets[0] === 192 && octets[1] === 168);
+    if (isIP(localIp) !== 4 || !privateLan || url.protocol !== "https:" || url.hostname !== localIp || Number(url.port || 443) !== port ||
+        oauthRedirect !== "http://localhost:8080/oauth/callback" || !env.TLS_CERT || !env.TLS_KEY)
+      throw new Error("Invalid local HTTPS configuration; rerun init --local-ip LAN_IP");
+  } else if (oauthRedirect !== base + "/oauth/callback") {
+    throw new Error("Separate OAuth redirect is only supported in local LAN mode");
+  }
   return {
+    localIp, oauthRedirect, tlsCert: env.TLS_CERT, tlsKey: env.TLS_KEY,
     base,
     dev,
     port,
@@ -76,7 +89,6 @@ export function config(env = process.env) {
     clientSecret: env.GOOGLE_CLIENT_SECRET,
     key: env.STORE_KEY || "",
     data: destination,
-    searchKey: env.BRAVE_SEARCH_API_KEY || "",
     translationKey: env.GOOGLE_TRANSLATE_API_KEY || "",
   };
 }

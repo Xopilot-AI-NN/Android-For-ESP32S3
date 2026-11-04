@@ -35,11 +35,14 @@ test("provider import never echoes malformed credentials and preserves existing 
     const bad = run();
     assert.notEqual(bad.status, 0);
     assert.ok(!(bad.stderr + bad.stdout).includes(secret));
-    writeFileSync(input, JSON.stringify({ brave_search_api_key: secret }));
+    writeFileSync(input, JSON.stringify({ google_translate_api_key: secret }));
     assert.equal(run().status, 0);
     const contents = readFileSync(join(config, "config.env"), "utf8");
     assert.ok(contents.includes("synthetic-oauth"));
-    assert.ok(contents.includes("BRAVE_SEARCH_API_KEY="));
+    assert.ok(contents.includes("GOOGLE_TRANSLATE_API_KEY="));
+    writeFileSync(input, JSON.stringify({brave_search_api_key:secret}));
+    assert.equal(run().status,0);
+    assert.ok(!readFileSync(join(config,"config.env"),"utf8").includes("BRAVE_SEARCH_API_KEY="));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

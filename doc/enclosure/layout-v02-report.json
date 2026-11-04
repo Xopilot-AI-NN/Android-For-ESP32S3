@@ -1,0 +1,135 @@
+{
+  "status": "DRAFT_NOT_FOR_PRINT",
+  "body_top_mm": 30.0,
+  "components": [
+    {
+      "name": "BATTERY — 28×27×5.7 mm",
+      "size": [
+        28,
+        27,
+        5.7
+      ],
+      "center": [
+        0,
+        0,
+        4.05
+      ],
+      "measured_xyz": true,
+      "note": "Capacity, chemistry, protection and cable exit still unknown"
+    },
+    {
+      "name": "ESP + USB — 26×18; Z budget 4 mm",
+      "size": [
+        26,
+        18,
+        4
+      ],
+      "center": [
+        -10,
+        6,
+        10
+      ],
+      "measured_xyz": false,
+      "note": "Board rotation and USB location need actual coordinates"
+    },
+    {
+      "name": "ENCODER — 15×17; Z budget 8 mm",
+      "size": [
+        15,
+        17,
+        8
+      ],
+      "center": [
+        15,
+        0,
+        12
+      ],
+      "measured_xyz": false,
+      "note": "Shaft/knob protrusion unknown"
+    },
+    {
+      "name": "TPS61023 — 18×11×5 mm",
+      "size": [
+        18,
+        11,
+        5
+      ],
+      "center": [
+        -11,
+        -10,
+        10.5
+      ],
+      "measured_xyz": true,
+      "note": "Pad and wire clearance not included"
+    },
+    {
+      "name": "HEATSINK — 15×10×5 mm",
+      "size": [
+        15,
+        10,
+        5
+      ],
+      "center": [
+        -15,
+        10,
+        15.5
+      ],
+      "measured_xyz": true,
+      "note": "Must align with actual chip, not merely PCB"
+    },
+    {
+      "name": "SD + card reserve — 35×18; Z budget 3 mm",
+      "size": [
+        35,
+        18,
+        3
+      ],
+      "center": [
+        6,
+        -6,
+        19.5
+      ],
+      "measured_xyz": false,
+      "note": "20 mm board plus conservative 15 mm reserve; orientation and access opening unresolved"
+    },
+    {
+      "name": "POWER PATH — 32×30×3 PLACEHOLDER, NOT measured",
+      "size": [
+        32,
+        30,
+        3
+      ],
+      "center": [
+        0,
+        0,
+        24.5
+      ],
+      "measured_xyz": false,
+      "note": "MCP73871 board + external capacitor not yet dimensioned"
+    },
+    {
+      "name": "DISPLAY PCB — 48×31; Z budget 3 mm",
+      "size": [
+        48,
+        31,
+        3
+      ],
+      "center": [
+        0,
+        0,
+        28.5
+      ],
+      "measured_xyz": false,
+      "note": "Active area, glass, holes, flex and component height unknown"
+    }
+  ],
+  "envelope_intersections": [],
+  "internal_columns": false,
+  "display_reference_mm": [
+    48,
+    31
+  ],
+  "shell_clearance_verified": false,
+  "ports_aligned": false,
+  "charger_capacitor_included": false
+}

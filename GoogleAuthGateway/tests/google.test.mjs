@@ -165,3 +165,18 @@ test("calendar month/pagination and Gmail charset/attachment handling use readon
     globalThis.fetch = original;
   }
 });
+
+// Both Google error envelopes occur in practice; neither means the user revoked consent.
+test("disabled Google API is reported as project configuration, not missing consent", async () => {
+  const original = globalThis.fetch;
+  try {
+    for (const error of [
+      { errors: [{ reason: "accessNotConfigured" }] },
+      { status: "PERMISSION_DENIED", details: [{ reason: "SERVICE_DISABLED" }] },
+    ]) {
+      globalThis.fetch = async () => Response.json({ error }, { status: 403 });
+      await assert.rejects(new Google({}).messages("synthetic", new URLSearchParams()),
+        error => error.code === "GOOGLE_API_DISABLED" && error.status === 503);
+    }
+  } finally { globalThis.fetch = original; }
+});
