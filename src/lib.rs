@@ -1,3 +1,5 @@
+#[path = "../system/app/AirKeyboard/main.rs"]
+pub mod air_keyboard;
 #[path = "../system/app/Browser/main.rs"]
 pub mod browser;
 #[path = "catalog.rs"]
@@ -76,7 +78,8 @@ pub const CONTACTS: u8 = 29;
 pub const MESSAGES: u8 = 30;
 pub const BROWSER: u8 = 31;
 pub const DIAGNOSTIC_PAGES: u8 = 9;
-pub const COUNT: u8 = 21;
+pub const AIR_KEYBOARD: u8 = 32;
+pub const COUNT: u8 = 22;
 /// Stable IDs survive launcher reordering and saved system images.
 pub const LAUNCHER: [u8; COUNT as usize] = catalog::LAUNCHER;
 /// Преобразует позицию меню в стабильный идентификатор приложения.
@@ -84,7 +87,7 @@ pub fn launcher_id(index: u8) -> u8 {
     LAUNCHER.get(usize::from(index)).copied().unwrap_or(NONE)
 }
 /// Названия приложений по их стабильным ID.
-pub const LABELS: [&str; 32] = catalog::LABELS;
+pub const LABELS: [&str; 33] = catalog::LABELS;
 /// Возвращает системный экран для приложения, если оно использует старый ABI.
 pub fn route(index: u8) -> Option<u8> {
     catalog::COMPONENTS
@@ -100,6 +103,7 @@ pub struct View {
     pub keyboard_app: keyboard_app::View,
     pub remote: remote::View,
     pub browser: browser::View,
+    pub air_keyboard: air_keyboard::View,
     /// Индекс текущей цели навигации.
     pub cursor: u8,
     /// Текстовое содержимое в ограниченном буфере.
@@ -151,6 +155,7 @@ impl Default for View {
             keyboard_app: keyboard_app::View::default(),
             remote: remote::View::default(),
             browser: browser::View::default(),
+            air_keyboard: air_keyboard::View::default(),
             cursor: 0,
             text: [0; 32],
             len: 0,
@@ -205,6 +210,7 @@ pub struct State {
     contacts: contacts::Controller,
     messages: messages::Controller,
     browser: browser::Controller,
+    air_keyboard: air_keyboard::Controller,
     browser_from_search: bool,
     gallery_from_files: bool,
     calendar_events: bool,
@@ -232,6 +238,7 @@ impl Default for State {
             contacts: contacts::Controller::default(),
             messages: messages::Controller::default(),
             browser: browser::Controller::default(),
+            air_keyboard: air_keyboard::Controller::default(),
             browser_from_search: false,
             gallery_from_files: false,
             calendar_events: false,
@@ -259,6 +266,7 @@ impl State {
         if self.view.id == BROWSER {
             self.browser.close();
         }
+        self.air_keyboard.close();
         self.view.id = NONE;
         self.weather.cancel();
     }
@@ -272,6 +280,7 @@ impl State {
         self.gallery_from_files = false;
         self.browser_from_search = false;
         match id {
+            AIR_KEYBOARD => self.air_keyboard.open(),
             BROWSER => self.browser.open(),
             GALLERY => self.gallery.open(),
             BT_KEYBOARD => self.keyboard_app.open(),
@@ -328,6 +337,8 @@ impl State {
             } else {
                 self.gallery.back()
             }
+        } else if self.view.id == AIR_KEYBOARD {
+            self.air_keyboard.back()
         } else if self.view.id == BT_KEYBOARD {
             self.keyboard_app.back()
         } else if self.view.id == GOOGLE {
@@ -353,8 +364,15 @@ impl State {
             self.view.id == WEATHER && self.weather.cancel()
         }
     }
-    /// Выполняет очередной неблокирующий шаг обработки и проверяет готовые результаты.
+    /// Обрыв защищённого соединения отключает отправку Air Keyboard.
+    pub fn bluetooth_status(&mut self, status: u8) {
+        self.air_keyboard.connection(status == 3);
+    }
+    /// Выполняет неблокирующий шаг и забирает готовые ответы служб.
     pub fn poll(&mut self) {
+        if self.view.id == AIR_KEYBOARD {
+            self.air_keyboard.poll();
+        }
         self.google.poll();
         if self.view.id == BROWSER {
             self.browser.poll();
@@ -386,6 +404,7 @@ impl State {
             view.remote.days = remote::calendar_days(self.tools.month);
         }
         match view.id {
+            AIR_KEYBOARD => view.air_keyboard = self.air_keyboard.view(),
             BROWSER => view.browser = self.browser.view(),
             GALLERY => {
                 view.gallery = self.gallery.view();
@@ -438,7 +457,9 @@ impl State {
     }
     /// Системная BLE-служба забирает отчёты, приложение не владеет контроллером радио.
     pub fn bluetooth_action(&mut self) -> Option<crate::runtime::BluetoothUiAction> {
-        if self.view.id == BT_KEYBOARD {
+        if self.view.id == AIR_KEYBOARD {
+            self.air_keyboard.take()
+        } else if self.view.id == BT_KEYBOARD {
             self.keyboard_app.take()
         } else {
             None
@@ -455,6 +476,12 @@ impl State {
     /// Work is performed only on input; utility pages have no polling tasks.
     pub fn event(&mut self, event: RuntimeEvent) -> Option<u8> {
         match self.view.id {
+            AIR_KEYBOARD => {
+                if self.air_keyboard.event(event) {
+                    self.close();
+                }
+                return None;
+            }
             BROWSER => {
                 if self.browser.event(event) {
                     self.close();

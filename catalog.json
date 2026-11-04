@@ -175,6 +175,13 @@
     "launcher": true
   },
   {
+    "directory": "system/app/AirKeyboard",
+    "package": "com.xopilot.airkeyboard",
+    "label": "Air Keyboard",
+    "id": 32,
+    "launcher": true
+  },
+  {
     "directory": "system/app/WearLauncher",
     "package": "com.android.wear.launcher",
     "label": "WearLauncher",

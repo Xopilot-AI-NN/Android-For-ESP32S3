@@ -5,7 +5,7 @@ pub struct Descriptor {
     pub label: &'static str,
     pub screen: Option<u8>,
 }
-pub const COMPONENTS: [Descriptor; 32] = [
+pub const COMPONENTS: [Descriptor; 33] = [
     Descriptor {
         id: 0,
         package: "com.android.deskclock",
@@ -198,18 +198,24 @@ pub const COMPONENTS: [Descriptor; 32] = [
         label: "Браузер",
         screen: None,
     },
+    Descriptor {
+        id: 32,
+        package: "com.xopilot.airkeyboard",
+        label: "Air Keyboard",
+        screen: None,
+    },
 ];
-pub const LAUNCHER: [u8; 21] = [
-    0, 1, 2, 6, 7, 8, 10, 12, 15, 18, 19, 21, 22, 23, 24, 25, 27, 28, 29, 30, 31,
+pub const LAUNCHER: [u8; 22] = [
+    0, 1, 2, 6, 7, 8, 10, 12, 15, 18, 19, 21, 22, 23, 24, 25, 27, 28, 29, 30, 31, 32,
 ];
-pub const PACKAGES: &str = "com.android.deskclock com.android.wear.media com.android.settings com.xopilot.calculator com.xopilot.files com.xopilot.share com.xopilot.flashlight com.xopilot.weather com.xopilot.calendar com.xopilot.editor com.xopilot.tasks com.xopilot.focus com.xopilot.phone com.xopilot.gallery com.xopilot.btkeyboard com.xopilot.google com.xopilot.googlecalendar com.xopilot.gmail com.xopilot.translator com.xopilot.contacts com.xopilot.messages com.xopilot.browser com.android.wear.launcher com.android.wear.widgets com.android.systemui";
-const fn labels() -> [&'static str; 32] {
-    let mut labels = [""; 32];
+pub const PACKAGES: &str = "com.android.deskclock com.android.wear.media com.android.settings com.xopilot.calculator com.xopilot.files com.xopilot.share com.xopilot.flashlight com.xopilot.weather com.xopilot.calendar com.xopilot.editor com.xopilot.tasks com.xopilot.focus com.xopilot.phone com.xopilot.gallery com.xopilot.btkeyboard com.xopilot.google com.xopilot.googlecalendar com.xopilot.gmail com.xopilot.translator com.xopilot.contacts com.xopilot.messages com.xopilot.browser com.xopilot.airkeyboard com.android.wear.launcher com.android.wear.widgets com.android.systemui";
+const fn labels() -> [&'static str; 33] {
+    let mut labels = [""; 33];
     let mut i = 0;
-    while i < 32 {
+    while i < 33 {
         labels[i] = COMPONENTS[i].label;
         i += 1;
     }
     labels
 }
-pub const LABELS: [&str; 32] = labels();
+pub const LABELS: [&str; 33] = labels();
