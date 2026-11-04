@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import {readSms,publishSms} from "./kde_sms.mjs";
+import {readSms,createSmsPublisher} from "./kde_sms.mjs";
 // Модуль локального моста к установленному KDE Connect.
 // Optional KDE Connect desktop adapter. Uses KDE's existing paired-device transport.
 import net from 'node:net';
@@ -116,24 +116,36 @@ export async function main(argv = process.argv.slice(2)) {
   let reachable = false;
   let nextReachabilityCheck = 0;
   let nextSmsCheck = 0;
+  const smsPublisher = createSmsPublisher();
   let lastStatus = '';
   const status = message => { if (message !== lastStatus) { console.log(message); lastStatus = message; } };
   while (true) {
     try {
       const hello = await watch(`companion hello ${session} 4b444520436f6e6e656374`);
-      if (hello !== 'approved') { status(hello); nextReachabilityCheck = 0; await sleep(2000); continue; }
+      if (hello !== 'approved') {
+        status(hello);
+        nextReachabilityCheck = 0;
+        nextSmsCheck = 0;
+        smsPublisher.reset();
+        await sleep(2000);
+        continue;
+      }
       // KDE discovery is comparatively expensive. Keep the watch heartbeat at
       // two seconds, but query desktop device discovery only every ten seconds.
       if (Date.now() >= nextReachabilityCheck) {
         reachable = (await kde(['--list-available', '--id-only'])).split(/\s+/).includes(opts.device);
         nextReachabilityCheck = Date.now() + 10000;
       }
+      if (!reachable) {
+        smsPublisher.reset();
+        nextSmsCheck = 0;
+      }
       status(reachable ? 'KDE device connected' : 'KDE device offline');
       await watch(`companion update ${session} ${reachable ? 1 : 0}`);
       if (reachable && Date.now() >= nextSmsCheck) {
         nextSmsCheck = Date.now() + 30000;
         const sms = await readSms(opts.device).catch(() => ({available:false,messages:[]}));
-        await publishSms(sms,session,watch);
+        await smsPublisher.sync(sms,session,watch);
       }
       if (reachable) {
         const raw = await watch(`companion poll ${session}`);
@@ -141,6 +153,8 @@ export async function main(argv = process.argv.slice(2)) {
       }
     } catch (error) {
       reachable = false;
+      smsPublisher.reset();
+      nextSmsCheck = 0;
       nextReachabilityCheck = 0;
       await watch(`companion update ${session} 0`).catch(() => {});
       status(`Bridge error: ${error.message}`);

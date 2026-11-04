@@ -75,3 +75,19 @@ export async function publishSms(payload, session, watch) {
   }
   if (await watch(`companion sms-end ${session}`) !== 'OK') throw new Error('SMS batch rejected');
 }
+
+// An unchanged inbox can take hundreds of tiny PC-shell commands to resend.
+// Remember only successfully delivered batches; reconnects reset this state.
+export function createSmsPublisher(send = publishSms) {
+  let previous = null;
+  return {
+    reset() { previous = null; },
+    async sync(payload, session, watch) {
+      const current = JSON.stringify(payload);
+      if (previous?.session === session && previous.body === current) return false;
+      await send(payload, session, watch);
+      previous = {session, body: current};
+      return true;
+    }
+  };
+}

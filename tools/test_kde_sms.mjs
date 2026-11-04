@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {normalizeSms, publishSms, readSms} from './kde_sms.mjs';
+import {normalizeSms, publishSms, readSms, createSmsPublisher} from './kde_sms.mjs';
 
 test('KDE structure and map rows become bounded newest-first SMS previews', () => {
   const packet = {
@@ -50,3 +50,25 @@ test(
       assert.equal(calls[1].at(-1), 'activeConversations');
       assert.ok(calls[1].includes('org.kde.kdeconnect.device.conversations'));
     });
+
+test('unchanged SMS batches are skipped, but failures and reconnects are retried', async () => {
+  const delivered = [];
+  let fail = false;
+  const publisher = createSmsPublisher(async (payload, session) => {
+    if (fail) throw new Error('Disconnected');
+    delivered.push({payload, session});
+  });
+  const inbox = {available: true, messages: [{body: 'First'}]};
+  assert.equal(await publisher.sync(inbox, 'session-a'), true);
+  assert.equal(await publisher.sync(inbox, 'session-a'), false);
+  const changed = {available: true, messages: [{body: 'Second'}]};
+  fail = true;
+  await assert.rejects(publisher.sync(changed, 'session-a'));
+  fail = false;
+  assert.equal(await publisher.sync(changed, 'session-a'), true);
+  publisher.reset();
+  assert.equal(await publisher.sync(changed, 'session-a'), true);
+  assert.equal(await publisher.sync(changed, 'session-b'), true);
+  assert.equal(await publisher.sync({available: false, messages: []}, 'session-b'), true);
+  assert.equal(delivered.length, 5);
+});
