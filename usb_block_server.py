@@ -355,6 +355,25 @@ def fail(ser, message: str) -> None:
 
 
 # Обслуживает блочные запросы часов до завершения соединения.
+class InputDelivery:
+    """Polling firmware owns RX: commands are returned only between disk requests."""
+    def __init__(self):
+        self.polling = False
+
+    def observe(self, line: str) -> bool:
+        if line == "@ZWUI|INPUT_POLL|1":
+            self.polling = True
+            return True
+        return False
+
+
+def deliver_input(ser, bridge, interactive: bool):
+    command = bridge.pop_command() if interactive and bridge is not None else None
+    if command is not None:
+        send_line(ser, command)
+    send_line(ser, "@ZBLK|IDLE")
+
+
 def serve(
     port: str,
     image_path: Path,
@@ -379,6 +398,7 @@ def serve(
 
             ser = open_serial(port, timeout)
             interactive = False
+            input_delivery = InputDelivery()
             try:
                 print("AOSP Wear OS USB PC block server")
                 print(f"  port : {port} (exclusive single owner, no-reset)")
@@ -393,7 +413,7 @@ def serve(
                     # Viewer commands are held until the ESP explicitly says it
                     # finished boot-time block traffic. This keeps binary block
                     # replies and interactive UI commands from interleaving.
-                    if interactive and bridge is not None:
+                    if interactive and bridge is not None and not input_delivery.polling:
                         while True:
                             command = bridge.pop_command()
                             if command is None:
@@ -421,6 +441,8 @@ def serve(
                     line = raw.rstrip(b"\r\n")
                     if not line.startswith(PREFIX):
                         text = line.decode("utf-8", errors="replace")
+                        if input_delivery.observe(text):
+                            continue
                         if text:
                             # PONG is a liveness heartbeat, not a user-facing log.
                             # Keep forwarding it to the viewer but avoid flooding
@@ -436,6 +458,8 @@ def serve(
                         text = line.decode("ascii")
                         parts = text.split("|")
                         if parts[:2] == ["@ZBLK", "HELLO"]:
+                            interactive = False
+                            input_delivery = InputDelivery()
                             send_line(ser, "@ZBLK|READY|1")
                             continue
 
@@ -444,6 +468,10 @@ def serve(
                             print("[bridge] ESP entered interactive viewer mode")
                             if bridge is not None:
                                 bridge.broadcast("@HOST|BOARD_READY")
+                            continue
+
+                        if parts == ["@ZBLK", "POLL"]:
+                            deliver_input(ser, bridge, interactive)
                             continue
 
                         if parts == ["@ZBLK", "SIZE"]:

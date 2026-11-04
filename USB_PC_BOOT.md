@@ -128,3 +128,22 @@ control lines, steal bytes from `@ZBLK`, or reset/re-enumerate the controller.
 
 Use `python desktop_viewer.py --direct-serial` only for the normal SD-card path
 when no PC-block server owns the TTY.
+
+
+### Shared USB command and block framing
+
+Viewer/ADB commands may arrive before a DATA/OK block response even after boot.
+The firmware response reader queues complete control lines and continues waiting
+for the disk header, preserving any command prefix buffered by nonblocking input.
+Only headers pass through this line reader; the exact binary payload length is
+read without text parsing. Header capacity matches the 256-byte control limit.
+This avoids losing queued commands and falsely failing paging I/O during input.
+
+
+New firmware announces `@ZWUI|INPUT_POLL|1` before INTERACTIVE. The server then
+stops unsolicited command writes. Each firmware `@ZBLK|POLL` receives at most
+one queued command followed by `@ZBLK|IDLE`, including when the queue is empty.
+The firmware consumes that complete response before performing any disk I/O.
+This keeps UI/ADB input out of block headers and binary payloads. New servers
+retain asynchronous input for old firmware; new firmware falls back after an
+old server rejects POLL. Use both updated components for polled input.

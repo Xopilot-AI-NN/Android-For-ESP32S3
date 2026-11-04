@@ -10,6 +10,7 @@ if [[ -z "$ESPFLASH_BIN" && -x "$HOME/.cargo/bin/espflash" ]]; then
 fi
 [[ -f "$ELF" ]] || { echo "Missing firmware ELF: $ELF" >&2; exit 1; }
 [[ -n "$ESPFLASH_BIN" ]] || { echo "espflash is required" >&2; exit 1; }
+python3 "$ROOT/tools/check_main_stack.py" "$ELF"
 mkdir -p "$OUTPUT"
 cp "$ELF" "$OUTPUT/firmware.elf"
 "$ESPFLASH_BIN" save-image --skip-update-check --chip esp32s3 --flash-size 4mb --merge --skip-padding \

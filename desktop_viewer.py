@@ -379,6 +379,8 @@ class WatchViewer:
         self.scale = scale
         self.messages = link.messages
         self.last_state: tuple[str, ...] = ("BOOT",)
+        self._boot_fade_started = time.monotonic()
+        self._boot_fade_timer = None
         self.protocol_version = "?"
         self.last_pong = 0.0
         self.connected = False
@@ -474,14 +476,28 @@ class WatchViewer:
         px, py = self.p(x, y)
         self.canvas.create_text(px, py, text=text, fill=color, font=("Sans", max(8, int(size * self.scale))), anchor="nw")
 
-    # Рисует эмблему загрузочного экрана.
+    # Same Android silhouette as the native splash; no external images.
     def mark(self):
-        colors = ("#4285f4", "#ea4335", "#34a853", "#fbbc05")
-        rects = ((91,62,120,72),(120,62,149,72),(91,72,120,82),(120,72,149,82))
-        for c, (x0,y0,x1,y1) in zip(colors, rects):
-            a = self.p(x0,y0); b = self.p(x1,y1)
-            self.canvas.create_rectangle(*a, *b, fill=c, outline=c)
-        self.text_center(88, "Z", 38, "white", "bold")
+        green = "#3ddc84"
+        for a, b in [((95,105),(80,80)),((145,105),(160,80))]:
+            self.canvas.create_line(*self.p(*a), *self.p(*b), fill=green,
+                                    width=max(1,4*self.scale), capstyle="round")
+        self.canvas.create_arc(*self.p(68,98), *self.p(172,202), start=0,
+                               extent=180, style="pieslice", fill=green, outline="")
+        self.m3_circle(100,131,4,"#000000")
+        self.m3_circle(140,131,4,"#000000")
+
+    def boot_caption(self):
+        phase = min(1.0, max(0.0, (time.monotonic()-self._boot_fade_started)/1.55))
+        shade = round(255*phase*phase*(3-2*phase))
+        self.text_center(211, "WearOS by AOSP", 15, f"#{shade:02x}{shade:02x}{shade:02x}")
+        if phase < 1 and self._boot_fade_timer is None:
+            self._boot_fade_timer = self.root.after(50, self.boot_tick)
+
+    def boot_tick(self):
+        self._boot_fade_timer = None
+        if self.last_state[0] in ("BOOT", "PROGRESS"):
+            self.render(self.last_state)
 
     # Рисует текущую фазу индикатора ожидания.
     def spinner(self, phase: int):
@@ -494,21 +510,17 @@ class WatchViewer:
 
     # Формирует или выводит кадр текущего состояния.
     def render(self, state: tuple[str, ...]):
+        if state[0] in ("BOOT", "PROGRESS") and self.last_state[0] not in ("BOOT", "PROGRESS"):
+            self._boot_fade_started = time.monotonic()
         self.last_state = state
         self.draw_screen_bg()
         kind = state[0]
         if kind == "M3":
             self.render_m3(state)
             return
-        if kind == "BOOT":
+        if kind in ("BOOT", "PROGRESS"):
             self.mark()
-            self.text_center(155, "ANDROID", 18, "#f1f3f4", "bold")
-        elif kind == "PROGRESS":
-            label = state[1] if len(state) > 1 else "BOOTING"
-            phase = int(state[2]) if len(state) > 2 and state[2].isdigit() else 0
-            self.mark()
-            self.text_center(145, label, 14, "#f1f3f4", "bold")
-            self.spinner(phase)
+            self.boot_caption()
         elif kind == "STATUS":
             title, l1, l2, l3 = (list(state[1:5]) + ["", "", "", ""])[:4]
             self.text_center(35, title, 18, "#f1f3f4", "bold")

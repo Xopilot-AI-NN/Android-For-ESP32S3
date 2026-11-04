@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {readSms,publishSms} from "./kde_sms.mjs";
 // Модуль локального моста к установленному KDE Connect.
 // Optional KDE Connect desktop adapter. Uses KDE's existing paired-device transport.
 import net from 'node:net';
@@ -37,7 +38,7 @@ export function pcShell(socketPath, command) {
 }
 // Проверяет запрос часов, подтверждает получение и вызывает соответствующее действие KDE.
 export async function handleAction(packet, session, watch, runKde, device) {
-  if (!Number.isSafeInteger(packet.id) || !['ring', 'ping', 'share'].includes(packet.action)) return false;
+  if (!Number.isSafeInteger(packet.id) || packet.id < 1 || !['ring', 'ping', 'share'].includes(packet.action)) return false;
   const args = ['--device', device];
   if (packet.action === 'ring') args.push('--ring');
   if (packet.action === 'ping') args.push('--ping-msg', 'Сигнал с часов AOSP Wear');
@@ -90,6 +91,12 @@ async function selfTest() {
   assert.deepEqual(sent[0], ['--device', 'phone', '--share-text', text]);
   assert.ok(calls.at(-1).includes(' ack '));
   await assert.rejects(handleAction({id: 8, action: 'share', bytes: 999999}, 'abc', watch, async () => {}, 'phone'));
+  const failingCalls = [];
+  await assert.rejects(handleAction({id: 9, action: 'ring'}, 'abc', async cmd => { failingCalls.push(cmd); return 'OK'; }, async () => { throw new Error('offline'); }, 'phone'));
+  assert.deepEqual(failingCalls, ['companion ack abc 9 2', 'companion ack abc 9 0']);
+  const denied = [];
+  await assert.rejects(handleAction({id: 10, action: 'ring'}, 'abc', async () => 'denied', async a => denied.push(a), 'phone'));
+  assert.equal(denied.length, 0);
   console.log('KDE bridge self-tests passed (no devices contacted)');
 }
 // Разбирает параметры запуска и выполняет основной сценарий утилиты.
@@ -106,17 +113,38 @@ export async function main(argv = process.argv.slice(2)) {
   } : command => pcShell(opts.socket ?? defaultSocket, command);
   const session = randomBytes(8).toString('hex');
   console.log(`Open Телефон on the watch and approve code ${session.slice(-4)}. KDE device: ${opts.device}`);
+  let reachable = false;
+  let nextReachabilityCheck = 0;
+  let nextSmsCheck = 0;
+  let lastStatus = '';
+  const status = message => { if (message !== lastStatus) { console.log(message); lastStatus = message; } };
   while (true) {
     try {
       const hello = await watch(`companion hello ${session} 4b444520436f6e6e656374`);
-      if (hello !== 'approved') { console.log(hello); await sleep(2000); continue; }
-      const reachable = (await kde(['--list-available', '--id-only'])).split(/\s+/).includes(opts.device);
+      if (hello !== 'approved') { status(hello); nextReachabilityCheck = 0; await sleep(2000); continue; }
+      // KDE discovery is comparatively expensive. Keep the watch heartbeat at
+      // two seconds, but query desktop device discovery only every ten seconds.
+      if (Date.now() >= nextReachabilityCheck) {
+        reachable = (await kde(['--list-available', '--id-only'])).split(/\s+/).includes(opts.device);
+        nextReachabilityCheck = Date.now() + 10000;
+      }
+      status(reachable ? 'KDE device connected' : 'KDE device offline');
       await watch(`companion update ${session} ${reachable ? 1 : 0}`);
+      if (reachable && Date.now() >= nextSmsCheck) {
+        nextSmsCheck = Date.now() + 30000;
+        const sms = await readSms(opts.device).catch(() => ({available:false,messages:[]}));
+        await publishSms(sms,session,watch);
+      }
       if (reachable) {
         const raw = await watch(`companion poll ${session}`);
         if (raw.startsWith('{')) await handleAction(JSON.parse(raw), session, watch, kde, opts.device);
       }
-    } catch (error) { console.error(error.message); }
+    } catch (error) {
+      reachable = false;
+      nextReachabilityCheck = 0;
+      await watch(`companion update ${session} 0`).catch(() => {});
+      status(`Bridge error: ${error.message}`);
+    }
     await sleep(2000);
   }
 }
