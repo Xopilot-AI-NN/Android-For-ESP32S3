@@ -69,6 +69,8 @@ fn main() {
         ("settings-scroll", 5, 4),
         ("clock", 11, 0),
         ("clock-hub", 6, 3),
+        ("clock-layout-grid", 6, 0),
+        ("clock-layout-dock", 6, 0),
         ("date-time", 16, 0),
         ("developer", 22, 0),
         ("name-keyboard", 8, 0),
@@ -507,6 +509,8 @@ fn main() {
             surface.boot_menu_frame(1, 2);
         } else if name == "recovery" {
             surface.boot_menu_frame(2, 1);
+        } else if name == "clock-layout-grid" || name == "clock-layout-dock" {
+            surface.preview_clock_layout(frame, name == "clock-layout-dock");
         } else {
             surface.render(frame);
         }

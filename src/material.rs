@@ -735,3 +735,8 @@ mod app_browser_view;
 
 #[path = "../../App/system/app/AirKeyboard/view.rs"]
 mod app_air_keyboard_view;
+
+// Layout comparisons run on the host and do not change the installed clock UI.
+#[cfg(not(target_arch = "xtensa"))]
+#[path = "material/clock_layout_preview.rs"]
+mod clock_layout_preview;
