@@ -1,4 +1,10 @@
 //! Локальная галерея читает JPEG/PNG через файловую службу, без Google и сети.
+use crate::apps::remote::{Controller as Remote, Endpoint};
+pub struct Photos;
+impl Endpoint for Photos {
+    const KIND: u8 = 5;
+    const INPUT: bool = false;
+}
 use crate::{
     file_store::{self as fs, Op},
     runtime::RuntimeEvent,
@@ -35,8 +41,9 @@ pub fn is_image(path: &str) -> bool {
 pub struct View {
     pub names: [[u8; 64]; 3],
     pub lengths: [u8; 3],
-    pub cursor: u8,
-    pub total: u8,
+    pub cursor: u16,
+    pub source: u8,
+    pub total: u16,
     pub image: bool,
     pub busy: bool,
     pub revision: u32,
@@ -48,6 +55,7 @@ impl Default for View {
             names: [[0; 64]; 3],
             lengths: [0; 3],
             cursor: 0,
+            source: 0,
             total: 0,
             image: false,
             busy: false,
@@ -59,6 +67,10 @@ impl Default for View {
 #[derive(Default)]
 /// Владеет навигацией и токеном запроса; диск обслуживает отдельная служба.
 pub struct Controller {
+    active: bool,
+    catalog_revision: Option<u32>,
+    source: u8,
+    cloud: Remote<Photos>,
     list: Vec<String>,
     cursor: usize,
     image: bool,
@@ -74,10 +86,18 @@ impl Controller {
             fs::cancel(id);
         }
         self.requested = None;
+        self.active = false;
+        self.catalog_revision = None;
+        self.list.clear();
+        crate::google_gateway::clear_preview(5);
+        self.source = 0;
+        self.cloud.open();
         critical_section::with(|cs| *PIXELS.borrow_ref_mut(cs) = None);
     }
     /// Начинает просмотр каталога без автоматического открытия первого изображения.
     pub fn open(&mut self) {
+        self.active = true;
+        self.source = 0;
         self.image = false;
         self.cursor = 0;
         self.refresh();
@@ -85,17 +105,33 @@ impl Controller {
     /// Открывает конкретный файл после готовности каталога хранилища.
     pub fn open_path(&mut self, path: String) {
         self.open();
+        self.source = 1;
         self.requested = Some(path);
         self.poll();
     }
     /// Читает опубликованный снимок метаданных; дисковый I/O здесь отсутствует.
     fn refresh(&mut self) {
+        let revision = fs::revision();
+        if self.catalog_revision == Some(revision) {
+            return;
+        }
         if let Some(catalog) = fs::catalog() {
+            let selected = self.list.get(self.cursor).cloned();
             self.list = catalog
                 .iter()
                 .filter(|e| e.kind == 1 && is_image(&e.path))
                 .map(|e| e.path.to_string())
                 .collect();
+            self.list.sort_unstable();
+            self.catalog_revision = Some(revision);
+            if let Some(selected) = selected {
+                if let Some(index) = self.list.iter().position(|path| *path == selected) {
+                    self.cursor = index;
+                } else {
+                    self.image = false;
+                    critical_section::with(|cs| *PIXELS.borrow_ref_mut(cs) = None);
+                }
+            }
             self.cursor = self.cursor.min(self.list.len().saturating_sub(1));
         }
     }
@@ -109,6 +145,7 @@ impl Controller {
         };
         match fs::request(Op::Thumbnail(path.clone())) {
             Ok(id) => {
+                critical_section::with(|cs| *PIXELS.borrow_ref_mut(cs) = None);
                 self.pending = Some((id, true));
                 self.image = true;
                 self.message = "Открываю изображение…";
@@ -117,7 +154,21 @@ impl Controller {
         }
     }
     /// Забирает ответ по своему токену и публикует только полностью готовый preview.
+    pub fn cloud(&self) -> bool {
+        self.source == 2
+    }
+    pub fn cloud_view(&self) -> crate::apps::remote::View {
+        self.cloud.view()
+    }
     pub fn poll(&mut self) {
+        if !self.active {
+            return;
+        }
+        if self.source == 2 {
+            self.cloud.poll();
+            return;
+        }
+        self.refresh();
         if let Some((id, image)) = self.pending {
             if let Some(reply) = fs::take_reply(id) {
                 self.pending = None;
@@ -164,6 +215,26 @@ impl Controller {
     }
     /// Колесо листает список или фотографии; во время чтения запрос не дублируется.
     pub fn event(&mut self, event: RuntimeEvent) {
+        if self.source == 0 {
+            match event {
+                RuntimeEvent::Rotate(d) => {
+                    self.cursor = (self.cursor as i32 + d).rem_euclid(2) as usize
+                }
+                RuntimeEvent::Press => {
+                    self.source = if self.cursor == 0 { 1 } else { 2 };
+                    self.cursor = 0;
+                    if self.source == 2 {
+                        self.cloud.open();
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+        if self.source == 2 {
+            self.cloud.event(event);
+            return;
+        }
         self.refresh();
         if self.pending.is_some() {
             return;
@@ -181,18 +252,35 @@ impl Controller {
     }
     /// Сначала возвращает к списку; false разрешает router выйти из приложения.
     pub fn back(&mut self) -> bool {
+        if self.source == 2 {
+            if !self.cloud.back() {
+                self.source = 0;
+                self.cursor = 1;
+            }
+            return true;
+        }
+        if self.source == 0 {
+            return false;
+        }
         if self.image {
+            if let Some((id, _)) = self.pending.take() {
+                fs::cancel(id);
+            }
+            critical_section::with(|cs| *PIXELS.borrow_ref_mut(cs) = None);
             self.image = false;
             true
         } else {
-            false
+            self.source = 0;
+            self.cursor = 0;
+            true
         }
     }
     /// Собирает ограниченные UTF-8-подписи без владения изображением в UI-снимке.
     pub fn view(&self) -> View {
         let mut v = View {
-            cursor: self.cursor as u8,
-            total: self.list.len() as u8,
+            cursor: self.cursor as u16,
+            source: self.source,
+            total: self.list.len() as u16,
             image: self.image,
             busy: self.pending.is_some(),
             revision: self.revision,

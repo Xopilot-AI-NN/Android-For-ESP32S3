@@ -7,25 +7,44 @@ impl Surface {
     pub(super) fn bluetooth_page(&mut self, f: MaterialFrame, t: Theme) {
         self.photo_header(f, "Bluetooth", t);
         self.round_rect(
-            13,
+            12,
             64,
-            214,
+            216,
             61,
-            30,
-            Self::focus_fill(t.surface_high, f.cursor == 0),
+            16,
+            if f.cursor == 0 {
+                t.primary
+            } else {
+                t.surface_high
+            },
         );
         self.icon_bt(
             44,
             94,
-            if f.bt {
+            if f.cursor == 0 {
+                t.on_primary
+            } else if f.bt {
                 t.primary
             } else {
                 t.on_surface_variant
             },
         );
-        self.text_fitted(74, 75, "Bluetooth", 1, 88, Self::focus_ink(t, f.cursor == 0));
-        self.text(74, 99, if f.bt { "ON" } else { "OFF" }, 1, Self::focus_ink(t, f.cursor == 0));
-        self.toggle(169, 81, f.bt, t);
+        self.text_fitted(
+            74,
+            75,
+            "Bluetooth",
+            1,
+            88,
+            Self::focus_ink(t, f.cursor == 0),
+        );
+        self.text(
+            74,
+            99,
+            if f.bt { "ON" } else { "OFF" },
+            1,
+            Self::focus_ink(t, f.cursor == 0),
+        );
+        self.focused_toggle(169, 81, f.bt, f.cursor == 0, t);
         self.info_card(
             136,
             "PAIR PHONE / PC",
@@ -38,7 +57,7 @@ impl Surface {
             t,
         );
         // Match the three rows in the original watch photographs.
-        self.info_card(205, "MEDIA CONTROLS", "PHONE / PC", f.cursor == 2, t);
+        self.info_card(198, "MEDIA CONTROLS", "PHONE / PC", f.cursor == 2, t);
         self.text_center(265, "HOLD CROWN: BACK", 1, t.on_surface_variant);
     }
 
@@ -57,7 +76,13 @@ impl Surface {
             3 => "Coral",
             _ => "Teal",
         };
-        let face_name = ["Цифровой", "Аналоговый", "Компликации", "Минимализм", "Панель"][f.watch_face.min(4) as usize];
+        let face_name = [
+            "Цифровой",
+            "Аналоговый",
+            "Компликации",
+            "Минимализм",
+            "Панель",
+        ][f.watch_face.min(4) as usize];
         let labels = [
             "Brightness",
             "COLOR THEME",

@@ -52,7 +52,7 @@ impl Surface {
                 t.primary,
             );
             self.text_center_raw(200, "Локальный файл / папка", 1, t.on_surface_variant);
-            self.wear_row(235, "Назад", true, t);
+            self.action_chip(237, 36, "Назад", true, t);
             return;
         }
         if v.mode == 3 {
@@ -119,9 +119,9 @@ impl Surface {
             let y = 70 + i as i32 * 32;
             let selected = row.selected;
             self.round_rect(
-                10,
+                12,
                 y,
-                220,
+                216,
                 29,
                 13,
                 if selected { t.primary } else { t.surface_high },
@@ -140,7 +140,7 @@ impl Surface {
         for dy in [-5, 0, 5] {
             self.circle(220, 40 + dy, 1, t.on_surface_variant);
         }
-        self.round_rect(10, 59, 220, 24, 11, t.surface_high);
+        self.round_rect(12, 59, 216, 24, 11, t.surface_high);
         self.symbol(Symbol::Folder, 25, 71, t.on_surface_variant);
         let path = core::str::from_utf8(&v.title[..v.title_len as usize]).unwrap_or("/");
         self.text_fitted_raw(
@@ -155,29 +155,45 @@ impl Surface {
             self.symbol(Symbol::Folder, 120, 139, t.primary);
             self.text_center_raw(174, "Здесь пока пусто", 1, t.on_surface_variant);
         }
-        for (i, row) in v.rows.iter().take(4).enumerate() {
+        let selected_name =
+            core::str::from_utf8(&v.selected_name[..v.selected_len as usize]).unwrap_or("");
+        let selected_row = v
+            .rows
+            .iter()
+            .take(4)
+            .position(|row| row.selected)
+            .or_else(|| {
+                v.rows.iter().take(4).position(|row| {
+                    row.len > 0
+                        && core::str::from_utf8(&row.text[..row.len as usize]).unwrap_or("")
+                            == selected_name
+                })
+            })
+            .unwrap_or(0);
+        let top = selected_row.saturating_sub(2);
+        for (i, row) in v.rows.iter().take(4).skip(top).take(3).enumerate() {
             if row.kind == 0 || row.len == 0 {
                 continue;
             }
-            let y = 91 + i as i32 * 38;
+            let y = 91 + i as i32 * 51;
             let selected = row.selected;
             let ink = Self::focus_ink(t, selected);
             self.round_rect(
-                10,
-                y,
-                220,
-                34,
                 12,
+                y,
+                216,
+                46,
+                16,
                 if selected { t.primary } else { t.surface },
             );
             let icon_ink = if selected { ink } else { t.on_surface_variant };
             if row.kind == 2 {
-                self.symbol(Symbol::Folder, 27, y + 17, icon_ink);
+                self.symbol(Symbol::Folder, 31, y + 23, icon_ink);
             } else {
-                self.file_document(27, y + 17, icon_ink);
+                self.file_document(31, y + 23, icon_ink);
             }
             let name = core::str::from_utf8(&row.text[..row.len as usize]).unwrap_or("");
-            self.text_fitted_raw(45, y + 8, name, 1, 123, ink);
+            self.text_fitted_raw(52, y + 6, name, 1, 162, ink);
             if row.kind == 1 {
                 let size = if row.size >= 1024 * 1024 {
                     alloc::format!(
@@ -190,18 +206,40 @@ impl Surface {
                 } else {
                     alloc::format!("{}B", row.size)
                 };
-                self.text_fitted_raw(174, y + 8, &size, 1, 51, ink);
+                self.text_fitted_raw(
+                    52,
+                    y + 27,
+                    &size,
+                    1,
+                    150,
+                    if selected {
+                        t.on_primary
+                    } else {
+                        t.on_surface_variant
+                    },
+                );
             } else {
-                self.symbol(Symbol::Next, 216, y + 17, ink);
+                self.text_raw(
+                    52,
+                    y + 27,
+                    "Папка",
+                    1,
+                    if selected {
+                        t.on_primary
+                    } else {
+                        t.on_surface_variant
+                    },
+                );
+                self.symbol(Symbol::Next, 214, y + 23, ink);
             }
         }
         for index in 0..4 {
-            let x = 10 + index as i32 * 56;
+            let x = 12 + index as i32 * 55;
             let selected = v.toolbar == index as u8;
             self.round_rect(
                 x,
                 249,
-                52,
+                51,
                 28,
                 12,
                 if selected { t.primary } else { t.surface_high },

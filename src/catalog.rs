@@ -5,7 +5,7 @@ pub struct Descriptor {
     pub label: &'static str,
     pub screen: Option<u8>,
 }
-pub const COMPONENTS: [Descriptor; 29] = [
+pub const COMPONENTS: [Descriptor; 32] = [
     Descriptor {
         id: 0,
         package: "com.android.deskclock",
@@ -180,18 +180,36 @@ pub const COMPONENTS: [Descriptor; 29] = [
         label: "Переводчик",
         screen: None,
     },
+    Descriptor {
+        id: 29,
+        package: "com.xopilot.contacts",
+        label: "Контакты Google",
+        screen: None,
+    },
+    Descriptor {
+        id: 30,
+        package: "com.xopilot.messages",
+        label: "Сообщения",
+        screen: None,
+    },
+    Descriptor {
+        id: 31,
+        package: "com.xopilot.browser",
+        label: "Браузер",
+        screen: None,
+    },
 ];
-pub const LAUNCHER: [u8; 19] = [
-    0, 1, 2, 6, 7, 8, 10, 12, 15, 18, 19, 21, 22, 23, 24, 25, 26, 27, 28,
+pub const LAUNCHER: [u8; 21] = [
+    0, 1, 2, 6, 7, 8, 10, 12, 15, 18, 19, 21, 22, 23, 24, 25, 27, 28, 29, 30, 31,
 ];
-pub const PACKAGES: &str = "com.android.deskclock com.android.wear.media com.android.settings com.xopilot.calculator com.xopilot.files com.xopilot.share com.xopilot.flashlight com.xopilot.weather com.xopilot.calendar com.xopilot.editor com.xopilot.tasks com.xopilot.focus com.xopilot.phone com.xopilot.gallery com.xopilot.btkeyboard com.xopilot.google com.xopilot.googlecalendar com.xopilot.gmail com.xopilot.translator com.android.wear.launcher com.android.wear.widgets com.android.systemui";
-const fn labels() -> [&'static str; 29] {
-    let mut labels = [""; 29];
+pub const PACKAGES: &str = "com.android.deskclock com.android.wear.media com.android.settings com.xopilot.calculator com.xopilot.files com.xopilot.share com.xopilot.flashlight com.xopilot.weather com.xopilot.calendar com.xopilot.editor com.xopilot.tasks com.xopilot.focus com.xopilot.phone com.xopilot.gallery com.xopilot.btkeyboard com.xopilot.google com.xopilot.googlecalendar com.xopilot.gmail com.xopilot.translator com.xopilot.contacts com.xopilot.messages com.xopilot.browser com.android.wear.launcher com.android.wear.widgets com.android.systemui";
+const fn labels() -> [&'static str; 32] {
+    let mut labels = [""; 32];
     let mut i = 0;
-    while i < 29 {
+    while i < 32 {
         labels[i] = COMPONENTS[i].label;
         i += 1;
     }
     labels
 }
-pub const LABELS: [&str; 29] = labels();
+pub const LABELS: [&str; 32] = labels();

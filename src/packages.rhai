@@ -1,5 +1,6 @@
 // Installed package/component catalog. Removed IDs intentionally return an empty name.
 fn package_name(index){
+    if index==31 {return "com.xopilot.browser";}
     if index==0 {return "com.android.deskclock";}
     if index==1 {return "com.android.wear.media";}
     if index==2 {return "com.android.settings";}
@@ -28,10 +29,13 @@ fn package_name(index){
     if index==25 {return "com.xopilot.google";}
     if index==26 {return "com.xopilot.googlecalendar";}
     if index==27 {return "com.xopilot.gmail";}
+    if index==29 {return "com.xopilot.contacts";}
+    if index==30 {return "com.xopilot.messages";}
     if index==28 {return "com.xopilot.translator";}
     ""
 }
 fn package_label(index){
+    if index==31 {return "Браузер";}
     if index==0 {return "Часы";}
     if index==1 {return "Медиа";}
     if index==2 {return "Настройки";}

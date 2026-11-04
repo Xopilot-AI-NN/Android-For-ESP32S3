@@ -2,15 +2,7 @@
 use super::*;
 impl Surface {
     fn google_button(&mut self, y: i32, label: &str, selected: bool, t: Theme) {
-        self.round_rect(
-            10,
-            y,
-            220,
-            34,
-            12,
-            if selected { t.primary } else { t.surface_high },
-        );
-        self.text_fitted_raw(22, y + 9, label, 1, 196, Self::focus_ink(t, selected));
+        self.action_chip(y, 32, label, selected, t);
     }
     pub(super) fn remote_app_page(&mut self, mut f: MaterialFrame, t: Theme) {
         let v = f.app.remote;
@@ -19,11 +11,14 @@ impl Surface {
                 if v.provider_len > 0 {
                     core::str::from_utf8(&v.provider[..v.provider_len as usize]).unwrap_or("Поиск")
                 } else {
-                    "Поиск"
+                    "Google"
                 }
             }
-            1 => "Google Calendar",
+            1 => "События",
             2 => "Gmail",
+            4 => "Контакты Google",
+            5 => "Google Фото",
+            6 => "Сообщения",
             _ => "Переводчик",
         };
         let text = core::str::from_utf8(&v.text[..v.len as usize]).unwrap_or("");
@@ -46,6 +41,33 @@ impl Surface {
             },
             t,
         );
+        if v.mode == 7 {
+            self.text_center_raw(64, "Выберите фото в браузере", 1, t.on_surface_variant);
+            if v.qr_size > 0 {
+                let n = usize::from(v.qr_size);
+                let scale = 160 / (n + 8);
+                let size = (n + 8) * scale;
+                let left = (240 - size as i32) / 2;
+                self.round_rect(left, 87, size as i32, size as i32, 0, rgb565(255, 255, 255));
+                for y in 0..n {
+                    for x in 0..n {
+                        let bit = y * n + x;
+                        if v.qr[bit / 8] & (1 << (bit % 8)) != 0 {
+                            self.round_rect(
+                                left + ((x + 4) * scale) as i32,
+                                87 + ((y + 4) * scale) as i32,
+                                scale as i32,
+                                scale as i32,
+                                0,
+                                0,
+                            );
+                        }
+                    }
+                }
+            }
+            self.text_center_raw(255, "или localhost:8080 на ПК", 1, t.on_surface_variant);
+            return;
+        }
         if v.mode == 3 {
             use crate::google_gateway::Phase;
             let phase = v.phase;
@@ -79,26 +101,39 @@ impl Surface {
                 let email = core::str::from_utf8(&v.email[..v.email_len as usize]).unwrap_or("");
                 self.symbol(Symbol::Person, 120, 88, t.primary);
                 self.text_fitted_raw(10, 119, email, 1, 220, t.on_surface);
+                let mail = match v.services & 3 {
+                    3 => "Календарь · Gmail",
+                    1 => "Календарь",
+                    2 => "Gmail",
+                    _ => "Доступ только на чтение",
+                };
+                self.text_center_raw(145, mail, 1, t.on_surface_variant);
+                let extra = match v.services & 12 {
+                    12 => "Контакты · Google Фото",
+                    4 => "Контакты Google",
+                    8 => "Выбранные Google Фото",
+                    _ => "",
+                };
+                self.text_center_raw(167, extra, 1, t.on_surface_variant);
+                self.google_button(195, "Подтвердить", v.cursor % 2 == 0, t);
+                self.google_button(237, "Отмена", v.cursor % 2 == 1, t);
+                return;
+            }
+            if v.kind >= 4 {
+                self.symbol(Symbol::Person, 120, 90, t.primary);
                 self.text_center_raw(
-                    148,
-                    &alloc::format!(
-                        "Calendar {} · Gmail {}",
-                        if v.services & 1 != 0 {
-                            "да"
-                        } else {
-                            "нет"
-                        },
-                        if v.services & 2 != 0 {
-                            "да"
-                        } else {
-                            "нет"
-                        }
-                    ),
+                    127,
+                    if v.kind == 4 {
+                        "Доступ к контактам"
+                    } else {
+                        "Доступ к выбранным фото"
+                    },
                     1,
                     t.on_surface_variant,
                 );
-                self.google_button(182, "Подтвердить", v.cursor % 2 == 0, t);
-                self.google_button(224, "Отмена", v.cursor % 2 == 1, t);
+                self.google_button(177, "Разрешить в Google", v.cursor == 0, t);
+                self.google_button(219, "Назад", v.cursor == 1, t);
+                self.text_fitted_raw(10, 258, v.message, 1, 220, t.on_surface_variant);
                 return;
             }
             let connected = phase == Phase::Connected as u8;
@@ -166,6 +201,27 @@ impl Surface {
                 );
             }
             self.text_fitted_raw(10, 258, v.message, 1, 220, t.on_surface_variant);
+            return;
+        }
+        if v.kind == 0 && v.mode == 0 {
+            self.round_rect(12, 66, 216, 49, 20, t.surface_high);
+            self.symbol(Symbol::Search, 37, 90, t.primary);
+            self.text_fitted_raw(58, 83, "Что найти?", 1, 155, t.on_surface);
+            self.google_button(132, "Новый запрос", v.cursor == 0, t);
+            self.google_button(174, "Повторить поиск", v.cursor == 1, t);
+            self.google_button(216, "Аккаунт Google", v.cursor == 2, t);
+            self.text_fitted_raw(
+                12,
+                263,
+                if v.busy {
+                    "Загрузка…"
+                } else {
+                    v.message
+                },
+                1,
+                216,
+                t.on_surface_variant,
+            );
             return;
         }
         if v.mode == 6 {
@@ -259,11 +315,36 @@ impl Surface {
                         t.on_surface_variant,
                     );
                 }
-                if v.lengths[6] != 0 {
+                if !matches!(v.kind, 2 | 4 | 5 | 6) && v.lengths[6] != 0 {
                     let text =
                         core::str::from_utf8(&v.lines[6][..v.lengths[6] as usize]).unwrap_or("");
                     self.google_button(246, text, v.cursor >= v.count, t);
                 }
+            } else if v.image {
+                if let Some(image) = crate::google_gateway::mail_image(v.kind) {
+                    let x0 = (240 - image.width as i32 * 2) / 2;
+                    let y0 = 84 + (160 - image.height as i32 * 2) / 2;
+                    for y in 0..image.height {
+                        for x in 0..image.width {
+                            self.round_rect(
+                                x0 + x as i32 * 2,
+                                y0 + y as i32 * 2,
+                                2,
+                                2,
+                                0,
+                                image.pixels[y * image.width + x],
+                            );
+                        }
+                    }
+                }
+                self.text_fitted_raw(
+                    10,
+                    257,
+                    "Колесо: дальше / назад",
+                    1,
+                    220,
+                    t.on_surface_variant,
+                );
             } else {
                 for (i, line) in v.lines.iter().enumerate() {
                     let text = core::str::from_utf8(&line[..v.lengths[i] as usize]).unwrap_or("");
@@ -282,13 +363,14 @@ impl Surface {
                     158,
                     t.on_surface_variant,
                 );
-                if v.more {
+                if v.more && !matches!(v.kind, 2 | 5) {
                     self.round_rect(181, 248, 49, 29, 12, t.primary);
                     self.symbol(Symbol::Next, 205, 262, t.on_primary);
                 }
             }
             return;
         }
+        self.round_rect(12, 62, 216, 44, 16, t.surface);
         self.symbol(
             match v.kind {
                 0 => Symbol::Search,
@@ -296,9 +378,24 @@ impl Surface {
                 2 => Symbol::Share,
                 _ => Symbol::Language,
             },
-            120,
-            90,
+            34,
+            84,
             t.primary,
+        );
+        self.text_fitted_raw(
+            56,
+            77,
+            match v.kind {
+                0 => "Текстовый поиск",
+                1 => "События Google",
+                2 => "Почта Google",
+                4 => "Телефоны и адреса",
+                5 => "Фото, выбранные вами",
+                _ => "Текст и языки",
+            },
+            1,
+            160,
+            t.on_surface_variant,
         );
         let languages = [
             "RU → EN",
@@ -313,6 +410,8 @@ impl Surface {
             0 => ["Введите запрос", "Обновить поиск", "Аккаунт Google", ""],
             1 => ["Месяц", "События", "Обновить", "Аккаунт Google"],
             2 => ["Входящие", "Обновить", "Аккаунт Google", ""],
+            4 => ["Мои контакты", "Обновить", "Доступ Google", ""],
+            5 => ["Выбрать фото", "Выбранные фото", "Доступ Google", ""],
             _ => [
                 "Введите текст",
                 languages[v.language as usize % 7],

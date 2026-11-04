@@ -16,8 +16,8 @@ impl Surface {
         let data = f.app.weather;
         if data.valid {
             let city = core::str::from_utf8(&data.city[..usize::from(data.city_len)]).unwrap_or("");
-            self.text_center_raw(58, city, 2, t.on_surface);
-            self.round_rect(14, 85, 212, 99, 30, t.primary_container);
+            self.text_fitted_raw(12, 60, city, 2, 216, t.on_surface);
+            self.round_rect(12, 85, 216, 99, 20, t.primary_container);
             let mut temp = heapless::String::<24>::new();
             let _ = write!(
                 temp,
@@ -38,14 +38,12 @@ impl Surface {
                 (data.feels + if data.feels >= 0 { 5 } else { -5 }) / 10,
                 data.humidity
             );
-            self.text_center_raw(187, &details, 1, t.on_surface_variant);
+            self.text_fitted_raw(10, 187, &details, 1, 220, t.on_surface_variant);
             details.clear();
             let _ = write!(details, "Ветер {}.{} м/с", data.wind / 10, data.wind % 10);
             self.text_center_raw(207, &details, 1, t.on_surface_variant);
         } else {
-            self.circle(120, 109, 35, t.primary_container);
-            self.symbol(Symbol::Weather, 120, 109, t.primary);
-            self.text_center(159, "Выберите город", 2, t.on_surface);
+            self.empty_state(Symbol::Weather, "Погода рядом", "Город или геопозиция", t);
         }
         let status = match data.status {
             1 => "Получение данных…",

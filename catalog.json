@@ -133,7 +133,7 @@
     "label": "Google Calendar",
     "id": 26,
     "screen": null,
-    "launcher": true
+    "launcher": false
   },
   {
     "directory": "system/app/Gmail",
@@ -149,6 +149,29 @@
     "label": "Переводчик",
     "id": 28,
     "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Contacts",
+    "package": "com.xopilot.contacts",
+    "label": "Контакты Google",
+    "id": 29,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Messages",
+    "package": "com.xopilot.messages",
+    "label": "Сообщения",
+    "id": 30,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Browser",
+    "package": "com.xopilot.browser",
+    "label": "Браузер",
+    "id": 31,
     "launcher": true
   },
   {

@@ -5,7 +5,7 @@
   "api": 37,
   "system": true,
   "characteristics": "watch",
-  "launcher": true,
+  "launcher": false,
   "nativeApp": 26,
   "entry": "main.rs",
   "sharedSources": [

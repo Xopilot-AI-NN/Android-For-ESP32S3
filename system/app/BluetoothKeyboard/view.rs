@@ -9,31 +9,13 @@ impl Surface {
             return;
         }
         self.photo_header(f, "BT-клавиатура", t);
-        self.symbol(Symbol::Bluetooth, 120, 93, t.primary);
-        self.text_center_raw(
-            120,
-            if matches!(f.bt_status, 2 | 3) {
-                "Устройство подключено"
-            } else {
-                "Нет подключения"
-            },
-            1,
-            t.on_surface_variant,
-        );
-        for (index, label) in ["Сопряжение", "Открыть клавиатуру"].iter().enumerate()
-        {
-            let selected = v.cursor as usize == index;
-            let y = 158 + index as i32 * 45;
-            self.round_rect(
-                10,
-                y,
-                220,
-                38,
-                14,
-                if selected { t.primary } else { t.surface_high },
-            );
-            self.text_fitted_raw(22, y + 12, label, 1, 196, Self::focus_ink(t, selected));
-        }
+        self.round_rect(12, 64, 216, 84, 20, t.surface);
+        self.circle(46, 105, 22, t.primary_container);
+        self.symbol(Symbol::Bluetooth, 46, 105, t.primary);
+        self.text_raw(80, 83, "Bluetooth HID", 1, t.on_surface);
+        self.text_fitted_raw(80, 108, if matches!(f.bt_status, 2 | 3) { "Подключено" } else { "Нет подключения" }, 1, 136, t.on_surface_variant);
+        self.action_chip(166, 40, "Сопряжение", v.cursor == 0, t);
+        self.action_chip(216, 40, "Открыть клавиатуру", v.cursor != 0, t);
         self.text_fitted_raw(10, 257, v.message, 1, 220, t.on_surface_variant);
     }
 }

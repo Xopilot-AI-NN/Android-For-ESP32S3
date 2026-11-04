@@ -8,17 +8,19 @@ impl Surface {
         self.photo_header(f, "Wi-Fi", t);
         let active = f.cursor == 0;
         self.round_rect(
-            17,
+            12,
             65,
-            206,
+            216,
             61,
-            30,
-            Self::focus_fill(t.surface_high, active),
+            16,
+            if active { t.primary } else { t.surface_high },
         );
         self.icon_wifi(
             42,
             95,
-            if f.wifi {
+            if active {
+                t.on_primary
+            } else if f.wifi {
                 t.primary
             } else {
                 t.on_surface_variant
@@ -32,7 +34,7 @@ impl Surface {
             1,
             Self::focus_ink(t, active),
         );
-        self.toggle(168, 83, f.wifi, t);
+        self.focused_toggle(168, 83, f.wifi, active, t);
         self.info_card(
             137,
             "NETWORKS",

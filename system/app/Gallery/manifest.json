@@ -8,7 +8,10 @@
   "launcher": true,
   "nativeApp": 23,
   "entry": "main.rs",
-  "sharedSources": [],
+  "sharedSources": [
+    "../../../shared/remote.rs",
+    "../../../shared/remote_view.rs"
+  ],
   "sources": [
     "main.rs",
     "view.rs"

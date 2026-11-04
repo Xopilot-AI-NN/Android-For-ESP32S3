@@ -1,12 +1,11 @@
-// Модуль экранов задач, расходов, фокуса и телефона.
 use super::*;
 impl Surface {
-    /// Рисует экран рабочих сессий и перерывов с актуальным состоянием и фокусом.
     pub(super) fn focus_page(&mut self, f: MaterialFrame, t: Theme) {
         let v = f.app.focus;
         self.photo_header(f, "Фокус", t);
-        self.text_center(
-            59,
+        self.round_rect(12, 62, 216, 108, 20, t.primary_container);
+        self.text_center_raw(
+            72,
             if v.phase == 0 {
                 "Время для работы"
             } else {
@@ -15,35 +14,28 @@ impl Surface {
             1,
             t.on_surface_variant,
         );
-        let time = Self::mmss_text(v.remaining);
-        self.clock_text(83, &time, t.primary);
-        self.text_center(
-            153,
-            &alloc::format!("Сессий: {}", v.sessions),
+        self.clock_text(84, &Self::mmss_text(v.remaining), t.primary);
+        self.text_center_raw(
+            147,
+            &alloc::format!("Завершено сессий: {}", v.sessions),
             1,
             t.on_surface_variant,
         );
-        let labels = [
-            if v.running {
-                alloc::string::String::from("Пауза")
-            } else if v.complete {
-                alloc::string::String::from("Начать следующий этап")
-            } else {
-                alloc::string::String::from("Начать / продолжить")
-            },
-            alloc::format!("Работа: {} минут", v.work),
-            alloc::string::String::from("Сбросить сессию"),
-        ];
-        for (i, label) in labels.iter().enumerate() {
-            self.keyboard_key(
-                18,
-                179 + i as i32 * 31,
-                204,
-                28,
-                label,
-                v.cursor as usize == i,
-                t,
-            );
-        }
+        let action = if v.running {
+            "Пауза"
+        } else if v.complete {
+            "Следующий этап"
+        } else {
+            "Начать / продолжить"
+        };
+        self.action_chip(180, 36, action, v.cursor == 0, t);
+        self.action_chip(
+            222,
+            24,
+            &alloc::format!("Работа · {} мин", v.work),
+            v.cursor == 1,
+            t,
+        );
+        self.action_chip(252, 24, "Сбросить", v.cursor == 2, t);
     }
 }

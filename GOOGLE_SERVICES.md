@@ -1,7 +1,7 @@
 # Google Services Integration — AOSP Wear / ESP32-S3
 
 > **Статус:** реализован код MVP: нативный проверяемый TLS-клиент, QR/подтверждение,
-> общий аккаунт и выход, Gmail/Calendar readonly, Brave Search и Google Cloud Translation.
+> общий аккаунт и выход, Gmail/Calendar readonly, DuckDuckGo и Google Cloud Translation.
 > Сессии после перезапуска обновляются ключом устройства; личный кэш только в RAM.
 > Проверки с синтетическим OAuth и настоящим локальным TLS не заменяют вход в ваш
 > аккаунт и проверку на ESP32. Для этого нужны HTTPS-домен, OAuth/API-настройки и прошивка.

@@ -1,74 +1,78 @@
-// Модуль основных экранов часов.
-//! pages main Material surface implementation.
 use super::*;
-
 impl Surface {
-
-    /// Отправляет или рисует управление медиаплеером в текущем компоненте.
     pub(super) fn media(&mut self, f: MaterialFrame, t: Theme) {
-        self.photo_header(f, "Media controls", t);
-        self.text_center(
-            69,
+        self.photo_header(f, "Медиа", t);
+        self.round_rect(12, 63, 216, 48, 16, t.surface);
+        self.symbol(Symbol::Bluetooth, 34, 87, t.primary);
+        self.text_fitted_raw(
+            56,
+            71,
             if f.bt_status == 3 {
-                "Phone connected"
+                "Подключено"
             } else {
-                "Pair your phone to play"
+                "Нет подключения"
             },
             1,
+            160,
+            t.on_surface,
+        );
+        self.text_fitted_raw(
+            56,
+            92,
+            if f.media_known {
+                "Плеер с телефона"
+            } else {
+                "Медиакнопки"
+            },
+            1,
+            160,
             t.on_surface_variant,
         );
-        let cream = t.primary;
-        let ink = t.on_primary;
-        for (i, x) in [(0, 39), (2, 201)] {
-            self.circle(x, 151, 26, Self::focus_fill(cream, f.cursor == i));
-            self.symbol(
-                if i == 0 {
-                    Symbol::Previous
+        for (index, x, radius) in [(0, 43, 25), (1, 120, 35), (2, 197, 25)] {
+            let selected = f.cursor == index;
+            self.circle(
+                x,
+                162,
+                radius,
+                if selected {
+                    t.primary
+                } else if index == 1 {
+                    t.primary_container
                 } else {
-                    Symbol::Next
+                    t.surface_high
+                },
+            );
+            self.symbol(
+                match index {
+                    0 => Symbol::Previous,
+                    2 => Symbol::Next,
+                    _ if f.media_playing => Symbol::Pause,
+                    _ => Symbol::Play,
                 },
                 x,
-                151,
-                ink,
+                162,
+                if selected {
+                    t.on_primary
+                } else if index == 1 {
+                    t.primary
+                } else {
+                    t.on_surface
+                },
             );
         }
-        self.scallop(
-            120,
-            151,
-            Self::focus_fill(cream, f.cursor == 1),
-            t.surface_high,
-        );
-        self.symbol(
-            if f.media_playing {
-                Symbol::Pause
-            } else {
-                Symbol::Play
-            },
-            120,
-            151,
-            ink,
-        );
         if f.media_known {
-            self.round_rect(36, 198, 168, 4, 2, t.surface_high);
+            self.round_rect(12, 208, 216, 4, 2, t.surface_high);
             self.round_rect(
-                36,
-                198,
-                (168 * i32::from(f.media_progress) / 1000).max(2),
+                12,
+                208,
+                (216 * i32::from(f.media_progress) / 1000).max(2),
                 4,
                 2,
                 t.primary,
             );
-            if f.media_playing {
-                for i in 0..3 {
-                    let h = 3 + ((u16::from(f.animation_phase) / 20 + i * 3) % 7) as i32;
-                    self.round_rect(111 + i as i32 * 7, 230 - h, 3, h, 1, t.primary);
-                }
-            }
         }
-        // HID reports do not contain playback state: Play/Pause is one toggle,
-        // and the watch must not fabricate a paused/playing status or metadata.
-        self.text_center(
-            208,
+        self.text_center_raw(
+            220,
             if f.media_known {
                 if f.media_playing {
                     "Воспроизведение"
@@ -76,27 +80,14 @@ impl Surface {
                     "Пауза"
                 }
             } else {
-                "Play / pause"
+                "Пуск / пауза"
             },
             1,
             t.on_surface_variant,
         );
-        for (i, x, label) in [(3, 43, "Vol -"), (4, 120, "Vol +"), (5, 197, "Back")] {
-            self.round_rect(
-                x - 33,
-                237,
-                66,
-                31,
-                15,
-                if f.cursor == i { cream } else { t.surface_high },
-            );
-            self.text_center_x(
-                x,
-                247,
-                label,
-                1,
-                if f.cursor == i { ink } else { t.on_surface },
-            );
+        for (index, x, label) in [(3, 12, "Тише"), (4, 86, "Громче"), (5, 160, "Назад")]
+        {
+            self.keyboard_key(x, 245, 68, 31, label, f.cursor == index, t);
         }
     }
 }

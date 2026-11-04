@@ -99,9 +99,11 @@ impl Surface {
     /// Рисует общий раздел таймера, секундомера, будильника и мирового времени.
     pub(super) fn clock(&mut self, f: MaterialFrame, t: Theme) {
         self.photo_header(f, "Часы", t);
+        self.round_rect(12, 62, 216, 65, 18, t.surface);
         let time = Self::time_text(f.time_minutes);
-        self.text_center_raw(
-            61,
+        self.text_raw(
+            24,
+            74,
             if f.time_valid {
                 core::str::from_utf8(&time).unwrap_or("--:--")
             } else {
@@ -110,18 +112,22 @@ impl Surface {
             3,
             t.primary,
         );
-        self.text_center_raw(
-            105,
+        self.text_fitted_raw(
+            160,
+            79,
             &alloc::format!("{:02}.{:02}", f.date_day, f.date_month),
             1,
+            60,
             t.on_surface_variant,
         );
         let weather = crate::weather::snapshot();
         if weather.valid {
-            self.text_center_raw(
-                126,
-                &alloc::format!("{} °C", weather.temp / 10),
+            self.text_fitted_raw(
+                160,
+                102,
+                &alloc::format!("{}°", weather.temp / 10),
                 1,
+                60,
                 t.on_surface_variant,
             );
         }
@@ -136,19 +142,19 @@ impl Surface {
         let start = if f.cursor == 4 { 1 } else { 0 };
         for row in 0..4 {
             let i = start + row;
-            let y = 149 + row as i32 * 30;
+            let y = 137 + row as i32 * 35;
             let selected = f.cursor as usize == i;
             let ink = Self::focus_ink(t, selected);
             self.round_rect(
                 10,
                 y,
                 220,
-                27,
-                12,
+                31,
+                14,
                 if selected { t.primary } else { t.surface_high },
             );
-            self.symbol(icons[i], 28, y + 13, ink);
-            self.text_fitted_raw(48, y + 5, labels[i], 1, 171, ink);
+            self.symbol(icons[i], 31, y + 15, ink);
+            self.text_fitted_raw(53, y + 8, labels[i], 1, 166, ink);
         }
     }
 

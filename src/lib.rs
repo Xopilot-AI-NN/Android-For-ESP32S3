@@ -1,5 +1,9 @@
+#[path = "../system/app/Browser/main.rs"]
+pub mod browser;
 #[path = "catalog.rs"]
 pub mod catalog;
+#[path = "../system/app/Contacts/main.rs"]
+pub mod contacts;
 #[path = "../system/app/Gallery/main.rs"]
 pub mod gallery;
 #[path = "../system/app/Gmail/main.rs"]
@@ -10,6 +14,8 @@ pub mod google_calendar;
 pub mod google_search;
 #[path = "../system/app/BluetoothKeyboard/main.rs"]
 pub mod keyboard_app;
+#[path = "../system/app/Messages/main.rs"]
+pub mod messages;
 #[path = "../shared/remote.rs"]
 pub mod remote;
 #[path = "../system/app/Translator/main.rs"]
@@ -66,7 +72,11 @@ pub const FOCUS: u8 = 21;
 /// Стабильный ID приложения PHONE; сохраняется при перестановке меню.
 pub const PHONE: u8 = 22;
 /// Количество элементов соответствующей таблицы/меню.
-pub const COUNT: u8 = 19;
+pub const CONTACTS: u8 = 29;
+pub const MESSAGES: u8 = 30;
+pub const BROWSER: u8 = 31;
+pub const DIAGNOSTIC_PAGES: u8 = 9;
+pub const COUNT: u8 = 21;
 /// Stable IDs survive launcher reordering and saved system images.
 pub const LAUNCHER: [u8; COUNT as usize] = catalog::LAUNCHER;
 /// Преобразует позицию меню в стабильный идентификатор приложения.
@@ -74,7 +84,7 @@ pub fn launcher_id(index: u8) -> u8 {
     LAUNCHER.get(usize::from(index)).copied().unwrap_or(NONE)
 }
 /// Названия приложений по их стабильным ID.
-pub const LABELS: [&str; 29] = catalog::LABELS;
+pub const LABELS: [&str; 32] = catalog::LABELS;
 /// Возвращает системный экран для приложения, если оно использует старый ABI.
 pub fn route(index: u8) -> Option<u8> {
     catalog::COMPONENTS
@@ -89,6 +99,7 @@ pub struct View {
     pub gallery: gallery::View,
     pub keyboard_app: keyboard_app::View,
     pub remote: remote::View,
+    pub browser: browser::View,
     /// Индекс текущей цели навигации.
     pub cursor: u8,
     /// Текстовое содержимое в ограниченном буфере.
@@ -98,6 +109,7 @@ pub struct View {
     /// Время работы устройства с начала запуска.
     pub uptime: u64,
     /// Свободная память, КиБ.
+    pub temperature_deci_c: Option<i32>,
     pub free_kib: u32,
     /// Свободная внутренняя RAM, КиБ.
     pub internal_kib: u32,
@@ -138,10 +150,12 @@ impl Default for View {
             gallery: gallery::View::default(),
             keyboard_app: keyboard_app::View::default(),
             remote: remote::View::default(),
+            browser: browser::View::default(),
             cursor: 0,
             text: [0; 32],
             len: 0,
             uptime: 0,
+            temperature_deci_c: None,
             free_kib: 0,
             internal_kib: 0,
             script_us: 0,
@@ -188,7 +202,12 @@ pub struct State {
     google_calendar: google_calendar::Controller,
     gmail: gmail::Controller,
     translator: translator::Controller,
+    contacts: contacts::Controller,
+    messages: messages::Controller,
+    browser: browser::Controller,
+    browser_from_search: bool,
     gallery_from_files: bool,
+    calendar_events: bool,
 }
 impl Default for State {
     /// Задаёт исходное состояние нового экземпляра.
@@ -210,7 +229,12 @@ impl Default for State {
             google_calendar: google_calendar::Controller::default(),
             gmail: gmail::Controller::default(),
             translator: translator::Controller::default(),
+            contacts: contacts::Controller::default(),
+            messages: messages::Controller::default(),
+            browser: browser::Controller::default(),
+            browser_from_search: false,
             gallery_from_files: false,
+            calendar_events: false,
         }
     }
 }
@@ -232,23 +256,31 @@ impl State {
         if self.view.id == GALLERY {
             self.gallery.close();
         }
+        if self.view.id == BROWSER {
+            self.browser.close();
+        }
         self.view.id = NONE;
         self.weather.cancel();
     }
     /// Открывает выбранный режим и подготавливает его состояние.
     pub fn open(&mut self, id: u8) {
+        let id = if id == GOOGLE_CALENDAR { CALENDAR } else { id };
         if !catalog::LAUNCHER.contains(&id) && !matches!(id, DIAGNOSTICS | MEMORY | WORLD) {
             return;
         }
         self.view.id = id;
         self.gallery_from_files = false;
+        self.browser_from_search = false;
         match id {
+            BROWSER => self.browser.open(),
             GALLERY => self.gallery.open(),
             BT_KEYBOARD => self.keyboard_app.open(),
             GOOGLE => self.google.open(),
             GOOGLE_CALENDAR => self.google_calendar.open(),
             GMAIL => self.gmail.open(),
             TRANSLATOR => self.translator.open(),
+            CONTACTS => self.contacts.open(),
+            MESSAGES => self.messages.open(),
             _ => {}
         }
         if matches!(id, FILES | EDITOR) {
@@ -260,6 +292,8 @@ impl State {
 
         if id == CALENDAR {
             self.tools.calendar_open();
+            self.google_calendar.open();
+            self.calendar_events = false;
         }
 
         self.view.cursor = if id == MEMORY {
@@ -274,8 +308,20 @@ impl State {
     }
     /// Рисует экран cancel с актуальным состоянием и фокусом.
     pub fn cancel_editor(&mut self) -> bool {
-        if self.view.id == GALLERY {
+        if self.view.id == BROWSER {
+            if self.browser.back() {
+                true
+            } else if self.browser_from_search {
+                self.browser.close();
+                self.view.id = GOOGLE;
+                self.browser_from_search = false;
+                true
+            } else {
+                false
+            }
+        } else if self.view.id == GALLERY {
             if self.gallery_from_files {
+                self.gallery.close();
                 self.view.id = FILES;
                 self.gallery_from_files = false;
                 true
@@ -286,10 +332,17 @@ impl State {
             self.keyboard_app.back()
         } else if self.view.id == GOOGLE {
             self.google.back()
-        } else if self.view.id == GOOGLE_CALENDAR {
-            self.google_calendar.back()
+        } else if self.view.id == CALENDAR && self.calendar_events {
+            if !self.google_calendar.back() {
+                self.calendar_events = false;
+            }
+            true
         } else if self.view.id == GMAIL {
             self.gmail.back()
+        } else if self.view.id == MESSAGES {
+            self.messages.back()
+        } else if self.view.id == CONTACTS {
+            self.contacts.back()
         } else if self.view.id == TRANSLATOR {
             self.translator.back()
         } else if matches!(self.view.id, FILES | EDITOR) {
@@ -303,9 +356,18 @@ impl State {
     /// Выполняет очередной неблокирующий шаг обработки и проверяет готовые результаты.
     pub fn poll(&mut self) {
         self.google.poll();
+        if self.view.id == BROWSER {
+            self.browser.poll();
+        }
+        if let Some(id) = browser::take_open() {
+            self.view.id = BROWSER;
+            self.browser_from_search = true;
+            self.browser.open_result(id);
+        }
         self.google_calendar.poll();
         self.gmail.poll();
         self.translator.poll();
+        self.contacts.poll();
         self.files.poll();
         self.tasks.poll();
         self.gallery.poll();
@@ -320,13 +382,27 @@ impl State {
     pub fn view(&self) -> View {
         let mut view = self.view;
         view.tools = self.tools;
+        if view.id == CALENDAR && !self.calendar_events {
+            view.remote.days = remote::calendar_days(self.tools.month);
+        }
         match view.id {
-            GALLERY => view.gallery = self.gallery.view(),
+            BROWSER => view.browser = self.browser.view(),
+            GALLERY => {
+                view.gallery = self.gallery.view();
+                if self.gallery.cloud() {
+                    view.remote = self.gallery.cloud_view();
+                }
+            }
             BT_KEYBOARD => view.keyboard_app = self.keyboard_app.view(),
             GOOGLE => view.remote = self.google.view(),
-            GOOGLE_CALENDAR => view.remote = self.google_calendar.view(),
+            CALENDAR if self.calendar_events => {
+                view.remote = self.google_calendar.view();
+                view.cursor = 1;
+            }
             GMAIL => view.remote = self.gmail.view(),
             TRANSLATOR => view.remote = self.translator.view(),
+            CONTACTS => view.remote = self.contacts.view(),
+            MESSAGES => view.remote = self.messages.view(),
             _ => {}
         }
         if matches!(view.id, FILES | EDITOR) {
@@ -379,6 +455,12 @@ impl State {
     /// Work is performed only on input; utility pages have no polling tasks.
     pub fn event(&mut self, event: RuntimeEvent) -> Option<u8> {
         match self.view.id {
+            BROWSER => {
+                if self.browser.event(event) {
+                    self.close();
+                }
+                return None;
+            }
             GALLERY => {
                 self.gallery.event(event);
                 return None;
@@ -397,6 +479,14 @@ impl State {
             }
             GMAIL => {
                 self.gmail.event(event);
+                return None;
+            }
+            CONTACTS => {
+                self.contacts.event(event);
+                return None;
+            }
+            MESSAGES => {
+                self.messages.event(event);
                 return None;
             }
             TRANSLATOR => {
@@ -421,7 +511,26 @@ impl State {
                 return None;
             }
             CALENDAR => {
-                self.tools.calendar_event(event);
+                if matches!(event, RuntimeEvent::Click(2)) {
+                    self.calendar_events = !self.calendar_events;
+                    if self.calendar_events {
+                        self.google_calendar.open_month(self.tools.month);
+                    }
+                } else if self.calendar_events {
+                    let event = if matches!(event, RuntimeEvent::Click(_)) {
+                        RuntimeEvent::Press
+                    } else {
+                        event
+                    };
+                    self.google_calendar.event(event);
+                } else {
+                    let event = if matches!(event, RuntimeEvent::Click(_)) {
+                        RuntimeEvent::Press
+                    } else {
+                        event
+                    };
+                    self.tools.calendar_event(event);
+                }
                 return None;
             }
 
@@ -448,6 +557,7 @@ impl State {
             FILES => i32::from(crate::wallpaper::builtin_count()),
             SHARE => 3,
             MEMORY => 5,
+            DIAGNOSTICS => i32::from(DIAGNOSTIC_PAGES),
             _ => 5,
         };
         match event {

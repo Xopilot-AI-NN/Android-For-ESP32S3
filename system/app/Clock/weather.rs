@@ -18,7 +18,7 @@ impl Surface {
                 if active {
                     t.primary_container
                 } else {
-                    t.surface
+                    t.surface_high
                 },
             );
             self.symbol(Symbol::World, 29, y + 25, t.primary);

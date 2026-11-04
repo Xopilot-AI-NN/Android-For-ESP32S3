@@ -1,4 +1,4 @@
-//! Просмотр Google Calendar через общий Gateway; локальная сетка календаря остаётся отдельной.
+//! Просмотр Google Calendar через общий Gateway; контроллер событий единого приложения «Календарь».
 use crate::apps::remote::{Controller as Remote, Endpoint};
 pub struct Calendar;
 impl Endpoint for Calendar {
