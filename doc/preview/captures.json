@@ -1,0 +1,37 @@
+{
+  "date": "2026-11-04",
+  "timezone": "Europe/Minsk",
+  "source": "framebuffer of the connected physical ESP32-S3",
+  "method": "ZADB screencap, SHOTv1 header and CRC verification, RGB565 to PNG",
+  "native_size": [
+    240,
+    280
+  ],
+  "firmware": "installed build, not reflashed for this preview",
+  "captures": [
+    {
+      "file": "device/browser.png",
+      "sha256": "f5daf04edbd1cbcff7ab756027ec7922171f9592abfb901badf45c968622349e"
+    },
+    {
+      "file": "device/calendar.png",
+      "sha256": "ac5e184ee8f13ffd7369c66d046023dff2bfc123fb7eecc63141da95645bccbb"
+    },
+    {
+      "file": "device/clock-tools.png",
+      "sha256": "06765cee2b50f6e61397094c51da7c70cdc7cd795b63c9842e323bf07268118c"
+    },
+    {
+      "file": "device/launcher.png",
+      "sha256": "7e91c464732f2528e953b33cfd0115c8a661551cc0e870f0b8125e812a2ee557"
+    },
+    {
+      "file": "device/settings.png",
+      "sha256": "35fed04d4a08364fdd87770edb5f2d245e2bad25fc1e16b4141786703b13a684"
+    },
+    {
+      "file": "device/watch.png",
+      "sha256": "cffe7721ac914430883e8bec31feb9a9ea551df6124a69281b01a5d9fe1c44c4"
+    }
+  ]
+}

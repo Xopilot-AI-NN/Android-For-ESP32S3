@@ -15,6 +15,23 @@ Google Gateway: [запуск на телефоне через Termux и на П
 17.2.1 provides an encoder-first Wear interface with on-watch weather, native
 utilities and ordinary wireless ADB. Browser remote control has been removed.
 
+## Превью интерфейса
+
+![Шесть экранов AOSP Wear с подключённых часов](doc/preview/firmware-device.png)
+
+Снимки буфера экрана **физического ESP32-S3**, снятые 4 ноября 2026 года.
+Исходное разрешение каждого кадра — **240×280**.
+[Отдельные PNG и способ съёмки](doc/preview/README.md).
+
+### Air Keyboard — программный стенд
+
+![Full, Inline и меню Air Keyboard](doc/air-keyboard/preview.png)
+
+Кадры выше построены штатным RGB565-рендерером из кода нового приложения.
+На подключённых часах эта версия пока не установлена. Сейчас доступен тестовый
+ввод энкодером; MPU6050 ещё не установлен, управление движением руки не реализовано.
+[Состояние реализации и инструкция](doc/air-keyboard/README.md).
+
 ```bash
 ./flash pc  # Запуск с образом на ПК, без карты памяти
 ./flash sd  # Запуск с microSD
