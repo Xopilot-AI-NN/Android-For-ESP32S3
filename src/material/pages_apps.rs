@@ -13,6 +13,10 @@ impl Surface {
         use crate::apps::*;
         let a = f.app;
         match a.id {
+            AIR_KEYBOARD => {
+                self.air_keyboard_page(f, t);
+                return;
+            }
             BROWSER => {
                 self.browser_page(f, t);
                 return;

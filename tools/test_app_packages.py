@@ -14,8 +14,8 @@ class AppPackagesTests(unittest.TestCase):
 
     def test_all_launcher_apps_have_real_sources(self):
         catalog = builder.validate_app_packages()
-        self.assertEqual(sum(entry.get("launcher", False) for entry in catalog), 21)
-        self.assertEqual(len(catalog), 25)
+        self.assertEqual(sum(entry.get("launcher", False) for entry in catalog), 22)
+        self.assertEqual(len(catalog), 26)
         self.assertFalse((builder.ROOT / "system/app").exists())
         self.assertFalse((builder.ROOT / "system/priv-app").exists())
 

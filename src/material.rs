@@ -732,3 +732,6 @@ pub(crate) fn body_character_width(character: char) -> i32 {
 
 #[path = "../../App/system/app/Browser/view.rs"]
 mod app_browser_view;
+
+#[path = "../../App/system/app/AirKeyboard/view.rs"]
+mod app_air_keyboard_view;

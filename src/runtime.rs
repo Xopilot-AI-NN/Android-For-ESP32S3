@@ -648,6 +648,7 @@ impl Runtime {
     pub fn set_bluetooth_status(&mut self, status: u8, pin: Option<u32>) -> bool {
         let changed = self.bluetooth_status != status || self.bluetooth_pin != pin;
         self.bluetooth_status = status;
+        self.native_app.bluetooth_status(status);
         if !matches!(status, 2 | 3) {
             self.playback = None;
         }

@@ -106,6 +106,9 @@ fn main() {
         ("diagnostics-display",1,0),
         ("diagnostics-render",1,0),
         ("diagnostics-network",1,0),
+        ("air-keyboard-full",1,0),
+        ("air-keyboard-inline",1,0),
+        ("air-keyboard-menu",1,0),
         ("browser",1,0),
         ("browser-page",1,0),
         ("browser-light",1,0),
@@ -444,6 +447,16 @@ fn main() {
         if scenario.starts_with("diagnostics-") {
             frame.app.id=apps::DIAGNOSTICS;
             frame.app.cursor=match scenario {"diagnostics-display"=>5,"diagnostics-render"=>6,_=>7};
+        }
+        if scenario.starts_with("air-keyboard") {
+            frame.app.id=apps::AIR_KEYBOARD;
+            let v=&mut frame.app.air_keyboard;
+            let text="Приве\nAir Keyboard";
+            v.text[..text.len()].copy_from_slice(text.as_bytes()); v.len=text.len() as u16;
+            v.caret="Приве".len() as u16; v.preview=Some('т'); v.selected=28;
+            v.inline=scenario=="air-keyboard-inline";
+            v.menu=scenario=="air-keyboard-menu";
+            v.menu_index=3;
         }
         if scenario.starts_with("browser") {
             frame.app.id=apps::BROWSER;

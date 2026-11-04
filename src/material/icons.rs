@@ -165,7 +165,7 @@ impl Surface {
                 self.line(cx - 3, cy, cx + 5, cy + 8, 2, c);
                 return;
             }
-            crate::apps::BT_KEYBOARD => {
+            crate::apps::BT_KEYBOARD | crate::apps::AIR_KEYBOARD => {
                 self.round_rect(cx - 14, cy - 9, 28, 19, 3, c);
                 let ink = rgb565(8, 20, 17);
                 for row in 0..2 {

@@ -619,7 +619,7 @@ mod tests {
             .unwrap();
         assert_eq!(frame(&mut os).cursor, apps::COUNT - 1);
         os.dispatch(RuntimeEvent::Press).unwrap();
-        assert_eq!(frame(&mut os).app.id, apps::BROWSER);
+        assert_eq!(frame(&mut os).app.id, apps::AIR_KEYBOARD);
         assert_eq!(os.state() & (127 << 9), brightness);
         os.dispatch(RuntimeEvent::Back).unwrap();
         os.dispatch(RuntimeEvent::Rotate(1)).unwrap();
