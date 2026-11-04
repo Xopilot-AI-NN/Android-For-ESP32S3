@@ -94,6 +94,7 @@ struct State {
     revision: u32,
     message: &'static str,
     caches: [Option<Arc<Cache>>; 8],
+    empty_cache: Option<Arc<Cache>>,
     image: Option<Arc<MailImage>>,
     image_kind: u8,
     online: bool,
@@ -127,6 +128,7 @@ impl State {
             message: "Настройте Gateway",
             // Readers clone an Arc instead of the entire JSON tree each frame.
             caches: [const { None }; 8],
+            empty_cache: None,
             image: None,
             image_kind: 0,
             online: false,
@@ -366,16 +368,24 @@ pub fn mail_image(kind: u8) -> Option<Arc<MailImage>> {
 /// A snapshot shares immutable JSON with the service. Replacing or clearing a
 /// cache never changes a view that is already being painted.
 pub fn cache(kind: u8) -> Arc<Cache> {
-    let cached = if crate::file_store::external_access() {
-        critical_section::with(|cs| STATE.borrow_ref(cs).caches[usize::from(kind.min(7))].clone())
-    } else {
-        None
-    };
-    cached.unwrap_or_else(|| {
-        Arc::new(Cache {
-            value: Value::Null,
-            stamp: 0,
-        })
+    let accessible = crate::file_store::external_access();
+    critical_section::with(|cs| {
+        let mut s = STATE.borrow_ref_mut(cs);
+        if accessible {
+            if let Some(cache) = &s.caches[usize::from(kind.min(7))] {
+                return cache.clone();
+            }
+        }
+        // Empty and locked screens are painted too. Share their empty snapshot
+        // instead of allocating another Arc on every frame before the first sync.
+        s.empty_cache
+            .get_or_insert_with(|| {
+                Arc::new(Cache {
+                    value: Value::Null,
+                    stamp: 0,
+                })
+            })
+            .clone()
     })
 }
 
@@ -749,6 +759,17 @@ fn masked_email(v: &str) -> String {
 }
 /// Ответ ограничен до разбора; ID защищает от ответов старой привязки после отмены/выхода.
 pub(crate) fn complete(id: u32, status: u16, bytes: &[u8]) {
+    // A cancelled request can still finish in the network task. Discard it
+    // before parsing JSON or decompressing an image; recheck again at commit.
+    if !critical_section::with(|cs| {
+        STATE
+            .borrow_ref(cs)
+            .active
+            .as_ref()
+            .is_some_and(|a| a.0 == id)
+    }) {
+        return;
+    }
     let mut value = if bytes.len() <= RESPONSE_LIMIT {
         serde_json::from_slice::<Value>(bytes).ok()
     } else {
@@ -1043,6 +1064,19 @@ pub(crate) mod tests {
             json!({"account":{"email":"fixture@example.invalid"},"granted_services":["calendar","gmail"]}),
         );
     }
+    #[test]
+    fn empty_cache_snapshots_are_shared_before_the_first_sync() {
+        setup();
+        let empty = cache(2);
+        assert!(empty.value.is_null());
+        assert_eq!(empty.stamp, 0);
+        assert!(Arc::ptr_eq(&empty, &cache(2)));
+        assert!(Arc::ptr_eq(&empty, &cache(5)));
+        assert!(request(Operation::Logout));
+        assert!(Arc::ptr_eq(&empty, &cache(7)));
+        reset();
+    }
+
     #[test]
     fn cache_snapshots_share_json_and_survive_service_replacement() {
         connected();
