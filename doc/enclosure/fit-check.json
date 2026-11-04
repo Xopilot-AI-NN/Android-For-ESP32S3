@@ -3,6 +3,180 @@
   "limits": "Conservative blockers, not exact overlap volumes. Missing components, model identity, clearances and tolerances are not verified.",
   "component_collisions": [
     {
+      "a": "DISPLAY — LCDWIKI MSP1691 reference, revision unconfirmed",
+      "b": "ENCODER — bare blue push encoder, NO PCB",
+      "intersections": [
+        {
+          "a_part": "LCD rear SMD <=1.10 — clearance only",
+          "b_part": "Encoder blue insulating body",
+          "overlap_bounds_mm": [
+            12.0,
+            4.6,
+            0.5
+          ],
+          "overlap_box": [
+            [
+              2.8000001907348633,
+              14.800000190734863
+            ],
+            [
+              10.899999618530273,
+              15.5
+            ],
+            [
+              11.399999618530273,
+              11.899999618530273
+            ]
+          ],
+          "evidence": "surface_intersection"
+        },
+        {
+          "a_part": "LCD rear SMD <=1.10 — clearance only",
+          "b_part": "Encoder folded retaining strap.001",
+          "overlap_bounds_mm": [
+            11.8,
+            0.5,
+            0.65
+          ],
+          "overlap_box": [
+            [
+              2.9000000953674316,
+              14.700000762939453
+            ],
+            [
+              13.149999618530273,
+              13.649999618530273
+            ],
+            [
+              11.399999618530273,
+              12.050000190734863
+            ]
+          ],
+          "evidence": "surface_intersection"
+        },
+        {
+          "a_part": "LCD rear SMD <=1.10 — clearance only",
+          "b_part": "Encoder rear T-shaped retaining clip",
+          "overlap_bounds_mm": [
+            11.8,
+            0.35,
+            0.5
+          ],
+          "overlap_box": [
+            [
+              2.9000000953674316,
+              14.700000762939453
+            ],
+            [
+              10.75,
+              11.09999942779541
+            ],
+            [
+              11.399999618530273,
+              11.899999618530273
+            ]
+          ],
+          "evidence": "surface_intersection"
+        },
+        {
+          "a_part": "LCD rear SMD <=1.10 — clearance only",
+          "b_part": "Encoder switch bent lead",
+          "overlap_bounds_mm": [
+            0.6,
+            2.8,
+            0.45
+          ],
+          "overlap_box": [
+            [
+              6.0,
+              6.600000381469727
+            ],
+            [
+              9.350000381469727,
+              12.149999618530273
+            ],
+            [
+              11.774999618530273,
+              12.225000381469727
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "LCD rear SMD <=1.10 — clearance only",
+          "b_part": "Encoder switch bent lead.001",
+          "overlap_bounds_mm": [
+            0.6,
+            2.8,
+            0.45
+          ],
+          "overlap_box": [
+            [
+              11.0,
+              11.600000381469727
+            ],
+            [
+              9.350000381469727,
+              12.149999618530273
+            ],
+            [
+              11.774999618530273,
+              12.225000381469727
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "a_part": "LCD rear SMD <=1.10 — clearance only",
+          "b_part": "Encoder switch lead root",
+          "overlap_bounds_mm": [
+            0.6,
+            0.5,
+            0.7
+          ],
+          "overlap_box": [
+            [
+              6.0,
+              6.600000381469727
+            ],
+            [
+              11.649999618530273,
+              12.149999618530273
+            ],
+            [
+              11.399999618530273,
+              12.100000381469727
+            ]
+          ],
+          "evidence": "surface_intersection"
+        },
+        {
+          "a_part": "LCD rear SMD <=1.10 — clearance only",
+          "b_part": "Encoder switch lead root.001",
+          "overlap_bounds_mm": [
+            0.6,
+            0.5,
+            0.7
+          ],
+          "overlap_box": [
+            [
+              11.0,
+              11.600000381469727
+            ],
+            [
+              11.649999618530273,
+              12.149999618530273
+            ],
+            [
+              11.399999618530273,
+              12.100000381469727
+            ]
+          ],
+          "evidence": "surface_intersection"
+        }
+      ]
+    },
+    {
       "a": "ESP32-S3-Zero — official Waveshare v2 CAD",
       "b": "SD MODULE — 20×18, height assumed",
       "intersections": [
@@ -194,36 +368,6 @@
             [
               5.18048095703125,
               5.434481143951416
-            ]
-          ],
-          "evidence": "surface_intersection"
-        }
-      ]
-    },
-    {
-      "a": "ESP32-S3-Zero — official Waveshare v2 CAD",
-      "b": "ENCODER — board 15×17, height assumed",
-      "intersections": [
-        {
-          "a_part": "ESP CAD 0",
-          "b_part": "Encoder metal body",
-          "overlap_bounds_mm": [
-            1.209,
-            1.543,
-            1.6
-          ],
-          "overlap_box": [
-            [
-              2.8000001907348633,
-              4.008628845214844
-            ],
-            [
-              5.100000381469727,
-              6.642647743225098
-            ],
-            [
-              3.58048152923584,
-              5.18048095703125
             ]
           ],
           "evidence": "surface_intersection"
@@ -1167,16 +1311,16 @@
       ]
     },
     {
-      "a": "ENCODER — board 15×17, height assumed",
+      "a": "ENCODER — bare blue push encoder, NO PCB",
       "b": "BATTERY — selected 28×27×5.7",
       "intersections": [
         {
-          "a_part": "Encoder metal body",
+          "a_part": "Encoder blue insulating body",
           "b_part": "Battery pouch",
           "overlap_bounds_mm": [
             2.2,
-            9.9,
-            3.6
+            4.1,
+            5.7
           ],
           "overlap_box": [
             [
@@ -1184,66 +1328,36 @@
               5.0
             ],
             [
-              5.100000381469727,
+              10.899999618530273,
               15.0
             ],
             [
-              3.0,
+              0.9000000953674316,
               6.599999904632568
             ]
           ],
           "evidence": "surface_intersection"
         },
         {
-          "a_part": "Encoder PCB",
+          "a_part": "Encoder mounting ear",
           "b_part": "Battery pouch",
           "overlap_bounds_mm": [
-            3.7,
-            14.9,
-            1.0
+            1.4,
+            1.5,
+            2.2
           ],
           "overlap_box": [
             [
-              1.3000001907348633,
-              5.0
+              1.2999999523162842,
+              2.700000047683716
             ],
             [
-              0.10000038146972656,
+              13.5,
               15.0
             ],
             [
-              2.0,
-              3.0
-            ]
-          ],
-          "evidence": "surface_intersection"
-        }
-      ]
-    },
-    {
-      "a": "ENCODER — board 15×17, height assumed",
-      "b": "TPS61023 — 18×11×5",
-      "intersections": [
-        {
-          "a_part": "Encoder PCB",
-          "b_part": "TPS input capacitor — visual approximation",
-          "overlap_bounds_mm": [
-            1.6,
-            1.3,
-            1.0
-          ],
-          "overlap_box": [
-            [
-              14.699999809265137,
-              16.299999237060547
-            ],
-            [
-              0.10000038146972656,
-              1.3999998569488525
-            ],
-            [
-              2.0,
-              3.0
+              4.400000095367432,
+              6.599999904632568
             ]
           ],
           "evidence": "surface_intersection"
@@ -1413,27 +1527,50 @@
       ]
     },
     {
-      "component": "ENCODER — board 15×17, height assumed",
+      "component": "ENCODER — bare blue push encoder, NO PCB",
       "intersections": [
         {
-          "part": "Encoder PCB",
+          "part": "Encoder mounting ear",
           "overlap_bounds_mm": [
-            15.0,
-            17.0,
-            1.0
+            1.4,
+            2.4,
+            3.2
           ],
           "overlap_box": [
             [
-              1.3000001907348633,
-              16.299999237060547
+              1.2999999523162842,
+              2.700000047683716
             ],
             [
-              0.10000038146972656,
+              13.5,
+              15.899999618530273
+            ],
+            [
+              4.400000095367432,
+              7.599999904632568
+            ]
+          ],
+          "evidence": "sampled_overlap_interior"
+        },
+        {
+          "part": "Encoder stamped metal face",
+          "overlap_bounds_mm": [
+            12.4,
+            0.8,
+            12.4
+          ],
+          "overlap_box": [
+            [
+              2.6000003814697266,
+              15.0
+            ],
+            [
+              16.30000114440918,
               17.100000381469727
             ],
             [
-              2.0,
-              3.0
+              -0.19999980926513672,
+              12.199999809265137
             ]
           ],
           "evidence": "surface_intersection"
@@ -1472,13 +1609,13 @@
   "collision_groups": [
     "BATTERY — selected 28×27×5.7",
     "DISPLAY — LCDWIKI MSP1691 reference, revision unconfirmed",
-    "ENCODER — board 15×17, height assumed",
+    "ENCODER — bare blue push encoder, NO PCB",
     "ESP32-S3-Zero — official Waveshare v2 CAD",
     "HEATSINK — 15×10×5",
     "SD MODULE — 20×18, height assumed",
     "TPS61023 — 18×11×5"
   ],
-  "component_pair_count": 9,
+  "component_pair_count": 8,
   "case_collision_group_count": 5,
   "all_component_bounds": {
     "DISPLAY — LCDWIKI MSP1691 reference, revision unconfirmed": [
@@ -1523,18 +1660,18 @@
         8.85
       ]
     ],
-    "ENCODER — board 15×17, height assumed": [
+    "ENCODER — bare blue push encoder, NO PCB": [
       [
         1.3,
         16.3
       ],
       [
-        0.1,
-        23.1
+        8.85,
+        37.7
       ],
       [
-        2.0,
-        10.0
+        -1.5,
+        13.5
       ]
     ],
     "BATTERY — selected 28×27×5.7": [

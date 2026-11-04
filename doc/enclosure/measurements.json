@@ -39,9 +39,12 @@
         null
       ],
       "shaft_axis_and_protrusion": null,
-      "module_name": "KY-040",
-      "identification_source": "User: blue PCB, push-button encoder; EC12E listing is only a similar example",
-      "reference_listing": "https://ozon.by/product/2158237959/"
+      "module_name": "KY-040 (user designation; bare encoder shown)",
+      "identification_source": "Latest detailed photos of the installed encoder supplied by user; nominal 15x17 mm retained",
+      "reference_listing": "https://ozon.by/product/2158237959/",
+      "construction": "Bare blue push-button rotary encoder, rear T-shaped stamped retainer, bent solder terminals, external nut/washer and black grip cap; no breakout PCB",
+      "cap_dimensions_measured": false,
+      "third_dimension_measured": false
     },
     "tps61023_module": {
       "size": [

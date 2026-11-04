@@ -138,10 +138,72 @@ reserve=group('SD card reserve +15 mm',(10,-.6,6.9),[18,35,1],False,'Conservativ
 obj=box(reserve,'SD conservative insertion envelope',(18,35,1),(0,0,0),contacts,clearances)
 obj.display_type='WIRE';obj.hide_render=True
 
-encoder=group('ENCODER — board 15×17, height assumed',(8.8,8.6,2),[15,17,8.2],False,'Shaft follows existing cutter axis; board/body/shaft dimensions are approximate')
-box(encoder,'Encoder PCB',(15,17,1),(0,0,.5),pcb)
-box(encoder,'Encoder metal body',(12,11,7),(0,2,4.5),metal)
-cylinder(encoder,'Encoder shaft',3,8,(0,10.5,4),metal,'Y')
+# Latest user photo shows a bare blue encoder, not a KY-040 breakout PCB.
+# Keep the supplied 15x17 nominal dimensions. Z, bushing and shaft details remain
+# explicit reference parameters; the image alone is not a dimensioned drawing.
+encoder=group('ENCODER — bare blue push encoder, NO PCB',(8.8,10.9,6),[15,17,12.4],False,'User dimensions 15x17; third dimension 12.4 and shaft details are provisional; photo confirms NO breakout PCB')
+encoder['user_designation']='KY-040'
+encoder['construction']='Bare encoder with push switch; blue plastic, stamped metal, five terminals'
+encoder['nominal_size_mm']='User supplied 15 x 17 mm; third dimension unmeasured'
+encoder['identity_confirmed']=False
+records[-1]['size_mm']=[15,17,None]
+records[-1]['reference_body_z_mm']=12.4
+records[-1]['user_reference_dimensions_mm']=[15,17]
+encoder['photo_reference']='Latest user close-ups: bare blue body, rear T-retainer, bent solder terminals, nut/washer and black cap'
+encoder['dimension_scope']='15x17 supplied by user; axes/subassembly scope not established. Cap/body details below are references, not additional measurements.'
+blue=material('REF bare encoder blue plastic',(.025,.20,.70))
+box(encoder,'Encoder blue insulating body',(12,4.6,11.8),(0,2.3,0),blue)
+box(encoder,'Encoder stamped metal face',(12.4,.8,12.4),(0,5.8,0),metal)
+# Rear T clip seen in the user's close-up, in the XZ plane.
+profile=[(-5.9,5.9),(5.9,5.9),(5.9,4.3),(1.6,4.3),(1.6,-3.5),(.9,-4.4),(-.9,-4.4),(-1.6,-3.5),(-1.6,4.3),(-5.9,4.3)]
+n=len(profile)
+verts=[(x,y,z) for y in [-.15,.20] for x,z in profile]
+faces=[tuple(reversed(range(n))),tuple(range(n,2*n))]
+for i in range(n):j=(i+1)%n;faces.append((i,j,n+j,n+i))
+mesh=bpy.data.meshes.new('Encoder rear T retainer profile');mesh.from_pydata(verts,[],faces);mesh.update()
+obj=bpy.data.objects.new('Encoder rear T-shaped retaining clip',mesh);assembly.objects.link(obj);obj.parent=encoder;obj.data.materials.append(metal)
+
+for x in [-6.8,6.8]:
+    box(encoder,'Encoder mounting ear',(1.4,2.4,3.2),(x,3.8,0),metal)
+for z in [-5.6,5.6]:
+    box(encoder,'Encoder folded retaining strap',(11.8,.5,.9),(0,2.5,z),metal)
+cylinder(encoder,'Encoder threaded bushing — nominal M7 reference',3.5,4,(0,8.2,0),metal,'Y')
+for y in [6.5,7.25,8,8.75,9.5]:
+    cylinder(encoder,'Encoder thread ridge — visual reference',3.6,.18,(0,y,0),metal,'Y')
+cylinder(encoder,'Encoder knurled shaft — nominal 6 mm reference',2.85,6.8,(0,13.6,0),metal,'Y')
+for i in range(18):
+    angle=2*math.pi*i/18
+    rib=box(encoder,'Encoder shaft flute',(.24,6.4,.24),(2.86*math.cos(angle),13.6,2.86*math.sin(angle)),metal)
+    rib.rotation_euler.y=-angle
+# Terminals are bent toward the electronics in the assembled user photographs.
+# Their exact bends and solder joints are not known, so keep the routes explicit.
+for x in [-2.5,0,2.5]:
+    box(encoder,'Encoder A B C lead root',(.6,.5,1.0),(x,.7,-5.6),metal)
+    box(encoder,'Encoder A B C bent lead',(.6,3.0,.45),(x,-.55,-6.0),metal)
+for x in [-2.5,2.5]:
+    box(encoder,'Encoder switch lead root',(.6,.5,1.0),(x,1.0,5.6),metal)
+    box(encoder,'Encoder switch bent lead',(.6,2.8,.45),(x,-.15,6.0),metal)
+# Hardware outside the wall. Dimensions of the cap are a visual 15x17 reference,
+# not confirmation that the original two measurements described only the cap.
+cylinder(encoder,'Encoder mounting washer — reference',4.8,.5,(0,7.75,0),metal,'Y')
+bpy.ops.mesh.primitive_cylinder_add(vertices=6,radius=5.5,depth=1.6)
+nut=bpy.context.object;nut.name='Encoder hex mounting nut — reference';move_to(nut,assembly)
+nut.parent=encoder;nut.location=(0,8.8,0);nut.rotation_euler.x=math.pi/2;nut.data.materials.append(metal)
+# A separate removable cap is visible in the new photos.
+cap=cylinder(encoder,'Black grip cap — 15x17 VISUAL REFERENCE',7.5,17,(0,18.3,0),black,'Y')
+cap['measurement_status']='Visual reference only: confirm diameter, length and bore before checking external clearances'
+bpy.context.view_layer.update()
+bore=cylinder(encoder,'TEMP cap bore',3.1,12,(0,15.0,0),black,'Y')
+bpy.context.view_layer.update();bpy.context.view_layer.objects.active=cap
+mod=cap.modifiers.new('Shaft bore','BOOLEAN');mod.operation='DIFFERENCE';mod.solver='EXACT';mod.object=bore
+bpy.ops.object.modifier_apply(modifier=mod.name);bpy.data.objects.remove(bore,do_unlink=True)
+# Molded grip scallops; no mechanical dimensions inferred from these details.
+for i in range(10):
+    angle=2*math.pi*i/10
+    tool=cylinder(encoder,'TEMP grip scallop',.75,18,(7.7*math.cos(angle),18.3,7.7*math.sin(angle)),black,'Y')
+    bpy.context.view_layer.update();bpy.context.view_layer.objects.active=cap
+    mod=cap.modifiers.new('Grip scallop','BOOLEAN');mod.operation='DIFFERENCE';mod.solver='EXACT';mod.object=tool
+    bpy.ops.object.modifier_apply(modifier=mod.name);bpy.data.objects.remove(tool,do_unlink=True)
 
 battery=group('BATTERY — selected 28×27×5.7',(-9,1.5,.9),[28,27,5.7],True,'Placed for inspection; overlaps are not resolved; wire exit and protection unknown')
 box(battery,'Battery pouch',(28,27,5.7),(0,0,2.85),battery_mat)
@@ -218,7 +280,8 @@ Placement is preliminary and includes unresolved overlaps. This is not proof of 
 Known XYZ: battery 28×27×5.7, TPS61023 18×11×5, heatsink 15×10×5, TP4056 29×18×5.
 ESP replaced with official Waveshare STEP (confirm actual revision).
 LCD replaced with LCDWIKI drawing reference (confirm actual revision).
-SD and encoder heights/offsets remain assumed. MCP73871 is parked outside the case.
+SD height/offsets remain assumed. Encoder is bare blue, with NO breakout PCB.
+Its supplied dimensions are 15x17; the third dimension and shaft details remain unverified. MCP73871 is parked outside the case.
 The external charger capacitor has not been modeled because its dimensions are unknown.
 The old TP4056 alternative is hidden in its own collection, outside the case.
 The SD +15 mm reserve is a wireframe envelope, not a measured card model.
