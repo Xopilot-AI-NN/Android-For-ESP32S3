@@ -450,7 +450,7 @@ fn main() {
             if scenario!="browser" {
                 let v=&mut frame.app.browser;
                 v.mode=if scenario=="browser-menu"{3}else{2};
-                v.cursor=3;v.pages=3;v.light=scenario=="browser-light";
+                v.cursor=3;v.total=24;v.pages=3;v.light=scenario=="browser-light";
                 let title="Пример HTML-сайта";v.title[..title.len()].copy_from_slice(title.as_bytes());v.title_len=title.len() as u8;
                 for (i,(text,kind,height)) in [("Заголовок",1,31),("Текст сайта на русском языке.",0,18),("• Первый пункт списка",0,18),("Открыть следующую страницу",3,18),("Фото · нажмите для просмотра",4,42)].iter().enumerate(){
                     let row=&mut v.rows[i]; row.text[..text.len()].copy_from_slice(text.as_bytes());row.len=text.len() as u8;row.kind=*kind;row.height=*height;row.selected=i==3;

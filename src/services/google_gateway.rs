@@ -93,7 +93,7 @@ struct State {
     serial: u32,
     revision: u32,
     message: &'static str,
-    caches: [Cache; 8],
+    caches: [Option<Arc<Cache>>; 8],
     image: Option<Arc<MailImage>>,
     image_kind: u8,
     online: bool,
@@ -125,12 +125,8 @@ impl State {
             serial: 1,
             revision: 0,
             message: "Настройте Gateway",
-            caches: [const {
-                Cache {
-                    value: Value::Null,
-                    stamp: 0,
-                }
-            }; 8],
+            // Readers clone an Arc instead of the entire JSON tree each frame.
+            caches: [const { None }; 8],
             image: None,
             image_kind: 0,
             online: false,
@@ -154,10 +150,7 @@ impl State {
         self.pending_email.clear();
         self.pending_services = 0;
         self.services = 0;
-        self.caches = core::array::from_fn(|_| Cache {
-            value: Value::Null,
-            stamp: 0,
-        });
+        self.caches = core::array::from_fn(|_| None);
         self.last_sync.clear();
     }
 }
@@ -370,15 +363,22 @@ pub fn mail_image(kind: u8) -> Option<Arc<MailImage>> {
         }
     })
 }
-pub fn cache(kind: u8) -> Cache {
-    if !crate::file_store::external_access() {
-        return Cache {
+/// A snapshot shares immutable JSON with the service. Replacing or clearing a
+/// cache never changes a view that is already being painted.
+pub fn cache(kind: u8) -> Arc<Cache> {
+    let cached = if crate::file_store::external_access() {
+        critical_section::with(|cs| STATE.borrow_ref(cs).caches[usize::from(kind.min(7))].clone())
+    } else {
+        None
+    };
+    cached.unwrap_or_else(|| {
+        Arc::new(Cache {
             value: Value::Null,
             stamp: 0,
-        };
-    }
-    critical_section::with(|cs| STATE.borrow_ref(cs).caches[usize::from(kind.min(7))].clone())
+        })
+    })
 }
+
 pub fn request(op: Operation) -> bool {
     critical_section::with(|cs| {
         let mut s = STATE.borrow_ref_mut(cs);
@@ -447,16 +447,17 @@ pub fn request(op: Operation) -> bool {
             }
             if let Operation::Data(kind, ref path, _) = op {
                 if kind == 7 {
-                    s.caches[7] = Cache {
-                        value: Value::Null,
-                        stamp: 0,
-                    };
+                    s.caches[7] = None;
                     s.image = None;
                 }
                 if path.contains("/messages/") || path.contains("/search/pages/") {
-                    if let Some(value) = s.caches[kind.min(7) as usize].value.as_object_mut() {
-                        value.remove("body");
-                        value.remove("has_more");
+                    if let Some(cache) = s.caches[kind.min(7) as usize].as_mut() {
+                        // Usually unique; copy only when an older snapshot is
+                        // still held by a reader while a request is started.
+                        if let Some(value) = Arc::make_mut(cache).value.as_object_mut() {
+                            value.remove("body");
+                            value.remove("has_more");
+                        }
                     }
                 }
             }
@@ -819,10 +820,7 @@ pub(crate) fn complete(id: u32, status: u16, bytes: &[u8]) {
             {
                 s.image = None;
                 s.account_epoch = s.account_epoch.wrapping_add(1);
-                s.caches = core::array::from_fn(|_| Cache {
-                    value: Value::Null,
-                    stamp: 0,
-                });
+                s.caches = core::array::from_fn(|_| None);
                 s.queue.push_back(Operation::Me);
             }
             s.changed();
@@ -903,10 +901,7 @@ pub(crate) fn complete(id: u32, status: u16, bytes: &[u8]) {
                 if !s.identity.is_empty() && s.identity != identity {
                     s.image = None;
                     s.account_epoch = s.account_epoch.wrapping_add(1);
-                    s.caches = core::array::from_fn(|_| Cache {
-                        value: Value::Null,
-                        stamp: 0,
-                    });
+                    s.caches = core::array::from_fn(|_| None);
                 }
                 s.identity = identity;
                 s.email = masked_email(v["account"]["email"].as_str().unwrap_or(""));
@@ -917,10 +912,10 @@ pub(crate) fn complete(id: u32, status: u16, bytes: &[u8]) {
             Operation::Sync => {
                 for (kind, key) in [(1, "calendar"), (2, "gmail")] {
                     if v.get(key).is_some() {
-                        s.caches[kind] = Cache {
+                        s.caches[kind] = Some(Arc::new(Cache {
                             value: v[key].clone(),
                             stamp: now(),
-                        };
+                        }));
                     }
                 }
                 s.last_sync = text(&v, "synced_at", 40);
@@ -936,7 +931,10 @@ pub(crate) fn complete(id: u32, status: u16, bytes: &[u8]) {
                     s.last_sync = text(&v, "synced_at", 40);
                 }
                 if v.get("body").is_some() {
-                    if let Some(existing) = s.caches[kind.min(7) as usize].value.as_object() {
+                    if let Some(existing) = s.caches[kind.min(7) as usize]
+                        .as_ref()
+                        .and_then(|cache| cache.value.as_object())
+                    {
                         for key in [
                             "results",
                             "messages",
@@ -953,10 +951,10 @@ pub(crate) fn complete(id: u32, status: u16, bytes: &[u8]) {
                         }
                     }
                 }
-                s.caches[kind.min(7) as usize] = Cache {
+                s.caches[kind.min(7) as usize] = Some(Arc::new(Cache {
                     value: v,
                     stamp: now(),
-                };
+                }));
                 s.message = "Данные обновлены";
             }
             Operation::Logout => {
@@ -1045,6 +1043,29 @@ pub(crate) mod tests {
             json!({"account":{"email":"fixture@example.invalid"},"granted_services":["calendar","gmail"]}),
         );
     }
+    #[test]
+    fn cache_snapshots_share_json_and_survive_service_replacement() {
+        connected();
+        assert!(fetch(2, "", "", 0, "", ""));
+        let r = take_request().unwrap();
+        reply(
+            r.id,
+            json!({"messages":[],"body":"old preview","page_token":""}),
+        );
+        let old = cache(2);
+        assert!(Arc::ptr_eq(&old, &cache(2)));
+        // Starting a detail request removes the service's old body, while a
+        // renderer holding a snapshot must keep seeing a consistent document.
+        assert!(fetch(2, "", "another-message", 0, "", ""));
+        assert_eq!(old.value["body"], "old preview");
+        assert!(cache(2).value.get("body").is_none());
+        let r = take_request().unwrap();
+        reply(r.id, json!({"body":"new preview"}));
+        assert_eq!(cache(2).value["body"], "new preview");
+        assert_eq!(old.value["body"], "old preview");
+        reset();
+    }
+
     #[test]
     fn compressed_mail_preview_renders_real_pixels_and_is_cleared_on_logout() {
         connected();
