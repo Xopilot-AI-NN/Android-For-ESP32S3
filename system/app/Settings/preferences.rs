@@ -11,9 +11,9 @@ impl Runtime {
         self.crown_reverse
     }
     /// Кодирует пользовательские параметры в версионированный формат.
-    pub fn preference_config(&self) -> [u8; 12] {
+    pub fn preference_config(&self) -> [u8; 20] {
         [
-            4,
+            5,
             self.crown_sensitivity,
             u8::from(self.crown_reverse),
             u8::from(self.high_contrast),
@@ -25,13 +25,22 @@ impl Runtime {
             self.wallpaper_level,
             u8::from(self.show_seconds),
             0,
+            u8::from(self.bedtime_auto),
+            self.bedtime_brightness,
+            self.bedtime_start as u8,
+            (self.bedtime_start >> 8) as u8,
+            self.bedtime_end as u8,
+            (self.bedtime_end >> 8) as u8,
+            0,
+            0,
         ]
     }
     /// Восстанавливает совместимые версии пользовательских параметров.
     pub fn restore_preferences(&mut self, raw: &[u8]) {
         if ((raw.len() == 4 && raw[0] == 1)
             || (raw.len() == 8 && raw[0] == 2)
-            || (raw.len() == 12 && matches!(raw[0], 3 | 4)))
+            || (raw.len() == 12 && matches!(raw[0], 3 | 4))
+            || (raw.len() == 20 && raw[0] == 5))
             && raw[1] <= 2
             && raw[2] <= 1
             && raw[3] <= 1
@@ -43,13 +52,23 @@ impl Runtime {
                 self.watch_face = raw[4].min(4);
                 self.wallpaper_enabled = raw[5] != 0;
             }
-            if raw.len() == 12 {
+            if raw.len() >= 12 {
                 self.launcher_grid = raw[6] != 0;
                 self.aod_enabled = raw[7] != 0;
                 self.wallpaper_index = raw[8].min(crate::wallpaper::builtin_count());
-                if raw[0] == 4 {
+                if raw[0] >= 4 {
                     self.wallpaper_level = raw[9].clamp(40, 100);
                     self.show_seconds = raw[10] != 0;
+                }
+            }
+            if raw.len() == 20 {
+                let start = u16::from_le_bytes([raw[14], raw[15]]);
+                let end = u16::from_le_bytes([raw[16], raw[17]]);
+                if raw[12] <= 1 && (30..=40).contains(&raw[13]) && start < 1440 && end < 1440 {
+                    self.bedtime_auto = raw[12] != 0;
+                    self.bedtime_brightness = raw[13];
+                    self.bedtime_start = start;
+                    self.bedtime_end = end;
                 }
             }
         }
@@ -84,5 +103,4 @@ impl Runtime {
         self.security.storage = available;
         self.security.entropy(entropy);
     }
-
 }

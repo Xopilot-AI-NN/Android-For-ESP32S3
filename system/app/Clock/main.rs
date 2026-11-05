@@ -98,64 +98,7 @@ impl Surface {
 
     /// Рисует общий раздел таймера, секундомера, будильника и мирового времени.
     pub(super) fn clock(&mut self, f: MaterialFrame, t: Theme) {
-        self.photo_header(f, "Часы", t);
-        self.round_rect(12, 62, 216, 65, 18, t.surface);
-        let time = Self::time_text(f.time_minutes);
-        self.text_raw(
-            24,
-            74,
-            if f.time_valid {
-                core::str::from_utf8(&time).unwrap_or("--:--")
-            } else {
-                "--:--"
-            },
-            3,
-            t.primary,
-        );
-        self.text_fitted_raw(
-            160,
-            79,
-            &alloc::format!("{:02}.{:02}", f.date_day, f.date_month),
-            1,
-            60,
-            t.on_surface_variant,
-        );
-        let weather = crate::weather::snapshot();
-        if weather.valid {
-            self.text_fitted_raw(
-                160,
-                102,
-                &alloc::format!("{}°", weather.temp / 10),
-                1,
-                60,
-                t.on_surface_variant,
-            );
-        }
-        let labels = ["Будильник", "Таймер", "Секундомер", "Мировые часы", "Назад"];
-        let icons = [
-            Symbol::Alarm,
-            Symbol::Timer,
-            Symbol::Clock,
-            Symbol::World,
-            Symbol::Back,
-        ];
-        let start = if f.cursor == 4 { 1 } else { 0 };
-        for row in 0..4 {
-            let i = start + row;
-            let y = 137 + row as i32 * 35;
-            let selected = f.cursor as usize == i;
-            let ink = Self::focus_ink(t, selected);
-            self.round_rect(
-                10,
-                y,
-                220,
-                31,
-                14,
-                if selected { t.primary } else { t.surface_high },
-            );
-            self.symbol(icons[i], 31, y + 15, ink);
-            self.text_fitted_raw(53, y + 8, labels[i], 1, 166, ink);
-        }
+        self.clock_dock(f,t);
     }
 
     /// Рисует экран секундомера с актуальным состоянием и фокусом.

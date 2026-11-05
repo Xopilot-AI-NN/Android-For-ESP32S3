@@ -39,6 +39,8 @@ impl Default for Row {
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct View {
+    pub tab: u8,
+    pub dock_focus: bool,
     pub mode: u8,
     pub keyboard: KeyboardView,
     pub error: u8,
@@ -61,6 +63,8 @@ pub struct View {
 impl Default for View {
     fn default() -> Self {
         Self {
+            tab: 0,
+            dock_focus: true,
             mode: 0,
             keyboard: Keyboard::default().view,
             error: 0,
@@ -98,6 +102,10 @@ enum Pending {
     Image(u16),
 }
 pub struct Controller {
+    tab: u8,
+    dock_focus: bool,
+    search: crate::apps::google_search::Controller,
+    internal_search: bool,
     active: bool,
     mode: u8,
     cursor: usize,
@@ -116,6 +124,10 @@ pub struct Controller {
 impl Default for Controller {
     fn default() -> Self {
         Self {
+            tab: 0,
+            dock_focus: true,
+            search: crate::apps::google_search::Controller::default(),
+            internal_search: false,
             active: false,
             mode: 0,
             cursor: 0,
@@ -137,18 +149,27 @@ impl Controller {
     pub fn open(&mut self) {
         self.active = true;
         self.mode = 0;
+        self.tab = 0;
+        self.dock_focus = true;
         self.menu = 0;
         self.error = 0;
     }
     pub fn open_result(&mut self, id: String) {
-        self.close();
-        self.open();
+        // A search result is another visit, not a new browser session.
+        self.internal_search = self.active && (self.mode == 6 || self.internal_search);
+        if !self.active {
+            self.open();
+        }
+        web::cancel_data(7);
+        self.dock_focus = false;
+        self.tab = 1;
         self.navigate(serde_json::json!({"result_id":id}), Pending::New);
     }
     pub fn close(&mut self) {
         web::cancel_data(7);
         web::clear_preview(7);
         self.active = false;
+        self.internal_search = false;
         self.pending = None;
         // Closing the app must return its layout/history capacity to the heap.
         self.layout = Layout::default();
@@ -186,6 +207,13 @@ impl Controller {
         }
     }
     pub fn poll(&mut self) {
+        if self.mode == 0 {
+            self.dock_focus = true;
+            self.tab = 0;
+        }
+        if self.active && self.tab == 1 {
+            self.search.poll();
+        }
         if !self.active || self.pending.is_none() {
             return;
         }
@@ -290,9 +318,28 @@ impl Controller {
         }
         self.keyboard = Keyboard::default();
         self.mode = 1;
+        self.dock_focus = false;
         self.error = 0;
     }
+    pub fn click_gestures_active(&self) -> bool {
+        !matches!(self.mode, 1 | 6)
+    }
+    pub fn search_view(&self) -> crate::apps::remote::View {
+        self.search.view()
+    }
     pub fn back(&mut self) -> bool {
+        if self.mode == 6 {
+            if !self.dock_focus {
+                self.search.back();
+                self.dock_focus = true;
+                return true;
+            }
+            return false;
+        }
+        if self.mode == 5 && !self.dock_focus {
+            self.dock_focus = true;
+            return true;
+        }
         if self.pending.is_some() {
             web::cancel_data(7);
             self.pending = None;
@@ -314,12 +361,64 @@ impl Controller {
                 self.history(self.current - 1);
                 true
             }
+            2 if self.tab == 1 => {
+                if self.internal_search {
+                    self.mode = 6;
+                    self.dock_focus = false;
+                    true
+                } else {
+                    false
+                }
+            }
+            2 => {
+                self.mode = 0;
+                self.tab = 0;
+                self.dock_focus = true;
+                true
+            }
             _ => false,
         }
     }
     /// true asks the native app router to close the browser.
     pub fn event(&mut self, event: RuntimeEvent) -> bool {
         self.poll();
+        let single = if event == RuntimeEvent::Click(1) {
+            RuntimeEvent::Press
+        } else {
+            event
+        };
+        if self.dock_focus && matches!(self.mode, 0 | 5 | 6) {
+            match single {
+                RuntimeEvent::Click(2) => {
+                    self.mode = 3;
+                    self.menu = 0;
+                    self.dock_focus = false;
+                }
+                RuntimeEvent::Rotate(d) | RuntimeEvent::Swipe(d) => {
+                    self.tab = (i32::from(self.tab) + d.rem_euclid(3)).rem_euclid(3) as u8;
+                    self.mode = [0, 6, 5][self.tab as usize];
+                    self.menu = self.current;
+                }
+                RuntimeEvent::Press => match self.tab {
+                    0 => self.address(),
+                    1 => {
+                        self.dock_focus = false;
+                        if self.search.view().mode == 0 {
+                            self.search.begin_input();
+                        }
+                    }
+                    _ => {
+                        self.dock_focus = false;
+                    }
+                },
+                _ => {}
+            }
+            return false;
+        }
+        if self.mode == 6 {
+            self.search.event(single);
+            return false;
+        }
         if matches!(event, RuntimeEvent::Click(2)) && self.mode != 1 {
             self.mode = 3;
             self.menu = 0;
@@ -341,6 +440,9 @@ impl Controller {
                         self.address.pop();
                         self.error = 0;
                     }
+                    KeyAction::Suggestion(word) => {
+                        crate::text_input::complete(&mut self.address, word);
+                    }
                     KeyAction::Submit => {
                         if self.address.trim().is_empty() {
                             self.error = 2;
@@ -353,11 +455,13 @@ impl Controller {
                     }
                     KeyAction::Cancel => {
                         self.mode = if self.history.is_empty() { 0 } else { 2 };
+                        self.dock_focus = self.mode == 0;
                     }
                     _ => {}
                 },
                 _ => {}
             }
+            self.keyboard.suggest(&self.address);
             return false;
         }
         if self.pending.is_some() {
@@ -458,6 +562,8 @@ impl Controller {
     }
     pub fn view(&self) -> View {
         let mut view = View {
+            tab: self.tab,
+            dock_focus: self.dock_focus,
             mode: self.mode,
             keyboard: self.keyboard.view,
             error: self.error,
@@ -485,7 +591,7 @@ impl Controller {
         view.address_len = copy(&mut view.address, address) as u16;
         view.title_len = copy(&mut view.title, title) as u8;
         view.page = page;
-        if self.mode == 2 {
+        if matches!(self.mode, 1 | 2) {
             let first = self.cursor.saturating_sub(2);
             let mut height = 0;
             for line in self.layout.lines.iter().skip(first) {
@@ -541,6 +647,49 @@ mod tests {
     fn reply(request: crate::google_gateway::Request, page: u16, blocks: serde_json::Value) {
         web::complete(request.id,200,&serde_json::to_vec(&serde_json::json!({"kind":"browser-page","document":"fixture-document-123456","url":"https://example.org/","title":"Fixture","page":page,"page_count":2,"blocks":blocks})).unwrap());
     }
+    #[test]
+    fn opening_search_results_preserves_visits_and_returns_to_internal_results() {
+        web::tests::setup();
+        let mut browser = Controller::default();
+        browser.open();
+        browser.event(RuntimeEvent::Rotate(1));
+        browser.open_result("first".into());
+        reply(web::take_request().unwrap(), 0, serde_json::json!([]));
+        browser.poll();
+        browser.open_result("second".into());
+        reply(web::take_request().unwrap(), 0, serde_json::json!([]));
+        browser.poll();
+        assert_eq!(browser.history.len(), 2);
+        assert!(browser.back());
+        reply(web::take_request().unwrap(), 0, serde_json::json!([]));
+        browser.poll();
+        assert!(browser.back());
+        assert_eq!(browser.view().mode, 6);
+        browser.close();
+        web::tests::reset();
+    }
+
+    #[test]
+    fn dock_switches_immediately_and_search_keyboard_does_not_navigate_tabs() {
+        web::tests::setup();
+        let mut browser = Controller::default();
+        browser.open();
+        browser.event(RuntimeEvent::Rotate(1));
+        assert_eq!((browser.view().tab, browser.view().mode), (1, 6));
+        browser.event(RuntimeEvent::Click(1));
+        assert_eq!(browser.search_view().mode, 1);
+        browser.event(RuntimeEvent::Rotate(2));
+        assert_eq!(browser.view().tab, 1);
+        browser.back();
+        browser.event(RuntimeEvent::Rotate(1));
+        assert_eq!((browser.view().tab, browser.view().mode), (2, 5));
+        assert_eq!(browser.view().total, 0);
+        browser.event(RuntimeEvent::Rotate(1));
+        assert_eq!((browser.view().tab, browser.view().mode), (0, 0));
+        browser.close();
+        web::tests::reset();
+    }
+
     #[test]
     fn cancelling_first_navigation_returns_home_and_close_releases_buffers() {
         web::tests::setup();

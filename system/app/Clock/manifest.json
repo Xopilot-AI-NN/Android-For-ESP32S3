@@ -12,7 +12,8 @@
     "controller.rs",
     "faces.rs",
     "main.rs",
-    "weather.rs"
+    "weather.rs",
+    "dock.rs"
   ],
   "sharedSources": [],
   "components": [

@@ -364,6 +364,10 @@ impl State {
             self.view.id == WEATHER && self.weather.cancel()
         }
     }
+    /// Browser menus use double clicks; typing keeps immediate single presses.
+    pub fn browser_clicks_active(&self) -> bool {
+        self.view.id == BROWSER && self.browser.click_gestures_active()
+    }
     /// Обрыв защищённого соединения отключает отправку Air Keyboard.
     pub fn bluetooth_status(&mut self, status: u8) {
         self.air_keyboard.connection(status == 3);
@@ -378,8 +382,8 @@ impl State {
             self.browser.poll();
         }
         if let Some(id) = browser::take_open() {
+            self.browser_from_search = self.view.id != BROWSER;
             self.view.id = BROWSER;
-            self.browser_from_search = true;
             self.browser.open_result(id);
         }
         self.google_calendar.poll();
@@ -405,7 +409,10 @@ impl State {
         }
         match view.id {
             AIR_KEYBOARD => view.air_keyboard = self.air_keyboard.view(),
-            BROWSER => view.browser = self.browser.view(),
+            BROWSER => {
+                view.browser = self.browser.view();
+                if view.browser.mode == 6 { view.remote = self.browser.search_view(); }
+            }
             GALLERY => {
                 view.gallery = self.gallery.view();
                 if self.gallery.cloud() {

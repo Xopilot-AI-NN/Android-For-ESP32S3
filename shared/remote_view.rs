@@ -11,7 +11,7 @@ impl Surface {
                 if v.provider_len > 0 {
                     core::str::from_utf8(&v.provider[..v.provider_len as usize]).unwrap_or("Поиск")
                 } else {
-                    "Google"
+                    "Поиск"
                 }
             }
             1 => "События",
@@ -286,22 +286,52 @@ impl Surface {
                     }
                     let selected = (v.offset as usize / 2 + i) == v.cursor as usize;
                     let y = 84 + i as i32 * 54;
-                    self.round_rect(
-                        8,
-                        y,
-                        224,
-                        48,
-                        13,
-                        if selected { t.primary } else { t.surface_high },
-                    );
-                    let ink = Self::focus_ink(t, selected);
-                    let title = core::str::from_utf8(&v.lines[index][..v.lengths[index] as usize])
+                    if v.kind == 0 {
+                        if selected {
+                            self.round_rect(5, y + 3, 3, 46, 1, t.primary);
+                        }
+                        let title =
+                            core::str::from_utf8(&v.lines[index][..v.lengths[index] as usize])
+                                .unwrap_or("");
+                        let subtitle = core::str::from_utf8(
+                            &v.lines[index + 1][..v.lengths[index + 1] as usize],
+                        )
                         .unwrap_or("");
-                    let subtitle =
-                        core::str::from_utf8(&v.lines[index + 1][..v.lengths[index + 1] as usize])
-                            .unwrap_or("");
-                    self.text_fitted_raw(18, y + 6, title, 1, 204, ink);
-                    self.text_fitted_raw(18, y + 28, subtitle, 1, 204, ink);
+                        self.text_fitted_raw(14, y + 3, title, 1, 212, t.primary);
+                        for (line, text) in crate::apps::remote::wrap(subtitle)
+                            .iter()
+                            .take(2)
+                            .enumerate()
+                        {
+                            self.text_fitted_raw(
+                                14,
+                                y + 20 + line as i32 * 15,
+                                text,
+                                1,
+                                212,
+                                t.on_surface,
+                            );
+                        }
+                    } else {
+                        self.round_rect(
+                            8,
+                            y,
+                            224,
+                            48,
+                            13,
+                            if selected { t.primary } else { t.surface_high },
+                        );
+                        let ink = Self::focus_ink(t, selected);
+                        let title =
+                            core::str::from_utf8(&v.lines[index][..v.lengths[index] as usize])
+                                .unwrap_or("");
+                        let subtitle = core::str::from_utf8(
+                            &v.lines[index + 1][..v.lengths[index + 1] as usize],
+                        )
+                        .unwrap_or("");
+                        self.text_fitted_raw(18, y + 6, title, 1, 204, ink);
+                        self.text_fitted_raw(18, y + 28, subtitle, 1, 204, ink);
+                    }
                 }
                 if v.count == 0 {
                     self.text_center_raw(

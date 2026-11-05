@@ -212,7 +212,23 @@ fn rows(kind: u8, value: &Value) -> Vec<(String, String)> {
             .iter()
             .take(10)
             .map(|item| {
-                let title = google::text(item, if kind == 2 { "subject" } else { "title" }, 160);
+                let title = if kind == 0 {
+                    let url = google::text(item, "url", 512);
+                    let host = url
+                        .strip_prefix("https://")
+                        .or_else(|| url.strip_prefix("http://"))
+                        .unwrap_or(&url)
+                        .split('/')
+                        .next()
+                        .unwrap_or("");
+                    if host.is_empty() {
+                        google::text(item, "title", 160)
+                    } else {
+                        host.to_string()
+                    }
+                } else {
+                    google::text(item, if kind == 2 { "subject" } else { "title" }, 160)
+                };
                 let subtitle = if kind == 1 && item["when"].is_string() {
                     google::text(item, "when", 80)
                 } else if kind == 1 {
@@ -361,6 +377,11 @@ impl<E: Endpoint> Controller<E> {
         }
     }
     /// Open events for the month selected in the unified offline calendar.
+    pub fn begin_input(&mut self) {
+        self.mode = 1;
+        self.error = 0;
+        self.keyboard.suggest(&self.text);
+    }
     pub fn open_month(&mut self, month: i32) {
         self.open();
         self.month = month.clamp(1900 * 12, 2100 * 12 - 1);

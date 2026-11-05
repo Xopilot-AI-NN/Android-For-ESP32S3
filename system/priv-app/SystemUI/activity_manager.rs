@@ -60,7 +60,8 @@ impl Runtime {
         }
         if self.security.locked {
             // A timer/alarm may be dismissed without unlocking private screens.
-            if clock::alert() != 0 && event == RuntimeEvent::Press {
+            if clock::alert() != 0 && matches!(event, RuntimeEvent::Press | RuntimeEvent::Click(1))
+            {
                 clock_action(6);
                 return self.render();
             }
@@ -71,6 +72,13 @@ impl Runtime {
             return self.render();
         }
         let screen = (self.state & 0x1f) as u8;
+        // Physical single clicks and synthetic Press have the same meaning in
+        // clock controls. Preserve Click(2) for the stopwatch reset gesture.
+        let event = if matches!(screen, 6 | 11 | 31) && event == RuntimeEvent::Click(1) {
+            RuntimeEvent::Press
+        } else {
+            event
+        };
         let was_bt_enabled = self.state & (1 << 22) != 0;
         let cursor = if matches!(screen, 2 | 26) {
             self.launcher_cursor
@@ -312,33 +320,96 @@ impl Runtime {
             }
             return self.render();
         }
-        if clock::alert() != 0 && event == RuntimeEvent::Press {
+        if clock::alert() != 0 && matches!(event, RuntimeEvent::Press | RuntimeEvent::Click(1)) {
             clock_action(6);
             return self.render();
         }
-        if screen == 6 && matches!(event, RuntimeEvent::Rotate(_) | RuntimeEvent::Swipe(-1 | 1)) {
-            let delta = match event {
-                RuntimeEvent::Rotate(d) => d,
-                RuntimeEvent::Swipe(d) => -d,
-                _ => 0,
-            };
-            self.state = (self.state & !0x1e0)
-                | ((i32::from(cursor) + delta.rem_euclid(5)).rem_euclid(5) << 5);
-            return self.render();
-        }
-        if screen == 6 && event == RuntimeEvent::Press {
-            if cursor == 1 {
-                self.state = (self.state & !0x1ff) | 11;
-                self.timer_editor = 1;
-            } else if cursor == 2 {
-                self.state = (self.state & !0x1ff) | 11;
-                self.timer_editor = 3;
-            } else if cursor == 0 {
-                self.state = (self.state & !0x1ff) | 31;
-            } else if cursor == 3 {
-                self.native_app.open(crate::apps::WORLD);
-            } else {
-                self.state = (self.state & !0x1ff) | 2;
+        if screen == 6 {
+            if cursor == 4 && self.bedtime_editor != 0 {
+                match event {
+                    RuntimeEvent::Rotate(d) => match self.bedtime_editor {
+                        2 => {
+                            self.bedtime_start =
+                                (i32::from(self.bedtime_start) + d.rem_euclid(96) * 15)
+                                    .rem_euclid(1440) as u16
+                        }
+                        3 => {
+                            self.bedtime_end = (i32::from(self.bedtime_end) + d.rem_euclid(96) * 15)
+                                .rem_euclid(1440)
+                                as u16
+                        }
+                        _ => {
+                            self.bedtime_cursor =
+                                (i32::from(self.bedtime_cursor) + d).rem_euclid(5) as u8
+                        }
+                    },
+                    RuntimeEvent::Press => {
+                        if self.bedtime_editor != 1 {
+                            self.bedtime_editor = 1;
+                        } else {
+                            match self.bedtime_cursor {
+                                0 => self.bedtime_auto = !self.bedtime_auto,
+                                1 => self.bedtime_editor = 2,
+                                2 => self.bedtime_editor = 3,
+                                3 => {
+                                    self.bedtime_brightness = if self.bedtime_brightness >= 40 {
+                                        30
+                                    } else {
+                                        self.bedtime_brightness + 5
+                                    }
+                                }
+                                _ => self.bedtime_editor = 0,
+                            }
+                        }
+                    }
+                    RuntimeEvent::Back => {
+                        self.bedtime_editor = if self.bedtime_editor == 1 { 0 } else { 1 }
+                    }
+                    RuntimeEvent::Home => {
+                        self.bedtime_editor = 0;
+                        self.state = (self.state & !0x1ff) | 1;
+                    }
+                    _ => {}
+                }
+                return self.render();
+            }
+
+            match event {
+                RuntimeEvent::Rotate(d) | RuntimeEvent::Swipe(d @ (-1 | 1)) => {
+                    let delta = if matches!(event, RuntimeEvent::Swipe(_)) {
+                        -d
+                    } else {
+                        d
+                    };
+                    // These are live tabs. Merely choosing one only changes
+                    // its content, without starting a timer or changing settings.
+                    self.state = (self.state & !0x1e0)
+                        | ((i32::from(cursor) + delta.rem_euclid(5)).rem_euclid(5) << 5);
+                }
+                RuntimeEvent::Click(2) if cursor == 4 => {
+                    self.bedtime_editor = 1;
+                    self.bedtime_cursor = 0;
+                }
+                RuntimeEvent::Click(2) if cursor == 3 => {
+                    clock_action(1);
+                }
+                RuntimeEvent::Press | RuntimeEvent::Click(1) => match cursor {
+                    0 => self.state = (self.state & !0x1ff) | 31,
+                    1 => self.native_app.open(crate::apps::WORLD),
+                    2 => {
+                        self.state = (self.state & !0x1ff) | 11;
+                        self.timer_editor = 1;
+                    }
+                    3 => {
+                        clock_action(0);
+                    }
+                    4 => self.bedtime_override = Some(!self.bedtime_active()),
+                    _ => {}
+                },
+                RuntimeEvent::Back | RuntimeEvent::Home | RuntimeEvent::Swipe(2) => {
+                    self.state = (self.state & !0x1ff) | 1;
+                }
+                _ => {}
             }
             return self.render();
         }
@@ -356,10 +427,10 @@ impl Runtime {
                         clock_action(1);
                     }
                     _ => {
-                        self.state = (self.state & !0x1ff) | 6 | (2 << 5);
+                        self.state = (self.state & !0x1ff) | 6 | (3 << 5);
                     }
                 },
-                RuntimeEvent::Back => self.state = (self.state & !0x1ff) | 6 | (2 << 5),
+                RuntimeEvent::Back => self.state = (self.state & !0x1ff) | 6 | (3 << 5),
                 RuntimeEvent::Home => self.state = (self.state & !0x1ff) | 1,
                 _ => {}
             }
@@ -393,7 +464,7 @@ impl Runtime {
                     self.timer_editor = if self.timer_editor == 2 { 1 } else { 0 };
                     self.state &= !0x1e0;
                     if self.timer_editor == 0 {
-                        self.state = (self.state & !0x1ff) | 6 | (1 << 5);
+                        self.state = (self.state & !0x1ff) | 6 | (2 << 5);
                     }
                 }
                 RuntimeEvent::Home => {

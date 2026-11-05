@@ -10,23 +10,28 @@ impl Surface {
             self.text_keyboard(f, t, "Адрес сайта", address, "Открыть");
             return;
         }
+        if v.mode == 6 {
+            if f.app.remote.mode == 0 {
+                self.photo_header(f, "Браузер", t);
+                self.round_rect(12, 70, 216, 106, 20, t.surface);
+                self.symbol(Symbol::Search, 120, 98, t.primary);
+                self.text_center_raw(125, "Что найти?", 1, t.on_surface);
+                self.text_center_raw(151, "Нажмите: поиск", 1, t.on_surface_variant);
+            } else {
+                self.remote_app_page(f, t);
+            }
+            if f.app.remote.mode != 1 {
+                self.browser_dock(v.tab, v.dock_focus, t);
+            }
+            return;
+        }
         self.photo_header(f, "Браузер", t);
         if v.mode == 0 {
-            self.text_center_raw(80, "Сайты на ваших часах", 1, t.on_surface_variant);
-            for (i, label) in [
-                "Открыть адрес",
-                "История",
-                if v.light {
-                    "Светлая тема"
-                } else {
-                    "Тёмная тема"
-                },
-            ]
-            .iter()
-            .enumerate()
-            {
-                self.action_chip(116 + i as i32 * 45, 36, label, v.cursor == i as u16, t);
-            }
+            self.round_rect(12, 70, 216, 106, 20, t.surface);
+            self.symbol(Symbol::World, 120, 98, t.primary);
+            self.text_center_raw(125, "Открыть сайт", 1, t.on_surface);
+            self.text_center_raw(151, "Нажмите: адрес сайта", 1, t.on_surface_variant);
+            self.text_center_raw(201, "HTTPS · сжатые фото", 1, t.on_surface_variant);
         } else if v.mode == 3 {
             let labels = [
                 "Адрес сайта",
@@ -166,8 +171,27 @@ impl Surface {
                 t.on_surface_variant,
             );
         }
-        if matches!(v.mode, 0 | 3 | 5) {
+        if matches!(v.mode, 0 | 5) {
+            self.browser_dock(v.tab, v.dock_focus, t);
+        }
+        if v.mode == 3 {
             self.text_fitted_raw(10, 260, v.message, 1, 220, t.on_surface_variant);
+        }
+    }
+    fn browser_dock(&mut self, tab: u8, _focused: bool, t: Theme) {
+        self.round_rect(0, 242, 240, 38, 0, t.bg);
+        for (i, label) in ["Главная", "Поиск", "История"].iter().enumerate() {
+            let selected = i == usize::from(tab);
+            let x = 4 + i as i32 * 79;
+            self.round_rect(
+                x,
+                246,
+                74,
+                30,
+                10,
+                if selected { t.primary } else { t.surface_high },
+            );
+            self.text_center_x(x + 37, 255, label, 1, Self::focus_ink(t, selected));
         }
     }
 }
