@@ -495,6 +495,16 @@ pub(crate) mod tests {
         );
     }
     #[test]
+    fn transparent_web_icons_remain_visible_on_the_preview_background() {
+        let pixels = crate::file_store::network_thumbnail(include_bytes!(
+            "../../tools/runtime-check/fixtures/transparent-web.png"
+        ))
+        .unwrap();
+        assert_eq!(pixels[99 * 240 + 119], 0); // Opaque black ink.
+        assert_eq!(pixels[99 * 240 + 120], 0xffff); // Transparent black becomes white.
+        assert_eq!(pixels[0], 0xffff); // Matching preview margin.
+    }
+    #[test]
     fn pages_links_cancellation_and_redirects_are_local() {
         setup();
         assert!(fetch(

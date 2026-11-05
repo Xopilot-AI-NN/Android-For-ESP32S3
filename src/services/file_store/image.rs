@@ -106,10 +106,13 @@ pub(super) fn from_slice(bytes: &[u8]) -> Result<Vec<u16>, Error> {
         return Err(Error::TooLarge);
     }
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-        return super::png::decode(|at, count| {
-            let end = at.checked_add(count).ok_or(Error::Corrupt)?;
-            bytes.get(at..end).map(|v| v.to_vec()).ok_or(Error::Corrupt)
-        });
+        return super::png::decode(
+            |at, count| {
+                let end = at.checked_add(count).ok_or(Error::Corrupt)?;
+                bytes.get(at..end).map(|v| v.to_vec()).ok_or(Error::Corrupt)
+            },
+            255,
+        );
     }
     if !bytes.starts_with(&[255, 216]) {
         return Err(Error::InvalidPath);

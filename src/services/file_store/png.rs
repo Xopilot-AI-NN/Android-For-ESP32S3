@@ -24,12 +24,13 @@ impl Fs {
         dev: &D,
         path: &str,
     ) -> Result<Vec<u16>, Error> {
-        decode(|at, length| self.read_range(dev, path, at, length))
+        decode(|at, length| self.read_range(dev, path, at, length), 0)
     }
 }
 // Share the row decoder with network images without writing temporary WFS files.
 pub(super) fn decode(
     mut read: impl FnMut(usize, usize) -> Result<Vec<u8>, Error>,
+    background: u8,
 ) -> Result<Vec<u16>, Error> {
     let mut at = 8;
     let mut width = 0usize;
@@ -43,7 +44,8 @@ pub(super) fn decode(
     let mut row = Vec::new();
     let mut filled = 0;
     let mut y = 0;
-    let mut out = vec![0u16; 240 * 200];
+    let bg = u16::from(background);
+    let mut out = vec![((bg & 248) << 8) | ((bg & 252) << 3) | (bg >> 3); 240 * 200];
     let (mut ow, mut oh) = (0, 0);
     let mut ended = false;
     let mut state = InflateState::new_boxed(DataFormat::Zlib);
@@ -188,9 +190,16 @@ pub(super) fn decode(
                                 }
                                 _ => unreachable!(),
                             };
-                            let r = (u16::from(r) * u16::from(a) / 255) as u8;
-                            let g = (u16::from(g) * u16::from(a) / 255) as u8;
-                            let b = (u16::from(b) * u16::from(a) / 255) as u8;
+                            // Web icons often use black ink on transparency.
+                            // Composite before RGB565 conversion; the gallery
+                            // keeps black, while browser previews use white.
+                            let blend = |channel: u8| {
+                                ((u32::from(channel) * u32::from(a)
+                                    + u32::from(background) * u32::from(255 - a)
+                                    + 127)
+                                    / 255) as u8
+                            };
+                            let (r, g, b) = (blend(r), blend(g), blend(b));
                             let pixel = ((u16::from(r) & 248) << 8)
                                 | ((u16::from(g) & 252) << 3)
                                 | (u16::from(b) >> 3);
