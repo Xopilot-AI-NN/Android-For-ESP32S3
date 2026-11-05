@@ -1,0 +1,160 @@
+{
+  "source_file": "esp32s3_watch_box_reviewed.blend",
+  "source_sha256": "c1ece24970af2fdc5c686476d743586bbbe10e3f6b3940a38d2ed4d8e1330ae3",
+  "output_file": "esp32s3_watch_box_ports_fitted.blend",
+  "pcb_old_bottom_z_mm": 3.804640293121338,
+  "rear_floor_z_mm": 2.384185791015625e-07,
+  "rear_support_top_z_mm": 0.8500000834465027,
+  "esp_delta_z_mm": -2.6546402096748354,
+  "pcb_insulation_gap_mm": 0.3,
+  "openings_before_world_bounds_mm": {
+    "USB-C (move G to reposition)": [
+      [
+        -17.538965225219727,
+        -5.338964939117432
+      ],
+      [
+        -20.775253295898438,
+        -16.175254821777344
+      ],
+      [
+        3.924158811569214,
+        9.324159622192383
+      ]
+    ],
+    "microSD (move G to reposition)": [
+      [
+        2.4000000953674316,
+        17.600000381469727
+      ],
+      [
+        -20.399999618530273,
+        -15.800000190734863
+      ],
+      [
+        5.349999904632568,
+        8.850000381469727
+      ]
+    ],
+    "ENCODER (move G to reposition)": [
+      [
+        4.600470066070557,
+        12.999529838562012
+      ],
+      [
+        13.800000190734863,
+        20.399999618530273
+      ],
+      [
+        1.799999713897705,
+        10.1981201171875
+      ]
+    ]
+  },
+  "openings_after_world_bounds_mm": {
+    "USB-C (move G to reposition)": [
+      [
+        -16.208965301513672,
+        -6.668964862823486
+      ],
+      [
+        -20.775253295898438,
+        -16.175254821777344
+      ],
+      [
+        2.5400002002716064,
+        6.300000190734863
+      ]
+    ],
+    "microSD (move G to reposition)": [
+      [
+        3.1999998092651367,
+        16.799999237060547
+      ],
+      [
+        -20.399999618530273,
+        -15.800000190734863
+      ],
+      [
+        6.399999141693115,
+        8.199999809265137
+      ]
+    ],
+    "ENCODER (move G to reposition)": [
+      [
+        4.900000095367432,
+        12.700000762939453
+      ],
+      [
+        13.800000190734863,
+        20.399999618530273
+      ],
+      [
+        2.3499999046325684,
+        10.149999618530273
+      ]
+    ]
+  },
+  "checks": {
+    "USB to body": {
+      "nonmanifold_edges": 0,
+      "volume_mm3": 0.0
+    },
+    "PCB to rear cover": {
+      "nonmanifold_edges": 0,
+      "volume_mm3": 0.0
+    },
+    "encoder bushing to body": {
+      "nonmanifold_edges": 0,
+      "volume_mm3": 0.0
+    }
+  },
+  "exports": {
+    "case.stl": {
+      "nonmanifold_edges": 0,
+      "volume_mm3": 3788.20544689862,
+      "dimensions_mm": [
+        63.70000076293945,
+        36.79999923706055,
+        12.949999809265137
+      ],
+      "sha256": "5f03e2bf82e15a9f9ca63504fe06126a18dadd6a01d83d77e0b3e62822f9614f"
+    },
+    "front-cover.stl": {
+      "nonmanifold_edges": 0,
+      "volume_mm3": 1579.9092314214845,
+      "dimensions_mm": [
+        52.79999923706055,
+        36.79999923706055,
+        2.700000762939453
+      ],
+      "sha256": "f797199fc7db53a8d6e0f850a49b8a8ce02a115abd91cb48d95a196f9e8eae95"
+    },
+    "rear-cover.stl": {
+      "nonmanifold_edges": 0,
+      "volume_mm3": 3731.570950169541,
+      "dimensions_mm": [
+        52.79999923706055,
+        36.79999923706055,
+        2.8000001907348633
+      ],
+      "sha256": "eef65e76c49ebce6148a7bce5c5c7844eb42735e37bc50c95596ec122184ab0d"
+    },
+    "usb-sd-coupon.stl": {
+      "nonmanifold_edges": 0,
+      "volume_mm3": 764.6850606422186,
+      "dimensions_mm": [
+        43.0,
+        12.5,
+        1.6990489959716797
+      ],
+      "sha256": "9129df488e82cfb8875332a589ee1fb18acf2f481460cc03227bf9cba1fb76b9"
+    }
+  },
+  "limits": [
+    "SD mouth and encoder thread are unmeasured reference models.",
+    "Plug overmould and card removal access require physical coupon testing.",
+    "Other component positions are preserved; known battery/display/encoder fit issues are not resolved.",
+    "0.30 mm under PCB is reserved for insulation, not a new printed mounting post."
+  ]
+}
