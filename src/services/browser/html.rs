@@ -30,7 +30,11 @@ fn entity(s: &str) -> Option<char> {
         "gt" => Some('>'),
         "quot" => Some('"'),
         "apos" | "#39" => Some('\''),
-        "nbsp" => Some(' '),
+        "nbsp" | "thinsp" | "ensp" | "emsp" => Some(' '),
+        "bull" => Some('*'),
+        "middot" => Some('·'),
+        "raquo" | "rarr" => Some('>'),
+        "laquo" | "larr" => Some('<'),
         "ndash" => Some('–'),
         "mdash" => Some('—'),
         "hellip" => Some('…'),
@@ -125,6 +129,12 @@ fn visible(attrs: &[(String, String)]) -> bool {
             s.contains("display:none") || s.contains("visibility:hidden")
         })
 }
+fn heading_level(tag: &str) -> Option<u8> {
+    match tag.as_bytes() {
+        [b'h', level @ b'1'..=b'6'] => Some(level - b'0'),
+        _ => None,
+    }
+}
 fn boundary(tag: &str) -> bool {
     matches!(
         tag,
@@ -175,6 +185,7 @@ fn flush(
     link: Option<usize>,
     bold: bool,
     total: &mut usize,
+    flow: u32,
 ) {
     let source = core::mem::take(buf);
     let mut normal = String::new();
@@ -184,7 +195,11 @@ fn flush(
         }
         normal.push_str(word);
     }
-    if normal.is_empty() {
+    if normal.is_empty()
+        || normal
+            .chars()
+            .all(|c| c.is_whitespace() || "|[]•".contains(c))
+    {
         return;
     }
     let mut rest = normal.as_str();
@@ -200,7 +215,7 @@ fn flush(
         }
         *total += part.len();
         let index = link.unwrap_or(doc.blocks.len());
-        doc.blocks.push(json!({"index":index,"type":if link.is_some(){"link"}else if heading>0{"heading"}else{"paragraph"},"text":part,"level":heading,"bold":bold}));
+        doc.blocks.push(json!({"index":index,"type":if link.is_some(){"link"}else if heading>0{"heading"}else{"paragraph"},"text":part,"level":heading,"bold":bold,"flow":flow}));
         rest = &rest[part.len()..];
     }
 }
@@ -218,6 +233,8 @@ pub fn parse(url: Url, html: &str) -> Document {
         (url, false, String::new(), 0u8, false, None, 0usize);
     let (mut stack, mut hidden_depth, mut head, mut title, mut scripts) =
         (Vec::<(String, bool)>::new(), 0usize, false, false, 0usize);
+    let mut flow = 0u32;
+    let mut list_starts = Vec::<usize>::new();
     let (mut at, mut operations, mut url_bytes) = (0usize, 0usize, 0usize);
     while at < html.len() && operations < 16000 && doc.blocks.len() < MAX_BLOCKS && total < MAX_TEXT
     {
@@ -256,7 +273,7 @@ pub fn parse(url: Url, html: &str) -> Document {
                         buf.push_str(&text(&rest[..n]));
                         rest = &rest[n..];
                         if buf.len() > 2048 {
-                            flush(&mut doc, &mut buf, heading, link, bold, &mut total);
+                            flush(&mut doc, &mut buf, heading, link, bold, &mut total, flow);
                         }
                     }
                     if !rest.is_empty() {
@@ -290,7 +307,15 @@ pub fn parse(url: Url, html: &str) -> Document {
                 title = false;
             }
             if hidden_depth == 0 && boundary(&tag) {
-                flush(&mut doc, &mut buf, heading, link, bold, &mut total);
+                flush(&mut doc, &mut buf, heading, link, bold, &mut total, flow);
+                flow = flow.wrapping_add(1);
+            }
+            if tag == "li" && hidden_depth == 0 {
+                if let Some(start) = list_starts.pop() {
+                    if let Some(block) = doc.blocks.get_mut(start) {
+                        block["list"] = json!(true);
+                    }
+                }
             }
             if let Some(i) = stack.iter().rposition(|(t, _)| *t == tag) {
                 for (_, hidden) in stack.drain(i..) {
@@ -300,10 +325,10 @@ pub fn parse(url: Url, html: &str) -> Document {
                 }
             }
             if tag == "a" {
-                flush(&mut doc, &mut buf, heading, link, bold, &mut total);
+                flush(&mut doc, &mut buf, heading, link, bold, &mut total, flow);
                 link = None;
             }
-            if tag.starts_with('h') && tag.len() == 2 {
+            if heading_level(&tag).is_some() {
                 heading = 0;
             }
             if matches!(tag.as_str(), "b" | "strong") {
@@ -357,23 +382,21 @@ pub fn parse(url: Url, html: &str) -> Document {
         if head {
             continue;
         }
-        if boundary(&tag) {
-            flush(&mut doc, &mut buf, heading, link, bold, &mut total);
+        if boundary(&tag) || matches!(tag.as_str(), "td" | "th") {
+            flush(&mut doc, &mut buf, heading, link, bold, &mut total, flow);
+            flow = flow.wrapping_add(1);
         }
-        if tag.len() == 2 && tag.starts_with('h') {
-            heading = tag.as_bytes()[1].saturating_sub(b'0').clamp(1, 6);
+        if let Some(level) = heading_level(&tag) {
+            heading = level;
         }
         if tag == "li" {
-            buf.push_str("• ");
-        }
-        if matches!(tag.as_str(), "td" | "th") && !buf.is_empty() {
-            buf.push_str(" | ");
+            list_starts.push(doc.blocks.len());
         }
         if matches!(tag.as_str(), "b" | "strong") {
             bold = true;
         }
         if tag == "a" {
-            flush(&mut doc, &mut buf, heading, link, bold, &mut total);
+            flush(&mut doc, &mut buf, heading, link, bold, &mut total, flow);
             link = None;
             if doc.links.len() < MAX_LINKS {
                 if let Some(url) = attr(&attributes, "href").and_then(|v| base.resolve(v).ok()) {
@@ -389,7 +412,7 @@ pub fn parse(url: Url, html: &str) -> Document {
             }
         }
         if tag == "img" && doc.images.len() < 32 {
-            flush(&mut doc, &mut buf, heading, link, bold, &mut total);
+            flush(&mut doc, &mut buf, heading, link, bold, &mut total, flow);
             if let Some(url) = attr(&attributes, "data-src")
                 .or_else(|| attr(&attributes, "src"))
                 .and_then(|v| base.resolve(v).ok())
@@ -406,12 +429,12 @@ pub fn parse(url: Url, html: &str) -> Document {
             }
         }
         if tag == "hr" {
-            flush(&mut doc, &mut buf, heading, link, bold, &mut total);
+            flush(&mut doc, &mut buf, heading, link, bold, &mut total, flow);
             doc.blocks
                 .push(json!({"type":"rule","index":doc.blocks.len(),"text":""}));
         }
     }
-    flush(&mut doc, &mut buf, heading, link, bold, &mut total);
+    flush(&mut doc, &mut buf, heading, link, bold, &mut total, flow);
     doc.needs_js = scripts > 0 && total < 80;
     doc.truncated |= at < html.len();
     doc
@@ -460,6 +483,35 @@ pub fn search(url: Url, html: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn horizontal_rule_does_not_turn_following_body_text_into_a_heading() {
+        let doc = parse(
+            Url::parse("https://example.org/").unwrap(),
+            "<h2>Title</h2><hr><p>Body &bull; text</p>",
+        );
+        assert_eq!(doc.blocks[0]["type"], "heading");
+        assert_eq!(doc.blocks[1]["type"], "rule");
+        assert_eq!(doc.blocks[2]["type"], "paragraph");
+        assert_eq!(doc.blocks[2]["text"], "Body * text");
+    }
+    #[test]
+    fn inline_sentences_lists_and_table_cells_have_real_boundaries() {
+        let doc = parse(
+            Url::parse("https://example.org/").unwrap(),
+            "<p>Hello <a href='/next'>world</a>!</p><ul><li><a href='/a'>Item</a></li></ul><table><tr><td>Name</td><td><a href='/b'>Value</a></td></tr></table>",
+        );
+        assert_eq!(doc.blocks[0]["flow"], doc.blocks[1]["flow"]);
+        assert_eq!(doc.blocks[1]["flow"], doc.blocks[2]["flow"]);
+        assert_ne!(doc.blocks[2]["flow"], doc.blocks[3]["flow"]);
+        assert_eq!(doc.blocks[3]["text"], "Item");
+        assert_eq!(doc.blocks[3]["list"], true);
+        assert_ne!(doc.blocks[4]["flow"], doc.blocks[5]["flow"]);
+        assert!(
+            doc.blocks
+                .iter()
+                .all(|b| !matches!(b["text"].as_str(), Some("|" | "•" | "][")))
+        );
+    }
     #[test]
     fn semantics_links_base_entities_hidden_and_scripts() {
         let d = parse(

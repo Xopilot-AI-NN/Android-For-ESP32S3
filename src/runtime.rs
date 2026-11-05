@@ -402,6 +402,10 @@ impl Runtime {
             self.bedtime_override = None;
             self.bedtime_previous_auto = scheduled;
         }
+        crate::weather::widget_tick(
+            self.watch_face == 4 && !self.security.locked,
+            Instant::now().duration_since_epoch().as_millis() as u64,
+        );
         self.native_app.poll();
         if matches!(self.state & 31, 2 | 26) {
             self.state = (self.state & !31) | if self.launcher_grid { 26 } else { 2 };
