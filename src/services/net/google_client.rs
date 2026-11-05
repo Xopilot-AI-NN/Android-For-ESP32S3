@@ -138,7 +138,57 @@ impl MbedtlsWallClock for Clock {
         Some(value)
     }
 }
-type Exchange = Pin<Box<dyn Future<Output = Result<(u16, Vec<u8>), &'static str>>>>;
+enum Reply {
+    Gateway(u16, Vec<u8>),
+    Browser(crate::browser_service::http::Response),
+    Dns(crate::browser_service::http::Response),
+}
+enum Work {
+    Gateway(account::Request),
+    Browser(crate::browser_service::Request),
+}
+impl Work {
+    fn id(&self) -> u32 {
+        match self {
+            Self::Gateway(r) => r.id,
+            Self::Browser(r) => r.id,
+        }
+    }
+    fn host(&self) -> &str {
+        match self {
+            Self::Gateway(r) => &r.config.host,
+            Self::Browser(r) => &r.url.host,
+        }
+    }
+    fn port(&self) -> u16 {
+        match self {
+            Self::Gateway(r) => r.config.port,
+            Self::Browser(_) => 443,
+        }
+    }
+    fn current(&self) -> bool {
+        match self {
+            Self::Gateway(r) => account::current(r.id),
+            Self::Browser(r) => crate::browser_service::current(r.id),
+        }
+    }
+    fn fail(&self, error: &'static str) {
+        match self {
+            Self::Gateway(r) => account::fail(r.id, error),
+            Self::Browser(r) => crate::browser_service::fail(r.id, error),
+        }
+    }
+    fn public_address(&self, address: IpAddress) -> bool {
+        if matches!(self, Self::Gateway(_)) {
+            return true;
+        }
+        match address {
+            IpAddress::Ipv4(ip) => crate::browser_service::url::public_ipv4(ip.octets()),
+        }
+    }
+}
+type Exchange = Pin<Box<dyn Future<Output = Result<Reply, &'static str>>>>;
+
 enum Phase {
     Idle,
     Dns(dns::QueryHandle),
@@ -150,9 +200,11 @@ pub struct GoogleClient {
     tcp: SocketHandle,
     tls: &'static Tls<'static>,
     phase: Phase,
-    request: Option<account::Request>,
+    request: Option<Work>,
     future: Option<Exchange>,
     deadline: u64,
+    dns_started: u64,
+    dns_https: bool,
 }
 impl GoogleClient {
     pub fn new(sockets: &mut SocketSet<'static>) -> Option<Self> {
@@ -181,6 +233,8 @@ impl GoogleClient {
             request: None,
             future: None,
             deadline: 0,
+            dns_started: 0,
+            dns_https: false,
         })
     }
     pub fn servers(&mut self, sockets: &mut SocketSet<'static>, servers: &[IpAddress]) {
@@ -197,6 +251,7 @@ impl GoogleClient {
         self.future = None;
         self.request = None;
         self.phase = Phase::Idle;
+        self.dns_https = false;
         sockets.get_mut::<tcp::Socket>(self.tcp).abort();
         critical_section::with(|cs| {
             let mut p = PIPE.borrow_ref_mut(cs);
@@ -208,17 +263,29 @@ impl GoogleClient {
     }
     fn error(&mut self, sockets: &mut SocketSet<'static>, message: &'static str) {
         if let Some(r) = &self.request {
-            account::fail(r.id, message);
+            r.fail(message);
         }
         self.stop(sockets);
     }
+    // Hotspots sometimes drop UDP DNS. Resolve over verified HTTPS on the watch
+    // after a short UDP attempt; this never proxies a website through a server.
+    fn start_doh(&mut self, iface: &mut Interface, sockets: &mut SocketSet<'static>) {
+        self.dns_https = true;
+        let socket = sockets.get_mut::<tcp::Socket>(self.tcp);
+        socket.abort();
+        match socket.connect(
+            iface.context(),
+            (smoltcp::wire::Ipv4Address::new(1, 1, 1, 1), 443),
+            50002,
+        ) {
+            Ok(()) => self.phase = Phase::Connecting,
+            Err(_) => self.error(sockets, "Не удалось подключиться к DNS HTTPS"),
+        }
+    }
     pub fn poll(&mut self, iface: &mut Interface, sockets: &mut SocketSet<'static>, online: bool) {
         account::network(online);
-        if self
-            .request
-            .as_ref()
-            .is_some_and(|r| !account::current(r.id))
-        {
+        crate::browser_service::network(online);
+        if self.request.as_ref().is_some_and(|r| !r.current()) {
             self.stop(sockets);
         }
         if !online {
@@ -228,49 +295,89 @@ impl GoogleClient {
             return;
         }
         if self.request.is_some() && now_ms() >= self.deadline {
-            self.error(sockets, "Gateway не ответил вовремя");
+            self.error(sockets, "Сервер не ответил вовремя");
             return;
         }
         if matches!(self.phase, Phase::Idle) {
-            if let Some(r) = account::take_request() {
+            if let Some(r) = crate::browser_service::take_request()
+                .map(Work::Browser)
+                .or_else(|| account::take_request().map(Work::Gateway))
+            {
                 if crate::rtc::unix_seconds().is_none() {
-                    account::fail(r.id, "Сначала синхронизируйте время");
+                    r.fail("Сначала синхронизируйте время");
                     return;
                 }
-                self.deadline = now_ms() + 25000;
+                self.deadline = match &r {
+                    Work::Browser(r) => r.deadline,
+                    _ => now_ms() + 25000,
+                };
                 // LAN gateways use a literal IPv4; asking DNS for it fails on many routers.
-                if let Ok(address) = r.config.host.parse::<smoltcp::wire::Ipv4Address>() {
-                    let port = r.config.port;
+                if let Ok(address) = r.host().parse::<smoltcp::wire::Ipv4Address>() {
+                    if !r.public_address(IpAddress::Ipv4(address)) {
+                        r.fail("Локальные адреса запрещены");
+                        return;
+                    }
+                    let port = r.port();
                     self.request = Some(r);
                     match sockets.get_mut::<tcp::Socket>(self.tcp).connect(
-                        iface.context(), (address, port), 50001,
+                        iface.context(),
+                        (address, port),
+                        50001,
                     ) {
                         Ok(()) => self.phase = Phase::Connecting,
                         Err(_) => self.error(sockets, "Не удалось подключиться"),
                     }
                 } else {
-                match sockets.get_mut::<dns::Socket>(self.dns).start_query(
-                    iface.context(),
-                    &r.config.host,
-                    DnsQueryType::A,
-                ) {
-                    Ok(q) => {
-                        self.phase = Phase::Dns(q);
-                        self.request = Some(r);
+                    self.dns_started = now_ms();
+                    match sockets.get_mut::<dns::Socket>(self.dns).start_query(
+                        iface.context(),
+                        r.host(),
+                        DnsQueryType::A,
+                    ) {
+                        Ok(q) => {
+                            self.phase = Phase::Dns(q);
+                            self.request = Some(r);
+                        }
+                        Err(_) => {
+                            if matches!(r, Work::Browser(_)) {
+                                self.request = Some(r);
+                                self.start_doh(iface, sockets);
+                            } else {
+                                r.fail("Ошибка DNS сервера");
+                            }
+                        }
                     }
-                    Err(_) => account::fail(r.id, "Ошибка DNS Gateway"),
                 }
-                }
+            }
+        }
+        if let Phase::Dns(q) = self.phase {
+            if self
+                .request
+                .as_ref()
+                .is_some_and(|r| matches!(r, Work::Browser(_)))
+                && now_ms().saturating_sub(self.dns_started) >= 3500
+            {
+                sockets.get_mut::<dns::Socket>(self.dns).cancel_query(q);
+                self.phase = Phase::Idle;
+                self.start_doh(iface, sockets);
             }
         }
         match self.phase {
             Phase::Dns(q) => match sockets.get_mut::<dns::Socket>(self.dns).get_query_result(q) {
                 Ok(addresses) => {
+                    // smoltcp consumes the DNS slot on either terminal result.
+                    // Clear ownership before any error path calls stop().
+                    self.phase = Phase::Idle;
                     let Some(address) = addresses.first() else {
-                        self.error(sockets, "Адрес Gateway не найден");
+                        self.error(sockets, "Адрес сервера не найден");
                         return;
                     };
-                    let port = self.request.as_ref().unwrap().config.port;
+                    let work = self.request.as_ref().unwrap();
+                    if !work.public_address(*address) {
+                        self.start_doh(iface, sockets);
+                        return;
+                    }
+                    let port = work.port();
                     match sockets.get_mut::<tcp::Socket>(self.tcp).connect(
                         iface.context(),
                         (*address, port),
@@ -281,20 +388,60 @@ impl GoogleClient {
                     }
                 }
                 Err(dns::GetQueryResultError::Pending) => {}
-                Err(_) => self.error(sockets, "Ошибка DNS Gateway"),
+                Err(_) => {
+                    self.phase = Phase::Idle;
+                    if self
+                        .request
+                        .as_ref()
+                        .is_some_and(|r| matches!(r, Work::Browser(_)))
+                    {
+                        self.start_doh(iface, sockets);
+                    } else {
+                        self.error(sockets, "Ошибка DNS сервера");
+                    }
+                }
             },
             Phase::Connecting => {
                 if sockets.get::<tcp::Socket>(self.tcp).may_send() {
                     let r = self.request.as_ref().unwrap();
-                    self.future = Some(Box::pin(exchange(
-                        self.tls,
-                        Stream,
-                        r.config.clone(),
-                        r.method,
-                        r.path.clone(),
-                        r.body.clone(),
-                        r.authorization.clone(),
-                    )));
+                    self.future = Some(if self.dns_https {
+                        let url = crate::browser_service::url::Url {
+                            host: "cloudflare-dns.com".into(),
+                            path: alloc::format!(
+                                "/dns-query?name={}&type=A",
+                                crate::browser_service::url::encode(r.host())
+                            ),
+                        };
+                        let future = crate::google_tls::public_exchange(self.tls, Stream, url);
+                        Box::pin(async move { future.await.map(Reply::Dns) }) as Exchange
+                    } else {
+                        match r {
+                            Work::Gateway(r) => {
+                                let future = exchange(
+                                    self.tls,
+                                    Stream,
+                                    r.config.clone(),
+                                    r.method,
+                                    r.path.clone(),
+                                    r.body.clone(),
+                                    r.authorization.clone(),
+                                );
+                                Box::pin(async move {
+                                    future
+                                        .await
+                                        .map(|(status, body)| Reply::Gateway(status, body))
+                                })
+                            }
+                            Work::Browser(r) => {
+                                let future = crate::google_tls::public_exchange(
+                                    self.tls,
+                                    Stream,
+                                    r.url.clone(),
+                                );
+                                Box::pin(async move { future.await.map(Reply::Browser) })
+                            }
+                        }
+                    });
                     self.phase = Phase::Exchanging;
                 }
             }
@@ -321,17 +468,61 @@ impl GoogleClient {
                     if !socket.may_recv() {
                         p.eof = true;
                     }
-                    if !socket.is_active() && p.rx.is_empty() {
+                    if !socket.is_active() && p.rx.is_empty() && !p.eof {
                         p.failed = true;
                     }
                 });
                 let mut context = Context::from_waker(Waker::noop());
                 if let Some(future) = self.future.as_mut() {
                     if let Poll::Ready(result) = future.as_mut().poll(&mut context) {
-                        let id = self.request.as_ref().unwrap().id;
+                        let work = self.request.as_ref().unwrap();
+                        let id = work.id();
+                        // Release TLS/CA working memory before HTML/image decoding.
+                        self.future = None;
                         match result {
-                            Ok((status, body)) => account::complete(id, status, &body),
-                            Err(error) => account::fail(id, error),
+                            Ok(Reply::Dns(response)) => {
+                                let answer = if response.status == 200 && !response.truncated {
+                                    crate::browser_service::url::dns_json(
+                                        work.host(),
+                                        &response.body,
+                                    )
+                                } else {
+                                    Err("DNS HTTPS вернул ошибку")
+                                };
+                                let address = match answer {
+                                    Ok(ip) => {
+                                        smoltcp::wire::Ipv4Address::new(ip[0], ip[1], ip[2], ip[3])
+                                    }
+                                    Err(error) => {
+                                        self.error(sockets, error);
+                                        return;
+                                    }
+                                };
+                                self.dns_https = false;
+                                critical_section::with(|cs| {
+                                    let mut p = PIPE.borrow_ref_mut(cs);
+                                    p.rx.clear();
+                                    p.tx.clear();
+                                    p.eof = false;
+                                    p.failed = false;
+                                });
+                                let socket = sockets.get_mut::<tcp::Socket>(self.tcp);
+                                socket.abort();
+                                match socket.connect(iface.context(), (address, 443), 50001) {
+                                    Ok(()) => self.phase = Phase::Connecting,
+                                    Err(_) => {
+                                        self.error(sockets, "Не удалось подключиться к сайту")
+                                    }
+                                };
+                                return;
+                            }
+                            Ok(Reply::Gateway(status, body)) => {
+                                account::complete(id, status, &body)
+                            }
+                            Ok(Reply::Browser(response)) => {
+                                crate::browser_service::complete(id, response)
+                            }
+                            Err(error) => work.fail(error),
                         }
                         self.stop(sockets);
                     }

@@ -823,6 +823,8 @@ mod persistent_log;
 #[path = "../../../../Firmware/src/hal/input/clicks.rs"]
 mod clicks;
 
+#[path = "../../../../Firmware/src/services/browser.rs"]
+pub mod browser_service;
 #[path = "../../../../Firmware/src/services/google_gateway.rs"]
 pub mod google_gateway;
 #[path = "../../../../Firmware/src/services/google_http.rs"]

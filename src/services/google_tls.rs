@@ -212,6 +212,34 @@ mod tests {
             serde_json::from_slice::<serde_json::Value>(&response.1).unwrap()["ok"],
             true
         );
+        let run_public = |host: &str, ca: &str| {
+            let stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let roots = fs::read_to_string(fixture.directory.join(format!("{ca}.pem"))).unwrap();
+            let url = crate::browser_service::url::Url {
+                host: host.into(),
+                path: "/browser".into(),
+            };
+            let mut future =
+                core::pin::pin!(public_exchange_with_ca(tls, Stream(stream), url, &roots));
+            let mut cx = Context::from_waker(Waker::noop());
+            loop {
+                if let Poll::Ready(result) = future.as_mut().poll(&mut cx) {
+                    break result;
+                }
+            }
+        };
+        assert_eq!(
+            run_public("localhost", "server").unwrap().body,
+            b"<h1>Direct browser</h1>"
+        );
+        assert!(run_public("wrong.example.invalid", "server").is_err());
+        assert!(run_public("localhost", "other").is_err());
         assert_eq!(run(tls, config("127.0.0.1", "server")).unwrap().0, 200);
         assert!(run(tls, config("127.0.0.2", "server")).is_err());
         assert!(run(tls, config("wrong.example.invalid", "server")).is_err());
@@ -294,6 +322,86 @@ pub(crate) async fn exchange<T: io::Read + io::Write>(
         raw.extend_from_slice(&buffer[..n]);
         if let Some(result) = google_http::response(&raw)? {
             return Ok(result);
+        }
+    }
+}
+
+/// Public browser requests never receive Gateway credentials or cookies.
+pub(crate) async fn public_exchange<T: io::Read + io::Write>(
+    tls: &'static Tls<'static>,
+    stream: T,
+    url: crate::browser_service::url::Url,
+) -> Result<crate::browser_service::http::Response, &'static str> {
+    public_exchange_with_ca(tls, stream, url, crate::browser_service::roots()).await
+}
+async fn public_exchange_with_ca<T: io::Read + io::Write>(
+    tls: &'static Tls<'static>,
+    stream: T,
+    url: crate::browser_service::url::Url,
+    roots: &str,
+) -> Result<crate::browser_service::http::Response, &'static str> {
+    let name = CString::new(url.host.as_str()).map_err(|_| "Неверное имя сайта")?;
+    let ca = CString::new(roots).map_err(|_| "Неверный CA браузера")?;
+    let certificate =
+        Certificate::new(X509::PEM(&ca)).map_err(|_| "Не удалось прочитать CA браузера")?;
+    let cfg = SessionConfig::Client(ClientSessionConfig {
+        ca_chain: Some(certificate),
+        server_name: Some(&name),
+        auth_mode: AuthMode::Required,
+        min_version: TlsVersion::Tls1_2,
+        ..ClientSessionConfig::new()
+    });
+    let mut session =
+        Session::new(tls.reference(), stream, &cfg).map_err(|_| "Не удалось создать HTTPS")?;
+    if let Err(error) = session.connect().await {
+        crate::watch_println!(
+            "BrowserTLS: handshake {:?}, verify={:08x}",
+            error,
+            session.tls_verification_details()
+        );
+        return Err("TLS: ошибка соединения или сертификата");
+    }
+    if session.tls_verification_details() != 0 {
+        return Err("TLS: сертификат сайта отклонён");
+    }
+    let accept = if url.host == "cloudflare-dns.com" && url.path.starts_with("/dns-query?") {
+        "application/dns-json"
+    } else {
+        "text/html,application/xhtml+xml,text/plain,image/png,image/jpeg;q=0.8"
+    };
+    let request = alloc::format!(
+        "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: AOSP-Wear-Browser/1.0\r\nAccept: {accept}\r\nAccept-Encoding: identity\r\nConnection: close\r\n\r\n",
+        url.path,
+        url.host
+    );
+    let mut at = 0;
+    while at < request.len() {
+        let n = session
+            .write(&request.as_bytes()[at..])
+            .await
+            .map_err(|_| "Ошибка отправки HTTPS")?;
+        if n == 0 {
+            return Err("Сайт закрыл соединение");
+        }
+        at += n;
+    }
+    session.flush().await.map_err(|_| "Ошибка отправки HTTPS")?;
+    let mut raw = Vec::new();
+    let mut buffer = [0; 2048];
+    loop {
+        let n = session
+            .read(&mut buffer)
+            .await
+            .map_err(|_| "Ошибка чтения HTTPS")?;
+        raw.extend_from_slice(&buffer[..n]);
+        if raw.len() > crate::browser_service::http::BODY_LIMIT + 16384 {
+            return Err("Ответ сайта слишком большой");
+        }
+        if let Some(response) = crate::browser_service::http::response(&raw, n == 0)? {
+            return Ok(response);
+        }
+        if n == 0 {
+            return Err("Неполный ответ сайта");
         }
     }
 }

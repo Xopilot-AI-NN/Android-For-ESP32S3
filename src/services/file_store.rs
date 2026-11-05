@@ -950,3 +950,9 @@ pub(crate) mod tests {
 pub fn content_crc(data: &[u8]) -> u32 {
     gpt::crc32(data)
 }
+
+/// Decode a bounded downloaded image using the same native row decoders as WFS.
+pub(crate) fn network_thumbnail(bytes: &[u8]) -> Option<Vec<u16>> {
+    if bytes.len() > 192*1024 { return None; }
+    image::from_slice(bytes).ok()
+}

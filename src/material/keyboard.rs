@@ -60,11 +60,11 @@ impl Surface {
             f.app.files.limit
         } else if f.name_editing {
             32
-        } else if f.app.id == crate::apps::BROWSER && f.app.browser.mode == 1 {
+        } else if f.app.id == crate::apps::BROWSER {
             512
         } else if matches!(
             f.app.id,
-            crate::apps::GOOGLE | crate::apps::TRANSLATOR | crate::apps::BROWSER
+            crate::apps::GOOGLE | crate::apps::TRANSLATOR
         ) {
             1024
         } else {

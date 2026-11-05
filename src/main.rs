@@ -157,6 +157,8 @@ mod panic_record;
 #[path = "services/persistent_log.rs"]
 mod persistent_log;
 
+#[path = "services/browser.rs"]
+pub mod browser_service;
 #[path = "services/google_gateway.rs"]
 mod google_gateway;
 #[path = "services/google_http.rs"]
