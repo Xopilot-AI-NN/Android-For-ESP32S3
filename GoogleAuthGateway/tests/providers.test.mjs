@@ -141,3 +141,10 @@ test("daily budgets survive provider reconstruction and roll over on a new UTC d
     store.close();
   }
 });
+
+test("native browser receives complete result URLs rather than a truncated display address", async () => {
+  const url="https://example.org/article?q="+"x".repeat(350);
+  const p=new Providers({}, {search:async()=>[{title:"Long URL",description:"Text",url}]});
+  const result=await p.search("watch","fixture");
+  assert.equal(result.results[0].url,url);
+});

@@ -275,7 +275,7 @@ export class Providers {
       } catch {
         continue;
       }
-      if (url.protocol !== "https:" || url.username || url.password) continue;
+      if (url.protocol !== "https:" || url.username || url.password || url.href.length > 2048) continue;
       const id = opaque(16);
       this.pages.set(id, {
         device,
@@ -286,7 +286,7 @@ export class Providers {
         id,
         title: plainText(item.title || "").slice(0, 160),
         snippet: plainText(item.description || "").slice(0, 400),
-        url: url.href.slice(0, 200),
+        url: url.href,
       });
     }
     const result = { provider: "DuckDuckGo", results };

@@ -33,6 +33,18 @@ utilities and ordinary wireless ADB. Browser remote control has been removed.
 [Программное превью результатов поиска и настроек сна](doc/preview/browser-dock/README.md)
 использует синтетические данные.
 
+### Браузер без Google Gateway · 5 ноября
+
+![Прямое открытие example.org на ESP32-S3](doc/preview/native-browser-20261105/example.png)
+
+HTTPS, DNS, разбор HTML и уменьшение JPEG/PNG теперь выполняют сами часы.
+Нужны Wi-Fi и синхронизированное время. Есть ссылки, история и прямой поиск
+DuckDuckGo; поисковик может потребовать CAPTCHA и отказать часам.
+Это режим чтения без JavaScript, полной CSS-вёрстки и входа в Google.
+[Возможности и ограничения](App/system/app/Browser/README.md),
+[проверка на устройстве](doc/preview/native-browser-20261105/README.md).
+В режиме `./flash pc` ПК всё ещё подаёт системный образ через USB.
+
 ### Air Keyboard — программный стенд
 
 ![Full, Inline и меню Air Keyboard](doc/air-keyboard/preview.png)

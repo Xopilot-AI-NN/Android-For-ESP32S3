@@ -4,6 +4,13 @@ import { readFileSync } from "node:fs";
 const server = https.createServer(
   { cert: readFileSync(process.argv[2]), key: readFileSync(process.argv[3]) },
   (req, res) => {
+    if (req.url === "/browser") {
+      if (req.headers.authorization || req.headers.cookie || req.headers["x-device-id"]) {
+        res.writeHead(403); res.end("Credential leak"); return;
+      }
+      res.writeHead(200, {"Content-Type": "text/html; charset=utf-8"});
+      res.end("<h1>Direct browser</h1>"); return;
+    }
     const body = JSON.stringify({ ok: true });
     res.writeHead(200, {
       "Content-Type": "application/json",
