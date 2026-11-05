@@ -15,6 +15,6 @@ pub const PRODUCT_BRAND: &str = "AOSP";
 pub const BOARD: &str = "ESP32-S3-Zero-N4R2";
 
 /// Сетевое имя устройства для протоколов подключения.
-pub const HOSTNAME: &str = "aosp-watch";
+pub const HOSTNAME: &str = "aosp-wearos-watch";
 /// Дружественное имя при отсутствии сохранённого пользовательского значения.
 pub const DEFAULT_DEVICE_NAME: &str = "AOSP Watch";
