@@ -80,13 +80,13 @@ struct Shared {
     /// Необработанный запрос или ожидающий результат.
     pending: Option<Request>,
     /// Монотонное время/интервал last_request в миллисекундах.
-    last_request_ms: u64,
+    last_request_ms: Option<u64>,
 }
 /// Общее состояние сервиса, доступ к которому защищён critical_section.
 static STATE: Mutex<RefCell<Shared>> = Mutex::new(RefCell::new(Shared {
     data: Snapshot::empty(),
     pending: None,
-    last_request_ms: 0,
+    last_request_ms: None,
 }));
 /// Атомарный признак готовности сетевого соединения.
 static ONLINE: AtomicBool = AtomicBool::new(false);
@@ -109,13 +109,74 @@ pub fn request(request: Request) {
         let now = esp_hal::time::Instant::now()
             .duration_since_epoch()
             .as_millis() as u64;
-        if s.last_request_ms != 0 && now.saturating_sub(s.last_request_ms) < 3000 {
+        if s.last_request_ms
+            .is_some_and(|last| now.saturating_sub(last) < 3000)
+        {
             return;
         }
-        s.last_request_ms = now;
+        s.last_request_ms = Some(now);
         s.pending = Some(request);
         s.data.status = 1;
     });
+}
+// A failed/offline refresh keeps the last good reading. Automatic work never
+// replaces a city search or another request already owned by the network client.
+impl Shared {
+    fn refresh_widget(&mut self, enabled: bool, online: bool, now_ms: u64) -> bool {
+        if !enabled
+            || !online
+            || self.pending.is_some()
+            || self.data.status == 1
+            || self
+                .last_request_ms
+                .is_some_and(|last| now_ms.saturating_sub(last) < 30_000)
+        {
+            return false;
+        }
+        self.pending = Some(if self.data.city_len > 0 {
+            Request::Refresh
+        } else {
+            Request::Location
+        });
+        self.last_request_ms = Some(now_ms);
+        self.data.status = 1;
+        true
+    }
+}
+/// Refresh only when the selected watch face actually contains weather.
+pub fn widget_tick(enabled: bool, now_ms: u64) {
+    critical_section::with(|cs| {
+        STATE
+            .borrow_ref_mut(cs)
+            .refresh_widget(enabled, ONLINE.load(Ordering::Relaxed), now_ms);
+    });
+}
+#[cfg(test)]
+mod refresh_tests {
+    use super::*;
+    #[test]
+    fn widget_refresh_is_conditional_and_never_interrupts_a_request() {
+        let mut s = Shared {
+            data: Snapshot::empty(),
+            pending: None,
+            last_request_ms: None,
+        };
+        assert!(!s.refresh_widget(false, true, 100));
+        assert!(!s.refresh_widget(true, false, 100));
+        assert!(s.refresh_widget(true, true, 100));
+        assert!(matches!(s.pending.take(), Some(Request::Location)));
+        assert!(!s.refresh_widget(true, true, 40_000)); // Still resolving location.
+        s.data.status = 2;
+        city(&mut s.data, "Минск");
+        s.data.valid = true;
+        assert!(!s.refresh_widget(true, true, 30_099));
+        assert!(s.refresh_widget(true, true, 30_100));
+        assert!(matches!(s.pending.take(), Some(Request::Refresh)));
+        s.data.status = 6; // A timeout retries at the normal interval, not every frame.
+        assert!(!s.refresh_widget(true, true, 30_101));
+        assert!(s.refresh_widget(true, true, 60_100));
+        assert!(s.data.valid);
+    }
 }
 /// Забирает следующий отложенный запрос, удаляя его из очереди.
 pub fn take_request() -> Option<Request> {

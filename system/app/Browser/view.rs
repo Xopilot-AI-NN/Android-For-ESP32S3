@@ -127,6 +127,16 @@ impl Surface {
                     let text = core::str::from_utf8(&row.text[..row.len as usize]).unwrap_or("");
                     let x = 14 + i32::from(row.indent) * 8;
                     if row.selected {
+                        if !matches!(row.kind, 4 | 6) {
+                            self.round_rect(
+                                8,
+                                y,
+                                224,
+                                row.height - 4,
+                                5,
+                                if v.light { 0xeefb } else { t.surface_high },
+                            );
+                        }
                         self.round_rect(3, y, 3, row.height - 3, 1, t.primary);
                     }
                     let color = if row.kind == 3 {
@@ -160,6 +170,13 @@ impl Surface {
                             color,
                         ),
                     }
+                    if row.kind == 3 {
+                        let width = text
+                            .chars()
+                            .map(crate::material::body_character_width)
+                            .sum::<i32>();
+                        self.round_rect(x, y + 17, width.min(224 - x), 1, 0, color);
+                    }
                     y += row.height;
                 }
                 if v.rows_len == 0 {
@@ -187,7 +204,21 @@ impl Surface {
                 self.round_rect(236, 80, 2, track, 1, t.surface_high);
                 self.round_rect(236, 80 + top, 2, thumb, 1, t.primary);
             }
-            self.text_fitted_raw(10, 246, v.message, 1, 220, t.on_surface_variant);
+            let hint = if !v.busy && v.message == "Колесо: читать · Нажатие: открыть"
+            {
+                match v.rows[..v.rows_len as usize]
+                    .iter()
+                    .find(|r| r.selected)
+                    .map(|r| r.kind)
+                {
+                    Some(3) => "Нажмите: открыть ссылку",
+                    Some(4) => "Нажмите: показать фото",
+                    _ => "Колесо: прокрутка · 2×: меню",
+                }
+            } else {
+                v.message
+            };
+            self.text_fitted_raw(10, 246, hint, 1, 220, t.on_surface_variant);
             self.text_center_raw(
                 266,
                 &alloc::format!(

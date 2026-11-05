@@ -2,7 +2,7 @@
 use alloc::{string::String, vec::Vec};
 use serde_json::Value;
 const MAX_LINES: usize = 256;
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     Link(u16),
     Image(u16),
@@ -12,16 +12,18 @@ pub struct Line {
     pub kind: u8,
     pub indent: u8,
     pub action: Option<Action>,
+    gap: i32,
 }
 impl Line {
     pub fn height(&self) -> i32 {
-        match self.kind {
-            1 => 31,
-            2 => 23,
-            4 => 42,
-            6 => 12,
-            _ => 18,
-        }
+        self.gap
+            + match self.kind {
+                1 => 31,
+                2 => 23,
+                4 => 42,
+                6 => 12,
+                _ => 18,
+            }
     }
 }
 #[derive(Default)]
@@ -31,54 +33,147 @@ pub struct Layout {
 impl Layout {
     pub fn build(value: &Value) -> Self {
         let mut out = Self::default();
-        if let Some(blocks) = value["blocks"].as_array() {
-            for block in blocks {
-                let index = block["index"].as_u64().unwrap_or(0).min(65535) as u16;
-                let (kind, action) = match block["type"].as_str().unwrap_or("") {
-                    "heading" if block["level"].as_u64() == Some(1) => (1, None),
-                    "heading" => (2, None),
-                    "link" => (3, Some(Action::Link(index))),
-                    "image" => (4, Some(Action::Image(index))),
-                    "code" => (5, None),
-                    "rule" => (6, None),
-                    _ if block["bold"] == true => (2, None),
-                    _ => (0, None),
-                };
-                let indent = block["indent"].as_u64().unwrap_or(0).min(3) as u8;
-                let text = block["text"].as_str().unwrap_or("");
-                if matches!(kind, 4 | 6) {
-                    out.lines.push(Line {
-                        text: text.chars().take(48).collect(),
-                        kind,
-                        indent,
-                        action,
-                    });
-                } else {
-                    let width = if kind == 1 {
+        let Some(blocks) = value["blocks"].as_array() else {
+            return out;
+        };
+        let mut start = 0;
+        while start < blocks.len() && out.lines.len() < MAX_LINES {
+            let block = &blocks[start];
+            let kind = match block["type"].as_str().unwrap_or("") {
+                "heading" if block["level"].as_u64() == Some(1) => 1,
+                "heading" => 2,
+                "image" => 4,
+                "code" => 5,
+                "rule" => 6,
+                _ => 0,
+            };
+            let indent = block["indent"].as_u64().unwrap_or(0).min(3) as u8;
+            let mut end = start + 1;
+            // Anchor boundaries are inline: keep the surrounding sentence on
+            // the same line. Distinct links still get separate selectable rows.
+            if !matches!(kind, 4 | 6) && block["flow"].is_u64() {
+                while end < blocks.len()
+                    && blocks[end]["flow"] == block["flow"]
+                    && !matches!(blocks[end]["type"].as_str(), Some("image" | "rule"))
+                {
+                    end += 1;
+                }
+            }
+            if matches!(kind, 4 | 6) {
+                out.lines.push(Line {
+                    text: block["text"]
+                        .as_str()
+                        .unwrap_or("")
+                        .chars()
+                        .take(48)
+                        .collect(),
+                    kind,
+                    indent,
+                    gap: 6,
+                    action: (kind == 4).then_some(Action::Image(index(block))),
+                });
+            } else {
+                let mut flow = Flow {
+                    lines: &mut out.lines,
+                    text: String::new(),
+                    width: 0,
+                    action: None,
+                    kind,
+                    indent,
+                    limit: if kind == 1 {
                         105
                     } else {
                         210 - i32::from(indent) * 8
-                    };
-                    wrap(text, width, |text| {
-                        out.lines.push(Line {
-                            text,
-                            kind,
-                            indent,
-                            action,
-                        });
-                        out.lines.len() < MAX_LINES
-                    });
+                    },
+                };
+                if block["list"] == true {
+                    flow.segment("-", None);
                 }
-                if out.lines.len() >= MAX_LINES {
-                    break;
+                for segment in &blocks[start..end] {
+                    let action =
+                        (segment["type"] == "link").then_some(Action::Link(index(segment)));
+                    flow.segment(segment["text"].as_str().unwrap_or(""), action);
+                }
+                flow.emit();
+                if let Some(last) = out.lines.last_mut() {
+                    last.gap = if kind == 1 { 8 } else { 6 };
                 }
             }
+            start = end;
         }
         out
     }
 }
+fn index(block: &Value) -> u16 {
+    block["index"].as_u64().unwrap_or(0).min(65535) as u16
+}
+struct Flow<'a> {
+    lines: &'a mut Vec<Line>,
+    text: String,
+    width: i32,
+    action: Option<Action>,
+    kind: u8,
+    indent: u8,
+    limit: i32,
+}
+impl Flow<'_> {
+    fn emit(&mut self) {
+        if !self.text.is_empty() && self.lines.len() < MAX_LINES {
+            self.lines.push(Line {
+                text: core::mem::take(&mut self.text),
+                kind: if self.action.is_some() && self.kind == 0 {
+                    3
+                } else {
+                    self.kind
+                },
+                indent: self.indent,
+                action: self.action,
+                gap: 0,
+            });
+        }
+        self.width = 0;
+        self.action = None;
+    }
+    fn segment(&mut self, text: &str, action: Option<Action>) {
+        if action.is_some() && self.action.is_some() && action != self.action {
+            self.emit();
+        }
+        for word in text.split_whitespace() {
+            if self.lines.len() >= MAX_LINES {
+                return;
+            }
+            let size: i32 = word
+                .chars()
+                .map(crate::material::body_character_width)
+                .sum();
+            if !self.text.is_empty() && self.width + 4 + size > self.limit {
+                self.emit();
+            }
+            if !self.text.is_empty() && !word.starts_with(['.', ',', '!', '?', ':', ';', ')', ']'])
+            {
+                self.text.push(' ');
+                self.width += crate::material::body_character_width(' ');
+            }
+            for c in word.chars() {
+                let advance = crate::material::body_character_width(c);
+                if !self.text.is_empty()
+                    && (self.width + advance > self.limit || self.text.len() + c.len_utf8() > 112)
+                {
+                    self.emit();
+                }
+                if self.lines.len() >= MAX_LINES {
+                    return;
+                }
+                self.text.push(c);
+                self.width += advance;
+                self.action = self.action.or(action);
+            }
+        }
+    }
+}
 // Emit directly into the layout. Building a temporary Vec for the entire
 // paragraph defeated MAX_LINES before the caller could stop consuming it.
+#[cfg(test)]
 fn wrap(text: &str, limit: i32, mut emit: impl FnMut(String) -> bool) {
     let mut line = String::new();
     let mut width = 0;
@@ -119,6 +214,21 @@ fn wrap(text: &str, limit: i32, mut emit: impl FnMut(String) -> bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn inline_links_keep_the_sentence_and_distinct_targets_remain_selectable() {
+        let layout = Layout::build(&serde_json::json!({"blocks":[
+            {"flow":1,"type":"paragraph","text":"Hello"},
+            {"flow":1,"type":"link","index":0,"text":"world"},
+            {"flow":1,"type":"paragraph","text":"!"},
+            {"flow":1,"type":"link","index":1,"text":"Next"},
+            {"flow":2,"type":"link","index":2,"text":"Item","list":true}
+        ]}));
+        assert_eq!(layout.lines[0].text, "Hello world!");
+        assert!(matches!(layout.lines[0].action, Some(Action::Link(0))));
+        assert!(matches!(layout.lines[1].action, Some(Action::Link(1))));
+        assert_eq!(layout.lines[2].text, "- Item");
+        assert!(layout.lines[1].gap > 0);
+    }
     #[test]
     fn long_paragraphs_stop_at_the_budget_without_losing_link_actions() {
         let layout = Layout::build(&serde_json::json!({"blocks":[
