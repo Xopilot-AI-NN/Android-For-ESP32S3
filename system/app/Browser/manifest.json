@@ -11,6 +11,7 @@
   "sources": [
     "main.rs",
     "engine.rs",
-    "view.rs"
+    "view.rs",
+    "search.rs"
   ]
 }

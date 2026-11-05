@@ -1,4 +1,4 @@
-//! Bounded native flow layout. The watch receives semantic blocks, never an HTML DOM or JavaScript.
+//! Bounded native flow layout, fed by the on-watch HTML reader. No JavaScript or DOM in the rasterizer.
 use alloc::{string::String, vec::Vec};
 use serde_json::Value;
 const MAX_LINES: usize = 256;

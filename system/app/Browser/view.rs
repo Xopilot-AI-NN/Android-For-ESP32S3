@@ -7,7 +7,17 @@ impl Surface {
         if v.mode == 1 {
             f.keyboard = v.keyboard;
             f.keyboard_error = v.error;
-            self.text_keyboard(f, t, "Адрес сайта", address, "Открыть");
+            self.text_keyboard(
+                f,
+                t,
+                if v.error == 3 {
+                    v.message
+                } else {
+                    "Адрес сайта"
+                },
+                address,
+                "Открыть",
+            );
             return;
         }
         if v.mode == 6 {
@@ -17,6 +27,16 @@ impl Surface {
                 self.symbol(Symbol::Search, 120, 98, t.primary);
                 self.text_center_raw(125, "Что найти?", 1, t.on_surface);
                 self.text_center_raw(151, "Нажмите: поиск", 1, t.on_surface_variant);
+            } else if f.app.remote.error == 3 && f.app.remote.mode != 1 {
+                self.photo_header(f, "Поиск", t);
+                for (row, line) in crate::apps::remote::wrap(f.app.remote.message)
+                    .iter()
+                    .take(4)
+                    .enumerate()
+                {
+                    self.text_fitted_raw(12, 92 + row as i32 * 20, line, 1, 216, t.on_surface);
+                }
+                self.text_center_raw(198, "Нажмите: новый запрос", 1, t.on_surface_variant);
             } else {
                 self.remote_app_page(f, t);
             }
@@ -31,7 +51,20 @@ impl Surface {
             self.symbol(Symbol::World, 120, 98, t.primary);
             self.text_center_raw(125, "Открыть сайт", 1, t.on_surface);
             self.text_center_raw(151, "Нажмите: адрес сайта", 1, t.on_surface_variant);
-            self.text_center_raw(201, "HTTPS · сжатые фото", 1, t.on_surface_variant);
+            for (row, line) in crate::apps::remote::wrap(v.message)
+                .iter()
+                .take(2)
+                .enumerate()
+            {
+                self.text_fitted_raw(
+                    12,
+                    201 + row as i32 * 17,
+                    line,
+                    1,
+                    216,
+                    t.on_surface_variant,
+                );
+            }
         } else if v.mode == 3 {
             let labels = [
                 "Адрес сайта",
@@ -72,7 +105,7 @@ impl Surface {
             let ink = if v.light { 0x1082 } else { t.on_surface };
             self.round_rect(0, 78, 240, 164, 0, bg);
             if v.mode == 4 {
-                if let Some(image) = crate::google_gateway::mail_image(7) {
+                if let Some(image) = crate::browser_service::mail_image(7) {
                     let x0 = (240 - image.width as i32 * 2) / 2;
                     let y0 = 80 + (160 - image.height as i32 * 2) / 2;
                     for y in 0..image.height {

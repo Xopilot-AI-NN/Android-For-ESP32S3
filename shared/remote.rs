@@ -377,11 +377,6 @@ impl<E: Endpoint> Controller<E> {
         }
     }
     /// Open events for the month selected in the unified offline calendar.
-    pub fn begin_input(&mut self) {
-        self.mode = 1;
-        self.error = 0;
-        self.keyboard.suggest(&self.text);
-    }
     pub fn open_month(&mut self, month: i32) {
         self.open();
         self.month = month.clamp(1900 * 12, 2100 * 12 - 1);
@@ -520,7 +515,7 @@ impl<E: Endpoint> Controller<E> {
         };
         let selected = google::text(item, "id", 128);
         if E::KIND == 0 {
-            crate::apps::browser::request_search_result(selected);
+            crate::apps::browser::request_search_result(google::text(item, "url", 2048));
             return;
         }
         if !matches!(E::KIND, 1 | 4) && !google::fetch(E::KIND, "", &selected, 0, "", "") {

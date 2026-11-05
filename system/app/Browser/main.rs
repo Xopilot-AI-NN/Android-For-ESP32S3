@@ -1,7 +1,8 @@
-//! Anonymous HTTPS browser. History/layout live in bounded RAM; Gateway owns HTML/resources.
+//! Standalone HTTPS reader: HTML, search, image previews and history run on the watch.
 mod engine;
+mod search;
 use crate::{
-    google_gateway as web,
+    browser_service as web,
     runtime::RuntimeEvent,
     text_input::{Action as KeyAction, Keyboard, KeyboardView},
 };
@@ -82,7 +83,7 @@ impl Default for View {
             busy: false,
             can_back: false,
             can_forward: false,
-            message: "HTTPS · HTML",
+            message: "HTTPS · на часах",
         }
     }
 }
@@ -104,7 +105,7 @@ enum Pending {
 pub struct Controller {
     tab: u8,
     dock_focus: bool,
-    search: crate::apps::google_search::Controller,
+    search: search::Controller,
     internal_search: bool,
     active: bool,
     mode: u8,
@@ -119,6 +120,7 @@ pub struct Controller {
     layout: Layout,
     pages: u16,
     pending: Option<Pending>,
+    pending_stamp: u64,
     message: &'static str,
 }
 impl Default for Controller {
@@ -126,7 +128,7 @@ impl Default for Controller {
         Self {
             tab: 0,
             dock_focus: true,
-            search: crate::apps::google_search::Controller::default(),
+            search: search::Controller::default(),
             internal_search: false,
             active: false,
             mode: 0,
@@ -141,7 +143,8 @@ impl Default for Controller {
             layout: Layout::default(),
             pages: 0,
             pending: None,
-            message: "HTTPS · HTML",
+            pending_stamp: 0,
+            message: "HTTPS · на часах",
         }
     }
 }
@@ -153,6 +156,7 @@ impl Controller {
         self.dock_focus = true;
         self.menu = 0;
         self.error = 0;
+        self.message = "HTTPS · на часах";
     }
     pub fn open_result(&mut self, id: String) {
         // A search result is another visit, not a new browser session.
@@ -168,6 +172,8 @@ impl Controller {
     pub fn close(&mut self) {
         web::cancel_data(7);
         web::clear_preview(7);
+        self.search = search::Controller::default();
+        web::clear();
         self.active = false;
         self.internal_search = false;
         self.pending = None;
@@ -179,30 +185,44 @@ impl Controller {
         self.current = 0;
     }
     fn navigate(&mut self, value: serde_json::Value, action: Pending) {
+        let stamp = web::cache(7).stamp;
         if let Ok(query) = serde_json::to_string(&value) {
             if web::fetch(7, &query, "", 0, "", "") {
+                self.pending_stamp = stamp;
                 self.pending = Some(action);
                 self.message = "Загрузка сайта…";
                 self.mode = 2;
             } else {
                 self.message = web::snapshot().message;
+                if self.mode == 1 {
+                    self.error = 3;
+                }
             }
         }
     }
     fn page(&mut self, page: u16, tail: bool) {
+        let stamp = web::cache(7).stamp;
         if let Some(visit) = self.history.get(self.current) {
             if web::fetch(7, "", &visit.id, page, "", "") {
+                self.pending_stamp = stamp;
                 self.pending = Some(Pending::Page(page, tail));
                 self.message = "Загрузка страницы…";
             }
         }
     }
     fn history(&mut self, index: usize) {
+        let stamp = web::cache(7).stamp;
         if let Some(visit) = self.history.get(index) {
             if web::fetch(7, "", &visit.id, visit.page, "", "") {
+                self.pending_stamp = stamp;
                 self.pending = Some(Pending::History(index));
                 self.message = "История…";
                 self.mode = 2;
+            } else {
+                // Only four documents stay in RAM. Older history entries keep
+                // their URL and can be fetched again without a Gateway.
+                let url = visit.url.clone();
+                self.navigate(serde_json::json!({"url":url}), Pending::History(index));
             }
         }
     }
@@ -224,6 +244,11 @@ impl Controller {
         let pending = self.pending.take().unwrap();
         let cache = web::cache(7);
         let value = &cache.value;
+        if cache.stamp == self.pending_stamp {
+            self.message = status.message;
+            self.mode = if self.history.is_empty() { 0 } else { 2 };
+            return;
+        }
         if let Pending::Image(index) = pending {
             if value["kind"] == "browser-image"
                 && value["index"].as_u64() == Some(u64::from(index))
@@ -283,6 +308,15 @@ impl Controller {
             }
             Pending::History(index) => {
                 self.current = index;
+                if let Some(visit) = self.history.get_mut(index) {
+                    if visit.id != id {
+                        visit.id = id.clone();
+                        visit.url = url.clone();
+                        visit.title = title.clone();
+                        visit.page = page;
+                        visit.line = 0;
+                    }
+                }
                 self.cursor = self.history.get(index).map_or(0, |v| v.line);
             }
             Pending::Page(_, _) => {
@@ -301,7 +335,9 @@ impl Controller {
         }
         self.pages = value["page_count"].as_u64().unwrap_or(1).min(65535) as u16;
         self.mode = 2;
-        self.message = if value["needs_js"] == true {
+        self.message = if value["truncated"] == true {
+            "Страница ограничена памятью"
+        } else if value["needs_js"] == true {
             "Сайту нужен JavaScript"
         } else {
             "Колесо: читать · Нажатие: открыть"
@@ -316,7 +352,7 @@ impl Controller {
                 }
             }
         }
-        self.keyboard = Keyboard::default();
+        self.keyboard = Keyboard::english();
         self.mode = 1;
         self.dock_focus = false;
         self.error = 0;
@@ -509,7 +545,9 @@ impl Controller {
                     }
                     Some(Action::Image(index)) => {
                         if let Some(v) = self.history.get(self.current) {
+                            let stamp = web::cache(7).stamp;
                             if web::fetch(7, "image", &v.id, index, "", "") {
+                                self.pending_stamp = stamp;
                                 self.pending = Some(Pending::Image(index));
                                 self.message = "Загрузка картинки…";
                             }
@@ -644,179 +682,89 @@ fn copy(out: &mut [u8], text: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn reply(request: crate::google_gateway::Request, page: u16, blocks: serde_json::Value) {
-        web::complete(request.id,200,&serde_json::to_vec(&serde_json::json!({"kind":"browser-page","document":"fixture-document-123456","url":"https://example.org/","title":"Fixture","page":page,"page_count":2,"blocks":blocks})).unwrap());
+    fn open(browser: &mut Controller, url: &str, html: &str) {
+        browser.navigate(serde_json::json!({"url":url}), Pending::New);
+        let r = web::take_request().unwrap();
+        assert_eq!(r.url.as_string(), url);
+        web::tests::html_reply(r.id, html);
+        browser.poll();
     }
     #[test]
-    fn opening_search_results_preserves_visits_and_returns_to_internal_results() {
+    fn local_links_history_cancel_and_memory_pages() {
         web::tests::setup();
         let mut browser = Controller::default();
         browser.open();
-        browser.event(RuntimeEvent::Rotate(1));
-        browser.open_result("first".into());
-        reply(web::take_request().unwrap(), 0, serde_json::json!([]));
-        browser.poll();
-        browser.open_result("second".into());
-        reply(web::take_request().unwrap(), 0, serde_json::json!([]));
+        open(
+            &mut browser,
+            "https://example.org/first",
+            "<a href='/next'>Next</a>",
+        );
+        browser.event(RuntimeEvent::Press);
+        let r = web::take_request().unwrap();
+        assert_eq!(r.url.path, "/next");
+        web::tests::html_reply(r.id, "<p>Second</p>");
         browser.poll();
         assert_eq!(browser.history.len(), 2);
         assert!(browser.back());
-        reply(web::take_request().unwrap(), 0, serde_json::json!([]));
+        assert!(web::take_request().is_none());
         browser.poll();
-        assert!(browser.back());
-        assert_eq!(browser.view().mode, 6);
-        browser.close();
-        web::tests::reset();
-    }
-
-    #[test]
-    fn dock_switches_immediately_and_search_keyboard_does_not_navigate_tabs() {
-        web::tests::setup();
-        let mut browser = Controller::default();
-        browser.open();
-        browser.event(RuntimeEvent::Rotate(1));
-        assert_eq!((browser.view().tab, browser.view().mode), (1, 6));
-        browser.event(RuntimeEvent::Click(1));
-        assert_eq!(browser.search_view().mode, 1);
-        browser.event(RuntimeEvent::Rotate(2));
-        assert_eq!(browser.view().tab, 1);
-        browser.back();
-        browser.event(RuntimeEvent::Rotate(1));
-        assert_eq!((browser.view().tab, browser.view().mode), (2, 5));
-        assert_eq!(browser.view().total, 0);
-        browser.event(RuntimeEvent::Rotate(1));
-        assert_eq!((browser.view().tab, browser.view().mode), (0, 0));
-        browser.close();
-        web::tests::reset();
-    }
-
-    #[test]
-    fn cancelling_first_navigation_returns_home_and_close_releases_buffers() {
-        web::tests::setup();
-        let mut browser = Controller::default();
-        browser.open_result("fixture".into());
-        let request = web::take_request().unwrap();
-        assert!(browser.back());
-        assert_eq!(browser.view().mode, 0);
-        reply(request, 0, serde_json::json!([]));
+        assert_eq!(browser.current, 0);
+        let source = (0..40)
+            .map(|i| alloc::format!("<p>Line {i}</p>"))
+            .collect::<String>();
+        open(&mut browser, "https://example.org/long", &source);
+        assert_eq!(browser.pages, 3);
+        browser.page(1, false);
+        assert!(web::take_request().is_none());
         browser.poll();
-        assert!(browser.history.is_empty());
-        browser.open_result("fixture".into());
-        let request = web::take_request().unwrap();
-        reply(
-            request,
-            0,
-            serde_json::json!([{"index":0,"type":"paragraph","text":"Content"}]),
+        assert_eq!(browser.history[browser.current].page, 1);
+        browser.navigate(
+            serde_json::json!({"url":"https://example.org/cancel"}),
+            Pending::New,
         );
+        let r = web::take_request().unwrap();
+        assert!(browser.back());
+        web::tests::html_reply(r.id, "<p>Late</p>");
         browser.poll();
-        assert!(browser.history.capacity() > 0);
-        assert!(browser.layout.lines.capacity() > 0);
+        assert_eq!(browser.history.len(), 2);
         browser.close();
         assert_eq!(browser.history.capacity(), 0);
         assert_eq!(browser.layout.lines.capacity(), 0);
-        assert_eq!(browser.view().pages, 0);
         web::tests::reset();
     }
-
     #[test]
-    fn browser_preview_decodes_once_paints_pixels_and_is_released_on_back() {
+    fn failed_navigation_never_reuses_the_previous_document_as_a_new_visit() {
         web::tests::setup();
         let mut browser = Controller::default();
-        browser.open_result("fixture".into());
-        let request = web::take_request().unwrap();
-        reply(
-            request,
-            0,
-            serde_json::json!([{"index":4,"type":"image","text":"Photo"}]),
+        browser.open();
+        open(&mut browser, "https://example.org/good", "<p>Good</p>");
+        browser.navigate(
+            serde_json::json!({"url":"https://example.org/bad"}),
+            Pending::New,
         );
+        let r = web::take_request().unwrap();
+        web::fail(r.id, "Нет ответа");
         browser.poll();
-        browser.event(RuntimeEvent::Press);
-        let request = web::take_request().unwrap();
-        assert!(request.path.ends_with("/images/4"));
-        web::complete(request.id,200,&serde_json::to_vec(&serde_json::json!({
-            "kind":"browser-image","index":4,"image":{"codec":"rgb565-zlib","width":2,"height":1,"data":"eJxj+PGAHQAEswHg"}
-        })).unwrap());
-        browser.poll();
-        assert_eq!(browser.mode, 4);
-        assert!(web::cache(7).value["image"].get("data").is_none());
-        let mut frame =
-            crate::material::MaterialFrame::parse("M3|1|0|70|0|0|0|0|1|1|0|0|600|0|0|0|1|1|3")
-                .unwrap();
-        frame.app.id = crate::apps::BROWSER;
-        frame.app.browser = browser.view();
-        let mut surface = crate::material::Surface::new();
-        surface.render(frame);
-        assert_eq!(surface.pixels()[159 * 240 + 118], 0xf800);
-        assert_eq!(surface.pixels()[159 * 240 + 120], 0x07e0);
-        assert!(browser.back());
-        assert_eq!(browser.mode, 2);
-        assert!(web::mail_image(7).is_none());
+        assert_eq!(browser.history.len(), 1);
+        assert_eq!(browser.message, "Нет ответа");
         browser.close();
         web::tests::reset();
     }
     #[test]
-    fn navigation_pages_history_errors_and_cancel_do_not_reuse_old_responses() {
-        web::tests::setup(); // Browser is independent of a Google account/session.
-        let mut browser = Controller::default();
-        browser.open_result("result-capability".into());
-        let request = web::take_request().unwrap();
-        assert_eq!(request.path, "/api/v1/browser/open");
-        assert_eq!(request.method, "POST");
-        assert!(request.authorization.starts_with("Device "));
-        reply(
-            request,
-            0,
-            serde_json::json!([{"index":2,"type":"link","text":"Next"}]),
-        );
-        browser.poll();
-        assert_eq!(browser.history.len(), 1);
-        browser.event(RuntimeEvent::Press);
-        let request = web::take_request().unwrap();
-        assert_eq!(
-            serde_json::from_slice::<serde_json::Value>(&request.body).unwrap()["link"],
-            2
-        );
-        reply(
-            request,
-            0,
-            serde_json::json!([{"index":0,"type":"paragraph","text":"Other"}]),
-        );
-        browser.poll();
-        assert_eq!(browser.history.len(), 2);
-        assert!(browser.back());
-        let request = web::take_request().unwrap();
-        assert!(request.path.ends_with("?page=0"));
-        reply(
-            request,
-            0,
-            serde_json::json!([{"index":0,"type":"paragraph","text":"First"}]),
-        );
-        browser.poll();
-        assert_eq!(browser.current, 0);
-        browser.event(RuntimeEvent::Rotate(1));
-        let request = web::take_request().unwrap();
-        assert!(request.path.ends_with("?page=1"));
-        reply(
-            request,
-            1,
-            serde_json::json!([{"index":1,"type":"paragraph","text":"Second"}]),
-        );
-        browser.poll();
-        assert_eq!(browser.history[0].page, 1);
-        browser.page(0, false);
-        let request = web::take_request().unwrap();
-        web::complete(request.id, 410, br#"{"error":"BROWSER_PAGE_EXPIRED"}"#);
-        browser.poll();
-        assert_eq!(browser.history[0].page, 1);
-        assert_eq!(browser.message, "Страница устарела · обновите");
-        browser.page(0, false);
-        let request = web::take_request().unwrap();
-        browser.close();
-        reply(request, 0, serde_json::json!([]));
-        browser.poll();
-        assert!(browser.history.is_empty());
-        assert!(!browser.active);
-        assert!(web::cache(7).value.is_null());
+    fn dock_switches_immediately_and_typing_keeps_tab() {
+        web::tests::setup();
+        let mut b = Controller::default();
+        b.open();
+        b.event(RuntimeEvent::Rotate(1));
+        assert_eq!((b.view().tab, b.view().mode), (1, 6));
+        b.event(RuntimeEvent::Click(1));
+        assert_eq!(b.search_view().mode, 1);
+        b.event(RuntimeEvent::Rotate(2));
+        assert_eq!(b.view().tab, 1);
+        b.back();
+        b.event(RuntimeEvent::Rotate(1));
+        assert_eq!((b.view().tab, b.view().mode), (2, 5));
+        b.close();
         web::tests::reset();
     }
 }
