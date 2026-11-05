@@ -14,6 +14,11 @@ class StackTests(unittest.TestCase):
             remaining(123452, [97232, 22032, 4736])
         self.assertEqual(remaining(156220, [97232, 1216, 4736]), 53036)
 
+    def test_input_path_detects_the_navigation_overflow(self):
+        with self.assertRaisesRegex(ValueError, 'headroom'):
+            remaining(155340, [97520, 22288, 560, 36896])
+        self.assertGreater(remaining(155340, [56800, 256, 560, 176, 15312]), 32768)
+
     def test_unknown_prologue_is_rejected(self):
         with self.assertRaises(ValueError):
             frame_size('unknown')

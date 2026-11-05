@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Reject the known ESP32-S3 main/disk stack overflow before packaging.
+"""Reject known ESP32-S3 main/disk/input stack overflows before packaging.
 
-This checks the named call path plus 32 KiB headroom, not whole-program WCET
+This checks the named call paths plus 32 KiB headroom, not whole-program WCET
 or an exhaustive stack proof. Runtime guard monitoring remains enabled.
 """
 from pathlib import Path
@@ -52,18 +52,41 @@ def check(elf: Path):
         if len(fields) == 3:
             symbols[fields[2]] = int(fields[0], 16)
     total = symbols['_stack_start_cpu0'] - symbols['_stack_end_cpu0']
-    frames = []
-    for suffix in ('4init3run', '21service_disk_requests', '17redraw_after_disk'):
+    def frame(fragment, *, inlined=False):
         matches = [address for name, address in symbols.items()
-                   if (name.endswith(suffix) if suffix == '4init3run' else suffix in name)]
+                   if (name.endswith(fragment) if fragment == '4init3run' else fragment in name)]
+        if not matches and inlined:
+            # LLVM folded this helper into its caller; its locals are already
+            # included in that caller's prologue, so do not count them twice.
+            return 0
         if len(matches) != 1:
-            raise ValueError(f'expected one {suffix} symbol, got {len(matches)}')
+            raise ValueError(f'expected one {fragment} symbol, got {len(matches)}')
         address = matches[0]
-        text = subprocess.check_output([tool('objdump'), '-d', f'--start-address={address}',
-                                       f'--stop-address={address + 32}', str(elf)], text=True)
-        frames.append(frame_size(text))
-    free = remaining(total, frames)
-    print(f'Main stack: {total} bytes; init/disk/redraw frames {frames}; reserve {free} bytes')
+        disassembly = subprocess.check_output(
+            [tool('objdump'), '-d', f'--start-address={address}',
+             f'--stop-address={address + 32}', str(elf)], text=True)
+        return frame_size(disassembly)
+
+    init = frame('4init3run')
+    render = frame('7Runtime6render')
+    # Scene construction and enrichment run sequentially, so budget the larger
+    # child. Include cold scene construction, not just the small cache-hit path.
+    render_child = max(frame('10SceneCache6render'), frame('7Runtime12enrich_frame'))
+    paths = {
+        'disk/redraw/scene': [init, frame('21service_disk_requests'),
+                              frame('17redraw_after_disk'), render, render_child],
+        'input/pager/scene': [init, frame('19dispatch_with_pager'),
+                              frame('7Runtime8dispatch'), render, render_child],
+        'browser/keyboard paint': [init, frame('21service_disk_requests'),
+                                    frame('17redraw_after_disk'), frame('11BootDisplay7runtime'),
+                                    frame('7Surface6render'), frame('18native_application'),
+                                    frame('12browser_page', inlined=True), frame('15remote_app_page'),
+                                    frame('13text_keyboard')],
+    }
+    for label, frames in paths.items():
+        free = remaining(total, frames)
+        print(f'Main stack: {total} bytes; {label} frames {frames}; reserve {free} bytes')
+
 
 
 if __name__ == '__main__':
