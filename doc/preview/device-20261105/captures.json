@@ -1,0 +1,21 @@
+{
+  "date": "2026-11-05",
+  "source": "Physical ESP32-S3 RGB565 framebuffer via ZADB screencap",
+  "firmware_commit": "605884e1",
+  "app_commit": "228e4cd9",
+  "resolution": [
+    240,
+    280
+  ],
+  "sha256": {
+    "clock-alarm.png": "9fcfb89920a3eb5661763d6b92332e173769dcf3503aa6d8a570d8715ee43649",
+    "browser-home.png": "9fc0e0cedd02abf5b30f02cc46427f05fe27c1d886b90bb94df97ec09c6260e2",
+    "browser-search.png": "1ed5a80102b48453b8ad2c18e517b6436fd96431fa177a58a345238b5417aab5",
+    "browser-keyboard.png": "57dce55f94dad9ab82f41e4359f1278a9c88fc03cd1758a77d86e3f1712ddcb3",
+    "browser-history.png": "73e03b97e73296807993cd09182f27ffa7e7109f83e295b2a49d4b0397f99716",
+    "air-keyboard.png": "ed68cc129b1124eded62afa90eecc366a41374b87021b654e646a0c0f79d1fdf",
+    "sleep-active.png": "257b21e74907fc508977fd987f216fd401a700fa710c0456dd006b8294c41ce7",
+    "sleep-aod.png": "2e23e962c9c611bb0028e01f7dcd8c9a7959044310e1d9c3410b42ca855fce03",
+    "sleep-disabled.png": "0ff2f254f6ce92b51b064ed55f0678b1535a7ddc964bd88abfe1819a20b57461"
+  }
+}
