@@ -35,8 +35,8 @@ pub struct KeyboardView {
     pub page: u8, // 0 letters, 1 digits/symbols, 2 additional symbols
     /// Индекс выбранной клавиши.
     pub focus: u8,
-    /// До трёх доступных словарных подсказок.
-    pub suggestions: [&'static str; 3],
+    /// До шести доступных словарных подсказок.
+    pub suggestions: [&'static str; 6],
     /// Разрешение клавиши NL только в редакторе документов.
     pub allow_newline: bool,
 }
@@ -117,19 +117,19 @@ impl Keyboard {
     /// Считает символы, служебные клавиши и доступные подсказки.
     fn target_count(&self) -> i32 {
         self.view.character_count() as i32
-                + 7
-                + self
-                    .view
-                    .suggestions
-                    .iter()
-                    .filter(|s| !s.is_empty())
-                    .count() as i32
+            + 7
+            + self
+                .view
+                .suggestions
+                .iter()
+                .filter(|s| !s.is_empty())
+                .count() as i32
     }
     /// Перемещает фокус на число шагов колёсика с учётом границ.
     pub fn rotate(&mut self, delta: i32) {
         let count = self.target_count();
-        self.view.focus = (i32::from(self.view.focus) + delta.rem_euclid(count))
-            .rem_euclid(count) as u8;
+        self.view.focus =
+            (i32::from(self.view.focus) + delta.rem_euclid(count)).rem_euclid(count) as u8;
     }
     /// Выполняет действие выбранной клавиши и обновляет состояние ввода.
     pub fn press(&mut self) -> Action {

@@ -669,7 +669,7 @@ mod tft {
                     let began = esp_hal::time::Instant::now()
                         .duration_since_epoch()
                         .as_micros() as u64;
-                    self.material_surface.render(*scene);
+                    self.material_surface.render(**scene);
                     let raster_end = esp_hal::time::Instant::now()
                         .duration_since_epoch()
                         .as_micros() as u64;
@@ -887,11 +887,11 @@ mod tft {
             for writes_before_failure in [0, 5, 10] {
                 display.frame_valid = false;
                 wire.borrow_mut().fail_after = Some(writes_before_failure);
-                assert!(display.runtime(&RuntimeFrame::Material(frame)).is_err());
+                assert!(display.runtime(&RuntimeFrame::Material(alloc::boxed::Box::new(frame))).is_err());
                 assert!(wire.borrow().cs_high);
                 assert!(!wire.borrow().busy);
                 assert!(!display.frame_valid);
-                display.runtime(&RuntimeFrame::Material(frame)).unwrap();
+                display.runtime(&RuntimeFrame::Material(alloc::boxed::Box::new(frame))).unwrap();
                 assert!(display.frame_valid);
                 assert_eq!(display.displayed, display.material_surface.pixels());
             }
@@ -941,7 +941,7 @@ mod tft {
                 crate::material::MaterialFrame::parse("M3|5|0|70|0|0|0|0|1|1|0|0|600|0|0|0|1|1|3")
                     .unwrap();
             let before = wire.borrow().writes;
-            display.runtime(&RuntimeFrame::Material(frame)).unwrap();
+            display.runtime(&RuntimeFrame::Material(alloc::boxed::Box::new(frame))).unwrap();
             assert!(
                 wire.borrow().writes - before < 180,
                 "full frame should use batched SPI writes"
@@ -950,7 +950,7 @@ mod tft {
             let calls = wire.borrow().writes;
             frame.animation_phase = 120;
             frame.time_seconds = 37;
-            display.runtime(&RuntimeFrame::Material(frame)).unwrap();
+            display.runtime(&RuntimeFrame::Material(alloc::boxed::Box::new(frame))).unwrap();
             assert_eq!(display.stats.drawn, drawn);
             assert_eq!(display.stats.skipped, 1);
             assert_eq!(wire.borrow().writes, calls);
@@ -975,7 +975,7 @@ mod tft {
                 "cropped rows and partial chunks must retain RGB565 byte order"
             );
             frame.brightness = 25;
-            display.runtime(&RuntimeFrame::Material(frame)).unwrap();
+            display.runtime(&RuntimeFrame::Material(alloc::boxed::Box::new(frame))).unwrap();
             assert_eq!(display.stats.drawn, drawn + 1);
             assert_eq!(display.displayed, display.material_surface.pixels());
         }
@@ -1004,27 +1004,27 @@ mod tft {
             let frame =
                 crate::material::MaterialFrame::parse("M3|1|0|70|0|0|0|0|0|0|0|0|131|0|0|0|1|1|3")
                     .unwrap();
-            display.runtime(&RuntimeFrame::Material(frame)).unwrap();
+            display.runtime(&RuntimeFrame::Material(alloc::boxed::Box::new(frame))).unwrap();
             assert_eq!(wire.borrow().brightness, 70);
             let mut dim = frame;
             dim.brightness = 25;
-            display.runtime(&RuntimeFrame::Material(dim)).unwrap();
+            display.runtime(&RuntimeFrame::Material(alloc::boxed::Box::new(dim))).unwrap();
             assert_eq!(wire.borrow().brightness, 25);
             dim.display_sleep = true;
-            display.runtime(&RuntimeFrame::Material(dim)).unwrap();
+            display.runtime(&RuntimeFrame::Material(alloc::boxed::Box::new(dim))).unwrap();
             assert_eq!(wire.borrow().brightness, 0);
             assert_eq!(wire.borrow().command, 0x28);
             let sent = wire.borrow().bytes;
-            display.runtime(&RuntimeFrame::Material(dim)).unwrap();
+            display.runtime(&RuntimeFrame::Material(alloc::boxed::Box::new(dim))).unwrap();
             assert_eq!(wire.borrow().bytes, sent);
             dim.display_sleep = false;
-            display.runtime(&RuntimeFrame::Material(dim)).unwrap();
+            display.runtime(&RuntimeFrame::Material(alloc::boxed::Box::new(dim))).unwrap();
             assert_eq!(wire.borrow().brightness, 25);
             dim.screen = 29;
-            display.runtime(&RuntimeFrame::Material(dim)).unwrap();
+            display.runtime(&RuntimeFrame::Material(alloc::boxed::Box::new(dim))).unwrap();
             assert_eq!(wire.borrow().brightness, 100);
             dim.screen = 1;
-            display.runtime(&RuntimeFrame::Material(dim)).unwrap();
+            display.runtime(&RuntimeFrame::Material(alloc::boxed::Box::new(dim))).unwrap();
             assert_eq!(wire.borrow().brightness, 25);
             let wire = wire.borrow();
             assert!(!wire.busy);

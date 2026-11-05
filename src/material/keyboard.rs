@@ -25,6 +25,9 @@ impl Surface {
         _done: &str,
     ) {
         let keyboard = f.keyboard;
+        // The field is lifted above the opaque keyboard panel. The caller
+        // retains the page and scroll state; covered content needs no redraw.
+        self.round_rect(0, 24, 240, 60, 0, t.bg);
         let file_editor = matches!(f.app.id, crate::apps::FILES | crate::apps::EDITOR);
         let organizer = matches!(f.app.id, crate::apps::TASKS | crate::apps::EXPENSES);
         let count = keyboard.character_count();
@@ -46,16 +49,10 @@ impl Surface {
                 t.error
             },
         );
-        let bytes = if organizer {
-            u32::from(f.app.organizer.bytes)
-        } else if file_editor {
+        let bytes = if file_editor {
             f.app.files.bytes
-        } else if f.app.id == crate::apps::WEATHER {
-            u32::from(f.app.weather_editor.len)
-        } else if f.name_editing {
-            u32::from(f.name_draft_len)
         } else {
-            u32::from(f.wifi_password_len)
+            value.len() as u32
         };
         let limit = if organizer {
             128
@@ -63,6 +60,13 @@ impl Surface {
             f.app.files.limit
         } else if f.name_editing {
             32
+        } else if f.app.id == crate::apps::BROWSER && f.app.browser.mode == 1 {
+            512
+        } else if matches!(
+            f.app.id,
+            crate::apps::GOOGLE | crate::apps::TRANSLATOR | crate::apps::BROWSER
+        ) {
+            1024
         } else {
             64
         };
@@ -73,6 +77,9 @@ impl Surface {
             1,
             t.on_surface_variant,
         );
+        // The keyboard is a bottom overlay. Keep the input above its top edge;
+        // the app title and status remain visible above the editing surface.
+        self.round_rect(0, 84, 240, 196, 14, t.bg);
         // A light pill mirrors the input field in the supplied Gboard reference.
         self.round_rect(8, 49, 224, 32, 16, t.on_surface);
         self.text_raw(
@@ -87,17 +94,18 @@ impl Surface {
             if word.is_empty() {
                 continue;
             }
-            let x = 5 + index as i32 * 78;
+            let x = 5 + (index % 3) as i32 * 78;
+            let y = 87 + (index / 3) as i32 * 24;
             let selected = usize::from(keyboard.focus) == count + 7 + index;
             self.round_rect(
                 x,
-                87,
+                y,
                 74,
-                26,
+                22,
                 10,
                 if selected { t.primary } else { t.surface_high },
             );
-            self.text_fitted_raw(x + 5, 93, word, 1, 64, Self::focus_ink(t, selected));
+            self.text_fitted_raw(x + 5, y + 5, word, 1, 64, Self::focus_ink(t, selected));
         }
         let mut base = 0;
         for (row, length) in keyboard.rows().into_iter().enumerate() {
@@ -122,9 +130,9 @@ impl Surface {
                 };
                 self.keyboard_key(
                     left + col as i32 * (width + gap),
-                    119 + row as i32 * 36,
+                    139 + row as i32 * 29,
                     width,
-                    31,
+                    25,
                     label,
                     usize::from(keyboard.focus) == index,
                     t,

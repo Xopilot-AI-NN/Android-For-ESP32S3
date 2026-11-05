@@ -107,6 +107,13 @@ pub struct MaterialFrame {
     pub wifi_ip: Option<[u8; 4]>,
     /// Подрежим выбора длительности таймера/секундомера.
     pub timer_editor: u8,
+    pub bedtime_active: bool,
+    pub bedtime_auto: bool,
+    pub bedtime_start: u16,
+    pub bedtime_end: u16,
+    pub bedtime_brightness: u8,
+    pub bedtime_editor: u8,
+    pub bedtime_cursor: u8,
     /// Выбранная длительность таймера, секунды.
     pub timer_duration_secs: u16,
     /// Выбранный уровень чувствительности колёсика.
@@ -249,6 +256,13 @@ impl MaterialFrame {
             clock_alert: 0,
             wifi_ip: None,
             timer_editor: 0,
+            bedtime_active: false,
+            bedtime_auto: false,
+            bedtime_start: 1380,
+            bedtime_end: 420,
+            bedtime_brightness: 35,
+            bedtime_editor: 0,
+            bedtime_cursor: 0,
             timer_duration_secs: 300,
             crown_sensitivity: 1,
             crown_reverse: false,
@@ -740,3 +754,6 @@ mod app_air_keyboard_view;
 #[cfg(not(target_arch = "xtensa"))]
 #[path = "material/clock_layout_preview.rs"]
 mod clock_layout_preview;
+
+#[path = "../../App/system/app/Clock/dock.rs"]
+mod app_clock_dock;

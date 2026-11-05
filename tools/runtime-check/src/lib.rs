@@ -220,7 +220,7 @@ mod tests {
         let RuntimeFrame::Material(f) = os.render().unwrap() else {
             panic!("not Material");
         };
-        f
+        *f
     }
     #[test]
     /// Проверяет пропуск лишней работы Rhai при живых таймерах и RTC.
@@ -492,27 +492,44 @@ mod tests {
         os.replace_state(6).unwrap();
         os.dispatch(RuntimeEvent::Press).unwrap();
         assert_eq!(os.state() & 31, 31);
+        let alarm_config=os.clock_config();
+        os.dispatch(RuntimeEvent::Click(1)).unwrap();
+        assert_eq!(os.clock_config(),alarm_config ^ 0x800);
+        os.dispatch(RuntimeEvent::Click(1)).unwrap();
+        assert_eq!(os.clock_config(),alarm_config);
         os.dispatch(RuntimeEvent::Back).unwrap();
         assert_eq!(os.state() & 31, 6);
-        os.replace_state(6 | (1 << 5)).unwrap();
-        os.dispatch(RuntimeEvent::Press).unwrap();
-        assert_eq!(frame(&mut os).timer_editor, 1);
-        os.dispatch(RuntimeEvent::Back).unwrap();
-        assert_eq!(os.state() & 31, 6);
-        os.replace_state(6 | (2 << 5)).unwrap();
-        os.dispatch(RuntimeEvent::Press).unwrap();
-        assert_eq!(frame(&mut os).timer_editor, 3);
-        os.dispatch(RuntimeEvent::Back).unwrap();
-        os.replace_state(6 | (2 << 5)).unwrap();
+        // Selecting a tab updates its page without a confirmation press.
         os.dispatch(RuntimeEvent::Rotate(1)).unwrap();
-        os.dispatch(RuntimeEvent::Press).unwrap();
-        assert_eq!(frame(&mut os).app.id, apps::WORLD);
+        assert_eq!(frame(&mut os).cursor,1);
+        assert_eq!(frame(&mut os).app.id,apps::NONE);
+        os.dispatch(RuntimeEvent::Click(1)).unwrap();
+        assert_eq!(frame(&mut os).app.id,apps::WORLD);
         os.dispatch(RuntimeEvent::Back).unwrap();
-        assert_eq!(frame(&mut os).screen, 6);
-        assert_eq!(frame(&mut os).cursor, 3);
+        assert_eq!(frame(&mut os).cursor,1);
         os.dispatch(RuntimeEvent::Rotate(1)).unwrap();
-        os.dispatch(RuntimeEvent::Press).unwrap();
-        assert_eq!(frame(&mut os).screen, 2);
+        assert_eq!(frame(&mut os).cursor,2);
+        assert_eq!(frame(&mut os).timer_editor,0);
+        os.dispatch(RuntimeEvent::Click(1)).unwrap();
+        assert_eq!(frame(&mut os).timer_editor,1);
+        os.dispatch(RuntimeEvent::Back).unwrap();
+        assert_eq!(frame(&mut os).cursor,2);
+        os.dispatch(RuntimeEvent::Rotate(1)).unwrap();
+        assert_eq!(frame(&mut os).cursor,3);
+        os.dispatch(RuntimeEvent::Click(2)).unwrap(); // reset before testing start
+        os.dispatch(RuntimeEvent::Click(1)).unwrap();
+        assert!(frame(&mut os).stopwatch_running);
+        assert_eq!(frame(&mut os).screen,6);
+        os.dispatch(RuntimeEvent::Click(2)).unwrap();
+        assert!(!frame(&mut os).stopwatch_running);
+        assert_eq!(frame(&mut os).stopwatch_secs,0);
+        os.dispatch(RuntimeEvent::Rotate(1)).unwrap();
+        assert_eq!(frame(&mut os).cursor,4);
+        assert!(!frame(&mut os).bedtime_active);
+        os.dispatch(RuntimeEvent::Click(1)).unwrap();
+        assert!(frame(&mut os).bedtime_active);
+        os.dispatch(RuntimeEvent::Back).unwrap();
+        assert_eq!(frame(&mut os).screen,1);
         os.replace_state(14 | (3 << 5)).unwrap();
         os.dispatch(RuntimeEvent::Press).unwrap();
         assert_eq!(frame(&mut os).watch_face, 1);
@@ -534,26 +551,141 @@ mod tests {
         assert_eq!(os.take_system_action(), None);
     }
     #[test]
+    fn clock_tabs_do_not_change_settings_or_start_tools_on_hover() {
+        time::set(7000);
+        let mut os=start();
+        os.replace_state(6 | (70<<9)).unwrap();
+        let before=frame(&mut os);
+        let config=os.clock_config();
+        for tab in [1,2,3,4,0] {
+            os.dispatch(RuntimeEvent::Rotate(1)).unwrap();
+            let f=frame(&mut os);
+            assert_eq!((f.screen,f.cursor),(6,tab));
+            assert_eq!(f.app.id,apps::NONE);
+            assert_eq!(f.timer_secs,before.timer_secs);
+            assert_eq!(f.stopwatch_running,before.stopwatch_running);
+            assert!(!f.bedtime_active);
+            assert_eq!(os.clock_config(),config);
+        }
+    }
+    #[test]
+    fn bedtime_dims_without_overwriting_preferences_and_alarm_still_wakes() {
+        time::set(8000);
+        let mut os=start();
+        let mut preferences=os.preference_config(); preferences[7]=1;
+        os.restore_preferences(&preferences);
+        os.replace_state(6 | (4<<5) | (70<<9)).unwrap();
+        os.dispatch(RuntimeEvent::Click(1)).unwrap();
+        let f=frame(&mut os);
+        assert!(f.bedtime_active);
+        assert_eq!(f.display_brightness,Some(35));
+        assert!(f.aod_enabled);
+        assert_eq!(os.preference_config(),preferences);
+        os.dispatch(RuntimeEvent::Home).unwrap();
+        time::set(8030);
+        assert!(frame(&mut os).aod);
+        assert_eq!(frame(&mut os).display_brightness,Some(35));
+        // A real alarm receives the selected brightness, even in bedtime mode.
+        rtc::set_local_minutes(7*60);
+        os.restore_clock_config((7*60)|0x800);
+        assert_eq!(frame(&mut os).clock_alert,2);
+        assert_eq!(frame(&mut os).display_brightness,Some(70));
+        os.dispatch(RuntimeEvent::Click(1)).unwrap();
+        assert_eq!(frame(&mut os).clock_alert,0);
+        assert!(frame(&mut os).bedtime_active);
+        os.replace_state(6 | (4<<5) | (70<<9)).unwrap();
+        os.dispatch(RuntimeEvent::Click(1)).unwrap();
+        assert!(!frame(&mut os).bedtime_active);
+        assert_eq!(frame(&mut os).display_brightness,Some(70));
+        assert!(frame(&mut os).aod_enabled);
+        assert_eq!(os.preference_config(),preferences);
+        os.restore_clock_config(7*60);
+    }
+
+    #[test]
+    fn hardware_double_click_contexts_exclude_typing_and_alarm_dismissal() {
+        time::set(8800); let mut os=start();
+        os.replace_state(6|(3<<5)|(70<<9)).unwrap();
+        assert!(os.file_gestures_active());
+        os.dispatch(RuntimeEvent::Rotate(1)).unwrap();
+        assert!(os.file_gestures_active());
+        os.dispatch(RuntimeEvent::Click(2)).unwrap();
+        assert!(!os.file_gestures_active());
+        os.dispatch(RuntimeEvent::Home).unwrap();
+        os.replace_state(6|(70<<9)).unwrap();
+        assert!(!os.file_gestures_active());
+    }
+    #[test]
+    fn runtime_frame_keeps_large_material_snapshot_off_callers_stack() {
+        assert!(core::mem::size_of::<RuntimeFrame>() < 128);
+        assert!(core::mem::size_of::<material::MaterialFrame>() > 4096);
+    }
+    #[test]
+    fn bedtime_schedule_roundtrip_midnight_boundaries_and_editor() {
+        time::set(9000);
+        let mut os=start();
+        let mut prefs=os.preference_config();
+        prefs[12]=1; prefs[13]=40;
+        prefs[14..16].copy_from_slice(&(23u16*60).to_le_bytes());
+        prefs[16..18].copy_from_slice(&(7u16*60).to_le_bytes());
+        os.restore_preferences(&prefs);
+        for (minute, active) in [(1380,true),(1439,true),(0,true),(419,true),(420,false),(1379,false)] {
+            rtc::set_local_minutes(minute);
+            let f=frame(&mut os);
+            assert_eq!(f.bedtime_active,active,"minute {}",minute);
+            assert_eq!(f.bedtime_brightness,40);
+        }
+        assert_eq!(os.preference_config(),prefs);
+        rtc::set_local_minutes(23*60);
+        assert!(frame(&mut os).bedtime_active);
+        os.replace_state(6|(4<<5)|(70<<9)).unwrap();
+        os.dispatch(RuntimeEvent::Click(1)).unwrap();
+        assert!(!frame(&mut os).bedtime_active);
+        rtc::set_local_minutes(23*60+30);
+        assert!(!frame(&mut os).bedtime_active);
+        rtc::set_local_minutes(7*60);
+        assert!(!frame(&mut os).bedtime_active);
+        rtc::set_local_minutes(23*60);
+        assert!(frame(&mut os).bedtime_active);
+        os.replace_state(6|(4<<5)|(70<<9)).unwrap();
+        os.dispatch(RuntimeEvent::Click(2)).unwrap();
+        assert_eq!(frame(&mut os).bedtime_editor,1);
+        os.dispatch(RuntimeEvent::Rotate(1)).unwrap();
+        os.dispatch(RuntimeEvent::Click(1)).unwrap();
+        assert_eq!(frame(&mut os).bedtime_editor,2);
+        os.dispatch(RuntimeEvent::Rotate(4)).unwrap();
+        assert_eq!(frame(&mut os).bedtime_start,0);
+        os.dispatch(RuntimeEvent::Back).unwrap();
+        os.dispatch(RuntimeEvent::Back).unwrap();
+        assert_eq!(frame(&mut os).bedtime_editor,0);
+        let mut other=start(); other.restore_preferences(&os.preference_config());
+        assert_eq!(other.preference_config(),os.preference_config());
+        // Corrupt schedule fields are rejected as a unit, ordinary prefs survive.
+        let mut bad=prefs; bad[13]=255; other.restore_preferences(&bad);
+        assert_eq!(frame(&mut other).bedtime_brightness,40);
+    }
+
+    #[test]
     /// Проверяет предустановки, ручную длительность и запуск таймера.
     fn timer_presets_and_custom_duration() {
         time::set(1000);
         let mut os = start();
         os.replace_state(11).unwrap();
-        os.dispatch(RuntimeEvent::Press).unwrap();
+        os.dispatch(RuntimeEvent::Click(1)).unwrap();
         assert_eq!(frame(&mut os).timer_editor, 1);
         for (cursor, duration) in [(0, 300), (1, 600), (2, 900), (3, 1800)] {
             os.replace_state(11 | (cursor << 5)).unwrap();
-            os.dispatch(RuntimeEvent::Press).unwrap();
+            os.dispatch(RuntimeEvent::Click(1)).unwrap();
             assert_eq!(frame(&mut os).timer_secs, duration);
         }
         os.replace_state(11 | (4 << 5)).unwrap();
-        os.dispatch(RuntimeEvent::Press).unwrap();
+        os.dispatch(RuntimeEvent::Click(1)).unwrap();
         assert_eq!(frame(&mut os).timer_editor, 2);
         os.dispatch(RuntimeEvent::Rotate(1000)).unwrap();
         assert_eq!(frame(&mut os).timer_duration_secs, 3600);
         os.dispatch(RuntimeEvent::Rotate(-1000)).unwrap();
         assert_eq!(frame(&mut os).timer_duration_secs, 60);
-        os.dispatch(RuntimeEvent::Press).unwrap();
+        os.dispatch(RuntimeEvent::Click(1)).unwrap();
         assert_eq!(frame(&mut os).timer_secs, 60);
         os.dispatch(RuntimeEvent::Back).unwrap();
         assert_eq!(frame(&mut os).timer_editor, 0);

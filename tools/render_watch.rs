@@ -69,6 +69,12 @@ fn main() {
         ("settings-scroll", 5, 4),
         ("clock", 11, 0),
         ("clock-hub", 6, 3),
+        ("clock-tab-alarm",6,0),
+        ("clock-tab-world",6,1),
+        ("clock-tab-timer",6,2),
+        ("clock-tab-stopwatch",6,3),
+        ("clock-tab-bedtime",6,4),
+        ("clock-tab-bedtime-on",6,4),
         ("clock-layout-grid", 6, 0),
         ("clock-layout-dock", 6, 0),
         ("date-time", 16, 0),
@@ -112,6 +118,10 @@ fn main() {
         ("air-keyboard-inline",1,0),
         ("air-keyboard-menu",1,0),
         ("browser",1,0),
+        ("browser-search",1,0),
+        ("browser-keyboard",1,0),
+        ("browser-history",1,0),
+        ("bedtime-settings",6,4),
         ("browser-page",1,0),
         ("browser-light",1,0),
         ("browser-menu",1,0),
@@ -381,7 +391,7 @@ fn main() {
             frame.name_editing = true;
             frame.name_draft[..4].copy_from_slice("ми".as_bytes());
             frame.name_draft_len = 4;
-            frame.keyboard.suggestions = ["Минск", "", ""];
+            frame.keyboard.suggestions = ["Минск", "мир", "минуты", "минимум", "микрофон", "миллион"];
             frame.keyboard.focus = (frame.keyboard.character_count() + 7) as u8;
         }
         if name == "weather" {
@@ -450,6 +460,11 @@ fn main() {
             frame.app.id=apps::DIAGNOSTICS;
             frame.app.cursor=match scenario {"diagnostics-display"=>5,"diagnostics-render"=>6,_=>7};
         }
+        if scenario.starts_with("clock-tab-") {
+            frame.time_minutes=21*60+2; frame.date_day=4; frame.date_month=11;
+            frame.alarm_minutes=7*60; frame.alarm_enabled=true;
+            frame.bedtime_active=scenario=="clock-tab-bedtime-on";
+        }
         if scenario.starts_with("air-keyboard") {
             frame.app.id=apps::AIR_KEYBOARD;
             let v=&mut frame.app.air_keyboard;
@@ -472,6 +487,21 @@ fn main() {
                 }
                 v.rows_len=5;
             }
+        }
+        if scenario == "bedtime-settings" { frame.bedtime_editor=1; frame.bedtime_cursor=1; }
+        if matches!(scenario,"browser-search"|"browser-keyboard") {
+            frame.app.browser.mode=6; frame.app.browser.tab=1;
+            frame.app.remote.kind=0; frame.app.remote.mode=if scenario=="browser-keyboard" {1} else {2};
+            frame.app.remote.count=3;
+            let text="пр"; frame.app.remote.text[..text.len()].copy_from_slice(text.as_bytes()); frame.app.remote.len=text.len() as u16;
+            frame.app.remote.keyboard.suggestions=["привет", "приложение", "программы", "проект", "проверить", "просто"];
+            for (i,text) in ["wikipedia.org","Свободная энциклопедия. Статьи и ссылки по вашему запросу.","home.wiki.org","Справочник и материалы для чтения.","example.org","Ещё один найденный сайт."].iter().enumerate() {
+                frame.app.remote.lines[i][..text.len()].copy_from_slice(text.as_bytes());frame.app.remote.lengths[i]=text.len() as u8;
+            }
+        }
+        if scenario=="browser-history" {
+            let v=&mut frame.app.browser; v.mode=5; v.tab=2; v.rows_len=2; v.total=2;
+            for (i,text) in ["wikipedia.org", "example.org"].iter().enumerate() {v.rows[i].text[..text.len()].copy_from_slice(text.as_bytes());v.rows[i].len=text.len() as u8;v.rows[i].selected=i==0;}
         }
         match scenario {
             "share" | "share-offline" => { frame.app.id = apps::SHARE; if scenario == "share" { frame.wifi_ip = Some([192, 0, 2, 1]); frame.adb = true; } }

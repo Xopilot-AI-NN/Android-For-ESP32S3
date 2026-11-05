@@ -137,7 +137,7 @@ pub struct LegacyFrame {
 #[derive(Clone, Debug)]
 /// Кадр Material либо резервного текстового интерфейса компонента Rhai runtime и нативного интерфейса.
 pub enum RuntimeFrame {
-    Material(MaterialFrame),
+    Material(alloc::boxed::Box<MaterialFrame>),
     Legacy(LegacyFrame),
 }
 
@@ -152,7 +152,7 @@ impl RuntimeFrame {
     /// Разбирает и проверяет входное представление данных.
     fn parse(raw: &str) -> Result<Self, RuntimeError> {
         if let Some(frame) = MaterialFrame::parse(raw) {
-            return Ok(Self::Material(frame));
+            return Ok(Self::Material(alloc::boxed::Box::new(frame)));
         }
         let mut parts = raw.split('|');
         let title = parts.next().ok_or(RuntimeError::Protocol)?;
@@ -206,6 +206,14 @@ pub struct Runtime {
     wifi_ip: Option<[u8; 4]>,
     /// Подрежим выбора длительности таймера/секундомера.
     timer_editor: u8,
+    bedtime_override: Option<bool>,
+    bedtime_previous_auto: bool,
+    bedtime_auto: bool,
+    bedtime_start: u16,
+    bedtime_end: u16,
+    bedtime_brightness: u8,
+    bedtime_editor: u8,
+    bedtime_cursor: u8,
     /// Локальный PIN-гейт и защитные сроки.
     security: security::Security,
     /// Последняя подтверждённая запись параметров PIN.
@@ -353,6 +361,14 @@ impl Runtime {
             bluetooth_pin: None,
             wifi_ip: None,
             timer_editor: 0,
+            bedtime_override: None,
+            bedtime_previous_auto: false,
+            bedtime_auto: false,
+            bedtime_start: 23 * 60,
+            bedtime_end: 7 * 60,
+            bedtime_brightness: 35,
+            bedtime_editor: 0,
+            bedtime_cursor: 0,
             security: security::Security::new(Instant::now().duration_since_epoch().as_secs()),
             security_saved: security::Security::new(0).encode(),
             crown_sensitivity: 1,
@@ -380,6 +396,12 @@ impl Runtime {
 
     /// Формирует или выводит кадр текущего состояния.
     pub fn render(&mut self) -> Result<RuntimeFrame, RuntimeError> {
+        let scheduled = self.bedtime_scheduled();
+        if scheduled != self.bedtime_previous_auto {
+            // A manual override lasts until the next schedule boundary.
+            self.bedtime_override = None;
+            self.bedtime_previous_auto = scheduled;
+        }
         self.native_app.poll();
         if matches!(self.state & 31, 2 | 26) {
             self.state = (self.state & !31) | if self.launcher_grid { 26 } else { 2 };
@@ -421,8 +443,17 @@ impl Runtime {
         let mut frame =
             self.scene_cache
                 .render(&self.engine, &mut self.scope, &self.ast, self.state)?;
-        self.enrich_wifi_frame(&mut frame);
-        if let RuntimeFrame::Material(m) = &mut frame {
+        self.enrich_frame(&mut frame);
+        Ok(frame)
+    }
+
+    // Keep scene parsing and app snapshots in separate stack frames. Both
+    // contain large by-value views; inlining their temporaries overflows the
+    // hardware stack during navigation even when host tests pass.
+    #[inline(never)]
+    fn enrich_frame(&mut self, frame: &mut RuntimeFrame) {
+        self.enrich_wifi_frame(frame);
+        if let RuntimeFrame::Material(m) = frame {
             let name = crate::device_name::snapshot();
             m.device_name_len = name.len() as u8;
             m.device_name[..name.len()].copy_from_slice(name.as_bytes());
@@ -433,6 +464,13 @@ impl Runtime {
             m.startup =
                 crate::startup::phase(crate::ui_resources::pending(), self.bluetooth_status == 7);
             m.app = self.native_app.view();
+            m.bedtime_active = self.bedtime_active();
+            m.bedtime_auto = self.bedtime_auto;
+            m.bedtime_start = self.bedtime_start;
+            m.bedtime_end = self.bedtime_end;
+            m.bedtime_brightness = self.bedtime_brightness;
+            m.bedtime_editor = self.bedtime_editor;
+            m.bedtime_cursor = self.bedtime_cursor;
             if m.screen == 1 && self.watch_face == 4 {
                 m.app.weather = crate::weather::snapshot();
             }
@@ -510,11 +548,15 @@ impl Runtime {
             let now_ms = Instant::now().duration_since_epoch().as_millis() as u64;
             m.display_brightness = Some(self.idle_brightness(now_ms));
             m.display_sleep = m.display_brightness == Some(0);
-            m.aod_enabled = self.aod_enabled;
-            m.aod = self.aod_enabled && m.display_sleep;
+            m.aod_enabled = self.aod_enabled || self.bedtime_active();
+            m.aod = m.aod_enabled && m.display_sleep;
             if m.aod {
                 m.display_sleep = false;
-                m.display_brightness = Some(5);
+                m.display_brightness = Some(if self.bedtime_active() {
+                    self.bedtime_brightness
+                } else {
+                    5
+                });
             }
             m.wallpaper_level = self.wallpaper_level;
             m.show_seconds = self.show_seconds;
@@ -545,7 +587,6 @@ impl Runtime {
             // seconds and real media progress remains live.
             m.animation_phase = 0;
         }
-        Ok(frame)
     }
 
     /// Возвращает текущее упакованное состояние runtime.
@@ -557,9 +598,18 @@ impl Runtime {
         self.native_app.id() == crate::apps::DIAGNOSTICS
     }
 
-    /// Только списки файлов и строк используют один/два/три клика.
+    /// Delay singles only where a double click has a visible action. Keyboard
+    /// input and alert dismissal must remain immediate.
     pub fn file_gestures_active(&self) -> bool {
-        self.native_app.id() == crate::apps::CALENDAR
+        if self.security.locked || clock::alert() != 0 {
+            return false;
+        }
+        ((self.state & 31) == 6
+            && self.native_app.id() == crate::apps::NONE
+            && matches!((self.state >> 5) & 15, 3 | 4)
+            && self.bedtime_editor == 0)
+            || self.native_app.browser_clicks_active()
+            || self.native_app.id() == crate::apps::CALENDAR
             || (matches!(
                 self.native_app.id(),
                 crate::apps::FILES | crate::apps::EDITOR
@@ -605,15 +655,35 @@ impl Runtime {
     }
     /// Вычисляет яркость с учётом бездействия и необходимости внимания.
     fn idle_brightness(&self, now_ms: u64) -> u8 {
+        let attention =
+            clock::alert() != 0 || self.bluetooth_pin.is_some() || (self.state & 31) == 29;
+        let selected = ((self.state >> 9) & 127) as u8;
+        // Manual bedtime is an overlay: normal brightness/AOD preferences stay
+        // intact. Alarms, pairing and the flashlight still receive full attention.
+        let level = if self.bedtime_active() && !attention {
+            self.bedtime_brightness
+        } else {
+            selected
+        };
         idle::level(
-            ((self.state >> 9) & 127) as u8,
+            level,
             now_ms.saturating_sub(self.last_input_ms),
             self.security.timeout,
-            clock::alert() != 0
-                || self.bluetooth_pin.is_some()
-                || (self.state & 31) == 29
-                || self.native_app.keep_awake(),
+            attention || self.native_app.keep_awake(),
         )
+    }
+    fn bedtime_scheduled(&self) -> bool {
+        self.bedtime_auto
+            && crate::rtc::valid()
+            && sleep_window(
+                crate::rtc::local_minutes() as u16,
+                self.bedtime_start,
+                self.bedtime_end,
+            )
+    }
+    fn bedtime_active(&self) -> bool {
+        self.bedtime_override
+            .unwrap_or_else(|| self.bedtime_scheduled())
     }
     /// Проверяет, наступил ли срок полного выключения экрана.
     fn display_should_sleep(&self, now_ms: u64) -> bool {
@@ -813,7 +883,7 @@ impl Runtime {
         false
     }
     /// Кодирует пользовательские параметры в версионированный формат.
-    pub fn preference_config(&self) -> [u8; 12] {
+    pub fn preference_config(&self) -> [u8; 20] {
         [3, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0]
     }
     /// Восстанавливает совместимые версии пользовательских параметров.
@@ -894,3 +964,15 @@ mod activity_manager;
 mod settings_activity;
 #[path = "../../App/system/app/Settings/preferences.rs"]
 mod settings_preferences;
+
+/// Daily local-time interval, including midnight. Equal endpoints disable the
+/// interval instead of silently keeping sleep mode on for the entire day.
+fn sleep_window(now: u16, start: u16, end: u16) -> bool {
+    if start < end {
+        now >= start && now < end
+    } else if start > end {
+        now >= start || now < end
+    } else {
+        false
+    }
+}
