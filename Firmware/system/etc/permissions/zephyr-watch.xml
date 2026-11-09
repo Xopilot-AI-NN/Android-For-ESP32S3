@@ -1,0 +1,5 @@
+<permissions>
+    <feature name="android.hardware.type.watch" />
+    <feature name="android.hardware.touchscreen" notLowRam="false" />
+    <feature name="by.xopilot.hardware.crown" />
+</permissions>

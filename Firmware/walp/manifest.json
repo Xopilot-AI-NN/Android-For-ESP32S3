@@ -1,0 +1,66 @@
+[
+  {
+    "name": "Зелёные слои",
+    "file": "01_green_layers_240x280.png"
+  },
+  {
+    "name": "Фиолетовый закат",
+    "file": "03_purple_sunset_240x280.png"
+  },
+  {
+    "name": "Аврора",
+    "file": "04_aurora_lake_240x280.png"
+  },
+  {
+    "name": "Космос",
+    "file": "07_cosmic_spheres_240x280.png"
+  },
+  {
+    "name": "Земля",
+    "file": "11_earth_from_space_240x280.png"
+  },
+  {
+    "name": "Луна",
+    "file": "12_moon_detail_240x280.png"
+  },
+  {
+    "name": "Дюны",
+    "file": "16_desert_dunes_240x280.png"
+  },
+  {
+    "name": "Горы",
+    "file": "19_snowy_peaks_240x280.png"
+  },
+  {
+    "name": "Орбита",
+    "file": "20_purple_orbit_240x280.png"
+  },
+  {
+    "name": "Янтарь",
+    "file": "amber_material_240x280.png"
+  },
+  {
+    "name": "Синий",
+    "file": "blue_material_240x280.png"
+  },
+  {
+    "name": "Зелёный",
+    "file": "green_material_240x280.png"
+  },
+  {
+    "name": "Розовый",
+    "file": "rose_material_240x280.png"
+  },
+  {
+    "name": "Закат",
+    "file": "sunset_material_240x280.png"
+  },
+  {
+    "name": "Бирюзовый",
+    "file": "teal_material_240x280.png"
+  },
+  {
+    "name": "Фиолетовый",
+    "file": "violet_material_240x280.png"
+  }
+]

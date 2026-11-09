@@ -1,0 +1,4 @@
+on early-init
+    setprop ro.boot.hardware esp32s3
+    setprop ro.vendor.usb.controller usb-serial-jtag
+    setprop ro.vendor.storage.bus spi2

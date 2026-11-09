@@ -1,0 +1,214 @@
+// Модуль постоянных настроек часов.
+//! Versioned persistent settings and Wi-Fi credentials in reserved ZPager slots.
+//! Keep these slots disjoint from Activity slots 0..31.
+use crate::*;
+
+// Keep framework Activity pages in slots 0..31.  Older 17.1.1 builds used
+// slot 16 for Wi-Fi credentials, which collided with the Date & time Activity
+// page and could silently erase the saved network when that screen was left.
+const WIFI_CRED_SLOT: u32 = 64;
+/// Постоянный номер страницы WIFI_CRED_LEGACY; не пересекается с Activity-слотами.
+const WIFI_CRED_LEGACY_SLOT: u32 = 16;
+/// Тег формата записи WIFI_CRED для проверки типа данных.
+const WIFI_CRED_TAG: u32 = 0x5a57_4946; // "ZWIF"
+/// Постоянный номер страницы TIME_HOLDOVER; не пересекается с Activity-слотами.
+const TIME_HOLDOVER_SLOT: u32 = 65;
+/// Тег формата записи TIME_HOLDOVER для проверки типа данных.
+const TIME_HOLDOVER_TAG: u32 = 0x5a54_494d; // "ZTIM"
+/// Постоянный номер страницы SYSTEM_SETTINGS; не пересекается с Activity-слотами.
+const SYSTEM_SETTINGS_SLOT: u32 = 66;
+/// Тег формата записи SYSTEM_SETTINGS для проверки типа данных.
+const SYSTEM_SETTINGS_TAG: u32 = 0x5a53_4554; // "ZSET"
+/// Постоянный номер страницы RTC_CONFIG; не пересекается с Activity-слотами.
+const RTC_CONFIG_SLOT: u32 = 67;
+/// Тег формата записи RTC_CONFIG для проверки типа данных.
+const RTC_CONFIG_TAG: u32 = 0x5a52_5443; // "ZRTC"
+/// Постоянный номер страницы CLOCK_CONFIG; не пересекается с Activity-слотами.
+const CLOCK_CONFIG_SLOT: u32 = 69;
+/// Тег формата записи CLOCK_CONFIG для проверки типа данных.
+const CLOCK_CONFIG_TAG: u32 = 0x5a43_4c4b; // "ZCLK"
+// brightness..wireless-debugging, excluding screen/cursor and notifications.
+pub(crate) const SYSTEM_SETTINGS_MASK: i32 = 0x00ff_fe00;
+
+/// Восстанавливает проверенные настройки интерфейса, PIN, имени и часов из постоянных слотов.
+pub(crate) fn restore_watch_config<D: BlockDevice>(
+    os: &mut runtime::Runtime,
+    pager: Option<&page_store::PageStore>,
+    dev: &D,
+) {
+    let mut entropy = [0; 16];
+    esp_hal::rng::Rng::new().read(&mut entropy);
+    os.set_security_storage(pager.is_some(), entropy);
+    if let Some(pager) = pager {
+        let mut preferences = [0; 20];
+        if let Ok(n) = pager.read(dev, 71, 0x5750_5246, &mut preferences) {
+            os.restore_preferences(&preferences[..n]);
+        }
+        let mut security = [0; 58];
+        match pager.read(dev, 70, 0x5753_4543, &mut security) {
+            Ok(n) => os.restore_security(&security[..n]),
+            Err(page_store::PageStoreError::Empty) => {}
+            Err(_) => os.security_storage_error(),
+        }
+        let mut name = [0; 32];
+        if let Ok(n) = pager.read(dev, 72, 0x4e41_4d45, &mut name) {
+            if let Ok(value) = core::str::from_utf8(&name[..n]) {
+                crate::device_name::set(value);
+            }
+        }
+    }
+}
+
+/// Сохраняет имя устройства в выделенную запись постоянного хранилища.
+pub(crate) fn save_device_name<D: BlockDevice>(pager: &page_store::PageStore, dev: &D) -> bool {
+    pager
+        .write(
+            dev,
+            72,
+            0x4e41_4d45,
+            crate::device_name::snapshot().as_bytes(),
+        )
+        .is_ok()
+}
+
+/// Сохраняет параметры интерфейса в выделенную запись постоянного хранилища.
+pub(crate) fn save_watch_preferences<D: BlockDevice>(
+    pager: &page_store::PageStore,
+    dev: &D,
+    bytes: &[u8; 20],
+) -> bool {
+    pager.write(dev, 71, 0x5750_5246, bytes).is_ok()
+}
+/// Сохраняет параметры PIN в выделенную запись постоянного хранилища.
+pub(crate) fn save_watch_security<D: BlockDevice>(
+    pager: &page_store::PageStore,
+    dev: &D,
+    bytes: &[u8; 58],
+) -> bool {
+    pager.write(dev, 70, 0x5753_4543, bytes).is_ok()
+}
+
+/// Загружает конфигурацию таймера и будильника с проверкой формата записи.
+pub(crate) fn load_clock_config<D: BlockDevice>(
+    pager: &page_store::PageStore,
+    dev: &D,
+) -> Option<i32> {
+    pager
+        .read_i32(dev, CLOCK_CONFIG_SLOT, CLOCK_CONFIG_TAG)
+        .ok()
+}
+
+/// Сохраняет конфигурацию таймера и будильника в выделенную запись постоянного хранилища.
+pub(crate) fn save_clock_config<D: BlockDevice>(
+    pager: &page_store::PageStore,
+    dev: &D,
+    config: i32,
+) -> bool {
+    pager
+        .write_i32(dev, CLOCK_CONFIG_SLOT, CLOCK_CONFIG_TAG, config)
+        .is_ok()
+}
+
+/// Загружает проверенный Wi-Fi-профиль с проверкой формата записи.
+pub(crate) fn load_wifi_credentials<D: BlockDevice>(
+    pager: &page_store::PageStore,
+    dev: &D,
+) -> Option<WifiCredentials> {
+    let mut raw = [0u8; 98];
+    let n = match pager.read(dev, WIFI_CRED_SLOT, WIFI_CRED_TAG, &mut raw) {
+        Ok(n) => n,
+        Err(_) => pager
+            .read(dev, WIFI_CRED_LEGACY_SLOT, WIFI_CRED_TAG, &mut raw)
+            .ok()?,
+    };
+    WifiCredentials::decode_page(&raw[..n])
+}
+
+/// Сохраняет только проверенный Wi-Fi-профиль в выделенную запись постоянного хранилища.
+pub(crate) fn save_wifi_credentials<D: BlockDevice>(
+    pager: &page_store::PageStore,
+    dev: &D,
+    credentials: WifiCredentials,
+) -> bool {
+    let mut raw = [0u8; 98];
+    let n = credentials.encode_page(&mut raw);
+    pager
+        .write(dev, WIFI_CRED_SLOT, WIFI_CRED_TAG, &raw[..n])
+        .is_ok()
+}
+
+/// Загружает последнее сохранённое время с проверкой формата записи.
+pub(crate) fn load_time_holdover<D: BlockDevice>(
+    pager: &page_store::PageStore,
+    dev: &D,
+) -> Option<u16> {
+    let value = pager
+        .read_i32(dev, TIME_HOLDOVER_SLOT, TIME_HOLDOVER_TAG)
+        .ok()?;
+    if (0..1440).contains(&value) {
+        Some(value as u16)
+    } else {
+        None
+    }
+}
+
+/// Сохраняет последнее известное время в выделенную запись постоянного хранилища.
+pub(crate) fn save_time_holdover<D: BlockDevice>(
+    pager: &page_store::PageStore,
+    dev: &D,
+    minutes: u16,
+) -> bool {
+    pager
+        .write_i32(
+            dev,
+            TIME_HOLDOVER_SLOT,
+            TIME_HOLDOVER_TAG,
+            (minutes % 1440) as i32,
+        )
+        .is_ok()
+}
+
+/// Загружает постоянные системные флаги с проверкой формата записи.
+pub(crate) fn load_system_settings<D: BlockDevice>(
+    pager: &page_store::PageStore,
+    dev: &D,
+) -> Option<i32> {
+    pager
+        .read_i32(dev, SYSTEM_SETTINGS_SLOT, SYSTEM_SETTINGS_TAG)
+        .ok()
+}
+
+/// Сохраняет постоянные системные флаги в выделенную запись постоянного хранилища.
+pub(crate) fn save_system_settings<D: BlockDevice>(
+    pager: &page_store::PageStore,
+    dev: &D,
+    state: i32,
+) -> bool {
+    pager
+        .write_i32(
+            dev,
+            SYSTEM_SETTINGS_SLOT,
+            SYSTEM_SETTINGS_TAG,
+            state & SYSTEM_SETTINGS_MASK,
+        )
+        .is_ok()
+}
+
+/// Загружает настройки RTC с проверкой формата записи.
+pub(crate) fn load_rtc_config<D: BlockDevice>(
+    pager: &page_store::PageStore,
+    dev: &D,
+) -> Option<i32> {
+    pager.read_i32(dev, RTC_CONFIG_SLOT, RTC_CONFIG_TAG).ok()
+}
+
+/// Сохраняет настройки RTC в выделенную запись постоянного хранилища.
+pub(crate) fn save_rtc_config<D: BlockDevice>(
+    pager: &page_store::PageStore,
+    dev: &D,
+    config: i32,
+) -> bool {
+    pager
+        .write_i32(dev, RTC_CONFIG_SLOT, RTC_CONFIG_TAG, config)
+        .is_ok()
+}

@@ -1,0 +1,42 @@
+target/
+
+# Generated disk images and extracted build output.
+/out/
+
+# Local accounts, OAuth downloads and runtime state must never be published.
+.env
+.env.*
+!.env.example
+/private/
+/secrets/
+/credentials/
+/data/
+**/.credentials/
+**/client_secret*.json
+**/credentials.json
+**/tokens.json
+**/token.json
+**/service-account*.json
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.key
+*-key.pem
+*.log
+/debug-logs/
+__pycache__/
+*.pyc
+
+# Raw disks and crash dumps may contain private watch data.
+*.img
+*.elf
+/core-dumps/
+/uploads/
+/captures/
+
+# Private provider/device imports
+**/providers.json
+**/provider-keys*.json
+**/*.device.json
+**/*.session.*.json
