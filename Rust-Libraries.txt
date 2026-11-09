@@ -1,0 +1,431 @@
+adler2 v2.0.1
+aes v0.8.4
+ahash v0.8.12
+aho-corasick v1.1.4
+aho-corasick v1.1.4 (*)
+aho-corasick v1.1.5
+aho-corasick v1.1.5 (*)
+allocator-api2 v0.2.21
+allocator-api2 v0.3.1
+anstream v0.6.21
+anstream v1.0.0
+anstyle v1.0.13
+anstyle v1.0.14
+anstyle-parse v0.2.7
+anstyle-parse v1.0.0
+anstyle-query v1.1.5
+anyhow v1.0.104
+aosp-wear-firmware v17.2.1 (/home/denis/Developer/Android-For-ESP32S3/Firmware)
+aosp-wear-loader v17.2.1 (/home/denis/Developer/Android-For-ESP32S3/Bootloader)
+arbitrary-int v2.2.0
+autocfg v1.5.1
+base16ct v0.2.0
+basic-toml v0.1.10
+bindgen v0.72.1
+bitbybit v2.0.1 (proc-macro)
+bitbybit v2.0.1 (proc-macro) (*)
+bitfield v0.19.5
+bitfield-macros v0.19.5 (proc-macro)
+bitflags v1.3.2
+bitflags v2.13.2
+block-buffer v0.10.4
+block-buffer v0.12.1
+bt-hci v0.6.0
+bt-hci v0.6.0 (*)
+btuuid v0.1.0
+btuuid v0.1.1
+bytemuck v1.25.2
+byteorder v1.5.0
+bytes v1.11.0
+cc v1.10.0
+cc v1.10.0 (*)
+cexpr v0.6.0
+cfg-if v1.0.4
+cfg-if v1.0.5
+cipher v0.4.4
+cipher v0.4.4 (*)
+clang-sys v1.9.1
+cmac v0.7.2
+cmake v0.1.58
+colorchoice v1.0.4
+colorchoice v1.0.5
+const-default v1.0.0
+const-oid v0.9.6
+const-random v0.1.18
+const-random-macro v0.1.16 (proc-macro)
+convert_case v0.8.0
+core-error v0.0.0
+critical-section v1.2.0
+crunchy v0.2.4
+crypto-bigint v0.5.5
+crypto-common v0.1.7
+crypto-common v0.1.7 (*)
+crypto-common v0.2.2
+darling v0.20.11
+darling v0.20.11 (*)
+darling v0.21.3
+darling v0.24.1
+darling_core v0.20.11
+darling_core v0.20.11 (*)
+darling_core v0.21.3
+darling_core v0.21.3 (*)
+darling_core v0.24.1
+darling_core v0.24.1 (*)
+darling_macro v0.20.11 (proc-macro)
+darling_macro v0.21.3 (proc-macro)
+darling_macro v0.24.1 (proc-macro)
+dbl v0.3.2
+delegate v0.13.5 (proc-macro)
+der v0.7.10
+digest v0.10.7
+digest v0.10.7 (*)
+digest v0.11.3
+document-features v0.2.12 (proc-macro)
+document-features v0.2.12 (proc-macro) (*)
+either v1.19.0
+elliptic-curve v0.13.8
+elliptic-curve v0.13.8 (*)
+embassy-embedded-hal v0.5.0
+embassy-embedded-hal v0.6.0
+embassy-executor v0.9.1
+embassy-executor-macros v0.7.0 (proc-macro)
+embassy-executor-timer-queue v0.1.0
+embassy-futures v0.1.2
+embassy-hal-internal v0.3.0
+embassy-hal-internal v0.4.0
+embassy-net-driver v0.2.0
+embassy-sync v0.6.2
+embassy-sync v0.6.2 (*)
+embassy-sync v0.7.2
+embassy-sync v0.7.2 (*)
+embassy-sync v0.8.0
+embassy-sync v0.8.0 (*)
+embassy-time v0.5.0
+embassy-time v0.5.0 (*)
+embassy-time v0.5.1
+embassy-time v0.5.1 (*)
+embassy-time-driver v0.2.1
+embassy-time-driver v0.2.2
+embassy-time-driver v0.2.2 (*)
+embassy-time-queue-utils v0.3.0
+embassy-usb-driver v0.2.2
+embassy-usb-driver v0.2.2 (*)
+embassy-usb-synopsys-otg v0.3.3
+embedded-can v0.4.1
+embedded-hal v0.2.7
+embedded-hal v0.2.7 (*)
+embedded-hal v1.0.0
+embedded-hal-async v1.0.0
+embedded-hal-async v1.0.0 (*)
+embedded-hal-bus v0.3.0
+embedded-hal-bus v0.3.0 (*)
+embedded-io v0.6.1
+embedded-io v0.7.1
+embedded-io-adapters v0.6.2
+embedded-io-async v0.6.1
+embedded-io-async v0.6.1 (*)
+embedded-io-async v0.7.0
+embedded-io-async v0.7.0 (*)
+embedded-sdmmc v0.10.0
+embedded-sdmmc v0.10.0 (*)
+embedded-sdmmc-types v0.1.0
+embedded-sdmmc-types v0.1.0 (*)
+embedded-storage v0.3.1
+embedded-storage v0.3.2
+embedded-storage-async v0.4.1
+embedded-storage-async v0.4.2
+embuild v0.33.7
+enumset v1.1.14
+enumset v1.1.14 (*)
+enumset v1.1.15
+enumset v1.1.15 (*)
+enumset_derive v0.15.0 (proc-macro)
+enumset_derive v0.15.0 (proc-macro) (*)
+enumset_derive v0.15.1 (proc-macro)
+enumset_derive v0.15.1 (proc-macro) (*)
+env_filter v0.1.4
+env_filter v2.0.0
+env_logger v0.11.11
+env_logger v0.11.8
+equivalent v1.0.2
+equivalent v1.0.3
+esp-alloc v0.9.0
+esp-alloc v0.9.0 (*)
+esp-backtrace v0.18.1
+esp-bootloader-esp-idf v0.4.0
+esp-config v0.6.1
+esp-config v0.6.1 (*)
+esp-config v0.8.0
+esp-hal v1.0.0
+esp-hal v1.0.0 (*)
+esp-hal v1.2.2
+esp-hal v1.2.2 (*)
+esp-hal-procmacros v0.21.0 (proc-macro)
+esp-hal-procmacros v0.21.0 (proc-macro) (*)
+esp-hal-procmacros v0.23.0 (proc-macro)
+esp-metadata v0.8.0
+esp-metadata-generated v0.1.0
+esp-metadata-generated v0.3.0
+esp-metadata-generated v0.4.0
+esp-metadata-generated v0.5.3
+esp-phy v0.1.1
+esp-println v0.16.1
+esp-println v0.16.1 (*)
+esp-radio v0.17.0
+esp-radio-rtos-driver v0.2.0
+esp-rom-sys v0.1.1
+esp-rom-sys v0.1.4
+esp-rom-sys v0.1.4 (*)
+esp-rtos v0.2.0 (/home/denis/Developer/Android-For-ESP32S3/Firmware/platform/esp-rtos)
+esp-sync v0.1.1
+esp-sync v0.1.1 (*)
+esp-sync v0.3.0
+esp-synopsys-usb-otg v0.4.2
+esp-wifi-sys v0.8.1
+esp-wifi-sys v0.8.1 (*)
+esp32s3 v0.34.0
+esp32s3 v0.35.2
+ff v0.13.1
+ff v0.13.1 (*)
+filetime v0.2.29
+find-msvc-tools v0.1.15
+fnv v1.0.7
+foldhash v0.2.0
+fs_extra v1.3.0
+fugit v0.3.9
+fugit v0.5.0
+futures v0.3.31
+futures v0.3.31 (*)
+futures v0.3.34
+futures-channel v0.3.31
+futures-channel v0.3.31 (*)
+futures-channel v0.3.34
+futures-core v0.3.31
+futures-core v0.3.34
+futures-executor v0.3.31
+futures-intrusive v0.5.0
+futures-io v0.3.31
+futures-io v0.3.34
+futures-macro v0.3.31 (proc-macro)
+futures-sink v0.3.31
+futures-sink v0.3.34
+futures-task v0.3.31
+futures-task v0.3.34
+futures-util v0.3.31
+futures-util v0.3.31 (*)
+futures-util v0.3.34
+futures-util v0.3.34 (*)
+gcd v2.3.0
+generic-array v0.14.7
+generic-array v0.14.7 (*)
+getrandom v0.2.16
+getrandom v0.2.17
+glob v0.3.4
+group v0.13.0
+hash32 v0.3.1
+hash32 v0.3.1 (*)
+hashbrown v0.16.1
+hashbrown v0.17.1
+heapless v0.8.0
+heapless v0.8.0 (*)
+heapless v0.9.1
+heapless v0.9.2
+heapless v0.9.2 (*)
+heapless v0.9.3
+heapless v0.9.3 (*)
+heck v0.5.0
+hex-literal v1.1.0
+hkdf v0.12.4
+hmac v0.12.1
+hybrid-array v0.4.15
+hybrid-array v0.4.15 (*)
+ident_case v1.0.1
+indexmap v2.14.2
+indexmap v2.14.2 (*)
+indoc v2.0.7 (proc-macro)
+indoc v2.0.8 (proc-macro)
+inout v0.1.4
+instability v0.3.14 (proc-macro)
+instability v0.3.14 (proc-macro) (*)
+is_terminal_polyfill v1.70.2
+itertools v0.13.0
+itoa v1.0.18
+jiff v0.2.16
+jiff v0.2.37
+jiff v0.2.37 (*)
+jiff v0.2.39
+jiff-core v0.1.1
+jiff-core v0.1.2
+libc v0.2.189
+libc v0.2.191
+libloading v0.8.9
+libm v0.2.16
+linked_list_allocator v0.10.6
+litrs v1.0.0
+litrs v1.0.1
+lock_api v0.4.14
+log v0.4.28
+log v0.4.34
+log v0.4.35
+managed v0.8.0
+mbedtls-rs v0.1.0
+mbedtls-rs-sys v0.1.0
+memchr v2.7.6
+memchr v2.8.3
+minimal-lexical v0.2.1
+miniz_oxide v0.8.9
+mio v1.1.0
+mio v1.1.0 (*)
+mio-serial v5.0.6
+nb v0.1.3
+nb v1.1.0
+no-std-compat v0.4.1
+nom v7.1.3
+num-derive v0.4.2 (proc-macro)
+num-traits v0.2.19
+num-traits v0.2.19 (*)
+object v0.37.3
+once_cell v1.21.4
+once_cell v1.21.4 (*)
+p256 v0.13.2
+paste v1.0.15 (proc-macro)
+pin-project-lite v0.2.16
+pin-project-lite v0.2.17
+pin-utils v0.1.0
+portable-atomic v1.11.1
+portable-atomic v1.15.0
+portable_atomic_enum v0.3.1
+portable_atomic_enum_macros v0.2.1 (proc-macro)
+ppv-lite86 v0.2.21
+prettyplease v0.2.37
+primeorder v0.13.6
+proc-macro-crate v3.5.0
+proc-macro-crate v3.5.0 (*)
+proc-macro2 v1.0.103
+proc-macro2 v1.0.103 (*)
+proc-macro2 v1.0.107
+proc-macro2 v1.0.107 (*)
+qrcodegen-no-heap v1.8.1
+quote v1.0.42
+quote v1.0.42 (*)
+quote v1.0.47
+quote v1.0.47 (*)
+ral-registers v0.1.3
+rand v0.8.5
+rand v0.8.8
+rand_chacha v0.3.1
+rand_core v0.10.1
+rand_core v0.6.4
+rand_core v0.6.4 (*)
+rand_core v0.9.5
+regex v1.12.2
+regex v1.13.1
+regex v1.13.1 (*)
+regex-automata v0.4.13
+regex-automata v0.4.18
+regex-syntax v0.8.11
+regex-syntax v0.8.8
+rhai v1.25.1
+rhai_codegen v3.2.0 (proc-macro)
+rhai_codegen v3.3.0 (proc-macro)
+rlsf v0.2.3
+rustc-hash v2.1.3
+rustversion v1.0.23 (proc-macro)
+ryu v1.0.23
+scopeguard v1.2.0
+sec1 v0.7.3
+serde v1.0.229
+serde v1.0.229 (*)
+serde_core v1.0.229
+serde_derive v1.0.229 (proc-macro)
+serde_json v1.0.154
+serde_yaml v0.9.34+deprecated
+serde_yaml v0.9.34+deprecated (*)
+serialport v4.7.3
+serialport v4.7.3 (*)
+sha1 v0.10.7
+sha2 v0.10.9
+sha2 v0.10.9 (*)
+shlex v1.3.0
+shlex v2.0.1
+slab v0.4.11
+smallvec v1.16.2
+smallvec v1.16.4
+smartstring v1.0.1
+smoltcp v0.12.0
+smoltcp v0.12.0 (*)
+socket2 v0.6.1
+somni-expr v0.2.0
+somni-expr v0.3.2
+somni-expr v0.3.2 (*)
+somni-parser v0.2.2
+somni-parser v0.3.1
+somni-template v0.3.2
+stable_deref_trait v1.2.1
+static_assertions v1.1.0
+static_cell v2.1.1
+static_cell v2.1.1 (*)
+strsim v0.11.1
+strum v0.27.2
+strum v0.27.2 (*)
+strum_macros v0.27.2 (proc-macro)
+strum_macros v0.27.2 (proc-macro) (*)
+subtle v2.6.1
+syn v2.0.111
+syn v2.0.111 (*)
+syn v2.0.119
+syn v2.0.119 (*)
+syn v3.0.6
+syn v3.0.6 (*)
+syn v3.0.9
+syn v3.0.9 (*)
+termcolor v1.4.1
+thin-vec v0.2.20
+thin-vec v0.2.21
+thiserror v1.0.69
+thiserror v2.0.21
+thiserror v2.0.21 (*)
+thiserror-impl v1.0.69 (proc-macro)
+thiserror-impl v2.0.21 (proc-macro)
+tiny-keccak v2.0.2
+tokio v1.48.0
+tokio v1.48.0 (*)
+tokio-macros v2.6.0 (proc-macro)
+tokio-serial v5.4.5
+toml_datetime v1.1.1+spec-1.1.0
+toml_datetime v1.1.2+spec-1.1.0
+toml_edit v0.25.15+spec-1.1.0
+toml_edit v0.25.18+spec-1.1.0
+toml_parser v1.1.3+spec-1.1.0
+toml_parser v1.1.5+spec-1.1.0
+trouble-host v0.5.1 (/home/denis/Developer/Android-For-ESP32S3/Firmware/platform/trouble-host)
+trouble-host-macros v0.3.0 (proc-macro)
+typenum v1.20.1
+ufmt-write v0.1.0
+unicode-ident v1.0.22
+unicode-ident v1.0.26
+unicode-ident v1.0.27
+unicode-segmentation v1.12.0
+unicode-segmentation v1.13.3
+unsafe-libyaml v0.2.11
+usb-device v0.3.2
+utf8parse v0.2.2
+uuid v1.18.1
+uuid v1.26.1
+vcell v0.1.3
+version_check v0.9.5
+void v1.0.2
+watch-runtime-check v0.1.0 (/home/denis/Developer/Android-For-ESP32S3/Firmware/tools/runtime-check)
+winnow v1.0.4
+winnow v1.0.5
+xtensa-lx v0.13.0
+xtensa-lx v0.13.0 (*)
+xtensa-lx-rt v0.21.0
+xtensa-lx-rt v0.21.0 (*)
+xtensa-lx-rt v0.23.0
+xtensa-lx-rt-proc-macros v0.5.0 (proc-macro)
+zerocopy v0.8.28
+zerocopy v0.8.59
+zerocopy v0.8.63
+zeroize v1.9.1
+zmij v1.0.23
