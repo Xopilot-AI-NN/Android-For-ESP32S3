@@ -2,9 +2,9 @@ name: Rust Bootloader Build
 
 on:
   push:
-    branches: [ "Documentation", "Bootloader" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "Documentation", "Bootloader" ]
+    branches: [ "main" ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -15,8 +15,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Inspect files
         run: |
