@@ -1,0 +1,14 @@
+{
+  "package": "com.android.wear.launcher",
+  "label": "WearLauncher",
+  "runtime": "native-rust",
+  "api": 37,
+  "system": true,
+  "characteristics": "watch",
+  "launcher": false,
+  "entry": "main.rs",
+  "sources": [
+    "main.rs"
+  ],
+  "sharedSources": []
+}

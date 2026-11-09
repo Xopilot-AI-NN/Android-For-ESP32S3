@@ -1,0 +1,770 @@
+//! Standalone HTTPS reader: HTML, search, image previews and history run on the watch.
+mod engine;
+mod search;
+use crate::{
+    browser_service as web,
+    runtime::RuntimeEvent,
+    text_input::{Action as KeyAction, Keyboard, KeyboardView},
+};
+use alloc::{string::String, vec::Vec};
+use core::cell::RefCell;
+use critical_section::Mutex;
+use engine::{Action, Layout};
+static OPEN: Mutex<RefCell<Option<String>>> = Mutex::new(RefCell::new(None));
+pub fn request_search_result(id: String) {
+    critical_section::with(|cs| *OPEN.borrow_ref_mut(cs) = Some(id));
+}
+pub fn take_open() -> Option<String> {
+    critical_section::with(|cs| OPEN.borrow_ref_mut(cs).take())
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Row {
+    pub text: [u8; 112],
+    pub len: u8,
+    pub kind: u8,
+    pub indent: u8,
+    pub selected: bool,
+    pub height: i32,
+}
+impl Default for Row {
+    fn default() -> Self {
+        Self {
+            text: [0; 112],
+            len: 0,
+            kind: 0,
+            indent: 0,
+            selected: false,
+            height: 18,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct View {
+    pub tab: u8,
+    pub dock_focus: bool,
+    pub mode: u8,
+    pub keyboard: KeyboardView,
+    pub error: u8,
+    pub address: [u8; 512],
+    pub address_len: u16,
+    pub title: [u8; 96],
+    pub title_len: u8,
+    pub rows: [Row; 8],
+    pub rows_len: u8,
+    pub cursor: u16,
+    pub total: u16,
+    pub page: u16,
+    pub pages: u16,
+    pub light: bool,
+    pub busy: bool,
+    pub can_back: bool,
+    pub can_forward: bool,
+    pub message: &'static str,
+}
+impl Default for View {
+    fn default() -> Self {
+        Self {
+            tab: 0,
+            dock_focus: true,
+            mode: 0,
+            keyboard: Keyboard::default().view,
+            error: 0,
+            address: [0; 512],
+            address_len: 0,
+            title: [0; 96],
+            title_len: 0,
+            rows: [Row::default(); 8],
+            rows_len: 0,
+            cursor: 0,
+            total: 0,
+            page: 0,
+            pages: 0,
+            light: false,
+            busy: false,
+            can_back: false,
+            can_forward: false,
+            message: "HTTPS · на часах",
+        }
+    }
+}
+struct Visit {
+    id: String,
+    url: String,
+    title: String,
+    page: u16,
+    line: usize,
+}
+#[derive(Clone, Copy)]
+enum Pending {
+    New,
+    Reload,
+    History(usize),
+    Page(u16, bool),
+    Image(u16),
+}
+pub struct Controller {
+    tab: u8,
+    dock_focus: bool,
+    search: search::Controller,
+    internal_search: bool,
+    active: bool,
+    mode: u8,
+    cursor: usize,
+    menu: usize,
+    light: bool,
+    keyboard: Keyboard,
+    address: heapless::String<512>,
+    error: u8,
+    history: Vec<Visit>,
+    current: usize,
+    layout: Layout,
+    pages: u16,
+    pending: Option<Pending>,
+    pending_stamp: u64,
+    message: &'static str,
+}
+impl Default for Controller {
+    fn default() -> Self {
+        Self {
+            tab: 0,
+            dock_focus: true,
+            search: search::Controller::default(),
+            internal_search: false,
+            active: false,
+            mode: 0,
+            cursor: 0,
+            menu: 0,
+            light: false,
+            keyboard: Keyboard::default(),
+            address: heapless::String::new(),
+            error: 0,
+            history: Vec::new(),
+            current: 0,
+            layout: Layout::default(),
+            pages: 0,
+            pending: None,
+            pending_stamp: 0,
+            message: "HTTPS · на часах",
+        }
+    }
+}
+impl Controller {
+    pub fn open(&mut self) {
+        self.active = true;
+        self.mode = 0;
+        self.tab = 0;
+        self.dock_focus = true;
+        self.menu = 0;
+        self.error = 0;
+        self.message = "HTTPS · на часах";
+    }
+    pub fn open_result(&mut self, id: String) {
+        // A search result is another visit, not a new browser session.
+        self.internal_search = self.active && (self.mode == 6 || self.internal_search);
+        if !self.active {
+            self.open();
+        }
+        web::cancel_data(7);
+        self.dock_focus = false;
+        self.tab = 1;
+        self.navigate(serde_json::json!({"result_id":id}), Pending::New);
+    }
+    pub fn close(&mut self) {
+        web::cancel_data(7);
+        web::clear_preview(7);
+        self.search = search::Controller::default();
+        web::clear();
+        self.active = false;
+        self.internal_search = false;
+        self.pending = None;
+        // Closing the app must return its layout/history capacity to the heap.
+        self.layout = Layout::default();
+        self.history = Vec::new();
+        self.pages = 0;
+        self.cursor = 0;
+        self.current = 0;
+    }
+    fn navigate(&mut self, value: serde_json::Value, action: Pending) {
+        let stamp = web::cache(7).stamp;
+        if let Ok(query) = serde_json::to_string(&value) {
+            if web::fetch(7, &query, "", 0, "", "") {
+                self.pending_stamp = stamp;
+                self.pending = Some(action);
+                self.message = "Загрузка сайта…";
+                self.mode = 2;
+            } else {
+                self.message = web::snapshot().message;
+                if self.mode == 1 {
+                    self.error = 3;
+                }
+            }
+        }
+    }
+    fn page(&mut self, page: u16, tail: bool) {
+        let stamp = web::cache(7).stamp;
+        if let Some(visit) = self.history.get(self.current) {
+            if web::fetch(7, "", &visit.id, page, "", "") {
+                self.pending_stamp = stamp;
+                self.pending = Some(Pending::Page(page, tail));
+                self.message = "Загрузка страницы…";
+            }
+        }
+    }
+    fn history(&mut self, index: usize) {
+        let stamp = web::cache(7).stamp;
+        if let Some(visit) = self.history.get(index) {
+            if web::fetch(7, "", &visit.id, visit.page, "", "") {
+                self.pending_stamp = stamp;
+                self.pending = Some(Pending::History(index));
+                self.message = "История…";
+                self.mode = 2;
+            } else {
+                // Only four documents stay in RAM. Older history entries keep
+                // their URL and can be fetched again without a Gateway.
+                let url = visit.url.clone();
+                self.navigate(serde_json::json!({"url":url}), Pending::History(index));
+            }
+        }
+    }
+    pub fn poll(&mut self) {
+        if self.mode == 0 {
+            self.dock_focus = true;
+            self.tab = 0;
+        }
+        if self.active && self.tab == 1 {
+            self.search.poll();
+        }
+        if !self.active || self.pending.is_none() {
+            return;
+        }
+        let status = web::snapshot();
+        if status.busy {
+            return;
+        }
+        let pending = self.pending.take().unwrap();
+        let cache = web::cache(7);
+        let value = &cache.value;
+        if cache.stamp == self.pending_stamp {
+            self.message = status.message;
+            self.mode = if self.history.is_empty() { 0 } else { 2 };
+            return;
+        }
+        if let Pending::Image(index) = pending {
+            if value["kind"] == "browser-image"
+                && value["index"].as_u64() == Some(u64::from(index))
+                && web::mail_image(7).is_some()
+            {
+                self.mode = 4;
+                self.message = "Назад: к странице";
+            } else {
+                self.message = status.message;
+                self.mode = 2;
+            }
+            return;
+        }
+        if value["kind"] != "browser-page" {
+            self.message = status.message;
+            return;
+        }
+        let id = web::text(value, "document", 64);
+        let page = value["page"].as_u64().unwrap_or(0) as u16;
+        if let Pending::Page(expected, _) = pending {
+            if expected != page {
+                self.message = status.message;
+                return;
+            }
+        }
+        let url = web::text(value, "url", 2048);
+        let title = web::text(value, "title", 120);
+        match pending {
+            Pending::New => {
+                if !self.history.is_empty() {
+                    self.history.truncate(self.current + 1);
+                }
+                if self.history.len() >= 16 {
+                    self.history.remove(0);
+                }
+                self.history.push(Visit {
+                    id: id.clone(),
+                    url: url.clone(),
+                    title: title.clone(),
+                    page,
+                    line: 0,
+                });
+                self.current = self.history.len() - 1;
+                self.cursor = 0;
+            }
+            Pending::Reload => {
+                if let Some(visit) = self.history.get_mut(self.current) {
+                    *visit = Visit {
+                        id: id.clone(),
+                        url: url.clone(),
+                        title: title.clone(),
+                        page,
+                        line: 0,
+                    };
+                }
+                self.cursor = 0;
+            }
+            Pending::History(index) => {
+                self.current = index;
+                if let Some(visit) = self.history.get_mut(index) {
+                    if visit.id != id {
+                        visit.id = id.clone();
+                        visit.url = url.clone();
+                        visit.title = title.clone();
+                        visit.page = page;
+                        visit.line = 0;
+                    }
+                }
+                self.cursor = self.history.get(index).map_or(0, |v| v.line);
+            }
+            Pending::Page(_, _) => {
+                self.cursor = 0;
+            }
+            Pending::Image(_) => {}
+        }
+        self.layout = Layout::build(value);
+        if matches!(pending, Pending::Page(_, true)) {
+            self.cursor = self.layout.lines.len().saturating_sub(1);
+        }
+        self.cursor = self.cursor.min(self.layout.lines.len().saturating_sub(1));
+        if let Some(visit) = self.history.get_mut(self.current) {
+            visit.page = page;
+            visit.line = self.cursor;
+        }
+        self.pages = value["page_count"].as_u64().unwrap_or(1).min(65535) as u16;
+        self.mode = 2;
+        self.message = if value["truncated"] == true {
+            "Страница ограничена памятью"
+        } else if value["needs_js"] == true {
+            "Сайту нужен JavaScript"
+        } else {
+            "Колесо: читать · Нажатие: открыть"
+        };
+    }
+    fn address(&mut self) {
+        self.address.clear();
+        if let Some(visit) = self.history.get(self.current) {
+            for c in visit.url.chars() {
+                if self.address.push(c).is_err() {
+                    break;
+                }
+            }
+        }
+        self.keyboard = Keyboard::english();
+        self.mode = 1;
+        self.dock_focus = false;
+        self.error = 0;
+    }
+    pub fn click_gestures_active(&self) -> bool {
+        !matches!(self.mode, 1 | 6)
+    }
+    pub fn search_view(&self) -> crate::apps::remote::View {
+        self.search.view()
+    }
+    pub fn back(&mut self) -> bool {
+        if self.mode == 6 {
+            if !self.dock_focus {
+                self.search.back();
+                self.dock_focus = true;
+                return true;
+            }
+            return false;
+        }
+        if self.mode == 5 && !self.dock_focus {
+            self.dock_focus = true;
+            return true;
+        }
+        if self.pending.is_some() {
+            web::cancel_data(7);
+            self.pending = None;
+            self.message = "Загрузка отменена";
+            self.mode = if self.history.is_empty() { 0 } else { 2 };
+            return true;
+        }
+        match self.mode {
+            1 | 3 | 5 => {
+                self.mode = if self.history.is_empty() { 0 } else { 2 };
+                true
+            }
+            4 => {
+                web::clear_preview(7);
+                self.mode = 2;
+                true
+            }
+            2 if self.current > 0 => {
+                self.history(self.current - 1);
+                true
+            }
+            2 if self.tab == 1 => {
+                if self.internal_search {
+                    self.mode = 6;
+                    self.dock_focus = false;
+                    true
+                } else {
+                    false
+                }
+            }
+            2 => {
+                self.mode = 0;
+                self.tab = 0;
+                self.dock_focus = true;
+                true
+            }
+            _ => false,
+        }
+    }
+    /// true asks the native app router to close the browser.
+    pub fn event(&mut self, event: RuntimeEvent) -> bool {
+        self.poll();
+        let single = if event == RuntimeEvent::Click(1) {
+            RuntimeEvent::Press
+        } else {
+            event
+        };
+        if self.dock_focus && matches!(self.mode, 0 | 5 | 6) {
+            match single {
+                RuntimeEvent::Click(2) => {
+                    self.mode = 3;
+                    self.menu = 0;
+                    self.dock_focus = false;
+                }
+                RuntimeEvent::Rotate(d) | RuntimeEvent::Swipe(d) => {
+                    self.tab = (i32::from(self.tab) + d.rem_euclid(3)).rem_euclid(3) as u8;
+                    self.mode = [0, 6, 5][self.tab as usize];
+                    self.menu = self.current;
+                }
+                RuntimeEvent::Press => match self.tab {
+                    0 => self.address(),
+                    1 => {
+                        self.dock_focus = false;
+                        if self.search.view().mode == 0 {
+                            self.search.begin_input();
+                        }
+                    }
+                    _ => {
+                        self.dock_focus = false;
+                    }
+                },
+                _ => {}
+            }
+            return false;
+        }
+        if self.mode == 6 {
+            self.search.event(single);
+            return false;
+        }
+        if matches!(event, RuntimeEvent::Click(2)) && self.mode != 1 {
+            self.mode = 3;
+            self.menu = 0;
+            return false;
+        }
+        let event = match event {
+            RuntimeEvent::Swipe(d) => RuntimeEvent::Rotate(d.signum()),
+            RuntimeEvent::Click(_) => RuntimeEvent::Press,
+            _ => event,
+        };
+        if self.mode == 1 {
+            match event {
+                RuntimeEvent::Rotate(d) => self.keyboard.rotate(d),
+                RuntimeEvent::Press => match self.keyboard.press() {
+                    KeyAction::Character(c) => {
+                        self.error = if self.address.push(c).is_err() { 1 } else { 0 }
+                    }
+                    KeyAction::Backspace => {
+                        self.address.pop();
+                        self.error = 0;
+                    }
+                    KeyAction::Suggestion(word) => {
+                        crate::text_input::complete(&mut self.address, word);
+                    }
+                    KeyAction::Submit => {
+                        if self.address.trim().is_empty() {
+                            self.error = 2;
+                        } else {
+                            self.navigate(
+                                serde_json::json!({"url":self.address.as_str().trim()}),
+                                Pending::New,
+                            );
+                        }
+                    }
+                    KeyAction::Cancel => {
+                        self.mode = if self.history.is_empty() { 0 } else { 2 };
+                        self.dock_focus = self.mode == 0;
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+            self.keyboard.suggest(&self.address);
+            return false;
+        }
+        if self.pending.is_some() {
+            return false;
+        }
+        match event {
+            RuntimeEvent::Rotate(d) if self.mode == 2 => {
+                let next = self.cursor as i64 + i64::from(d);
+                let page = self.history.get(self.current).map_or(0, |v| v.page);
+                if next < 0 && page > 0 {
+                    self.page(page - 1, true);
+                } else if next >= self.layout.lines.len() as i64 && page + 1 < self.pages {
+                    self.page(page + 1, false);
+                } else {
+                    self.cursor =
+                        next.clamp(0, self.layout.lines.len().saturating_sub(1) as i64) as usize;
+                    if let Some(v) = self.history.get_mut(self.current) {
+                        v.line = self.cursor;
+                    }
+                }
+            }
+            RuntimeEvent::Rotate(d) => {
+                let count = match self.mode {
+                    0 => 3,
+                    3 => 7,
+                    5 => self.history.len().max(1),
+                    _ => 1,
+                };
+                self.menu = (self.menu as i32 + d).rem_euclid(count as i32) as usize;
+            }
+            RuntimeEvent::Press if self.mode == 2 => {
+                match self
+                    .layout
+                    .lines
+                    .get(self.cursor)
+                    .and_then(|line| line.action)
+                {
+                    Some(Action::Link(index)) => {
+                        if let Some(v) = self.history.get(self.current) {
+                            self.navigate(
+                                serde_json::json!({"document":v.id,"link":index}),
+                                Pending::New,
+                            );
+                        }
+                    }
+                    Some(Action::Image(index)) => {
+                        if let Some(v) = self.history.get(self.current) {
+                            let stamp = web::cache(7).stamp;
+                            if web::fetch(7, "image", &v.id, index, "", "") {
+                                self.pending_stamp = stamp;
+                                self.pending = Some(Pending::Image(index));
+                                self.message = "Загрузка картинки…";
+                            }
+                        }
+                    }
+                    None => {
+                        self.mode = 3;
+                        self.menu = 0;
+                    }
+                }
+            }
+            RuntimeEvent::Press if self.mode == 0 => match self.menu {
+                0 => self.address(),
+                1 => {
+                    self.mode = 5;
+                    self.menu = self.current;
+                }
+                _ => self.light = !self.light,
+            },
+            RuntimeEvent::Press if self.mode == 3 => match self.menu {
+                0 => self.address(),
+                1 if self.current > 0 => self.history(self.current - 1),
+                2 if self.current + 1 < self.history.len() => self.history(self.current + 1),
+                1 => self.message = "В истории нет предыдущей страницы",
+                2 => self.message = "В истории нет следующей страницы",
+                3 => {
+                    if let Some(v) = self.history.get(self.current) {
+                        self.navigate(serde_json::json!({"url":v.url}), Pending::Reload);
+                    }
+                }
+                4 => {
+                    self.light = !self.light;
+                    self.mode = if self.history.is_empty() { 0 } else { 2 };
+                }
+                5 => {
+                    self.mode = 0;
+                    self.menu = 0;
+                }
+                6 => return true,
+                _ => {}
+            },
+            RuntimeEvent::Press if self.mode == 5 => self.history(self.menu),
+            RuntimeEvent::Press if self.mode == 4 => {
+                self.mode = 2;
+                web::clear_preview(7);
+            }
+            _ => {}
+        }
+        false
+    }
+    pub fn view(&self) -> View {
+        let mut view = View {
+            tab: self.tab,
+            dock_focus: self.dock_focus,
+            mode: self.mode,
+            keyboard: self.keyboard.view,
+            error: self.error,
+            light: self.light,
+            busy: self.pending.is_some(),
+            cursor: self.cursor as u16,
+            total: self.layout.lines.len() as u16,
+            pages: self.pages,
+            message: self.message,
+            can_back: self.current > 0,
+            can_forward: self.current + 1 < self.history.len(),
+            ..View::default()
+        };
+        let (url, title, page) = self
+            .history
+            .get(self.current)
+            .map_or(("", "Браузер", 0), |v| {
+                (v.url.as_str(), v.title.as_str(), v.page)
+            });
+        let address = if self.mode == 1 {
+            self.address.as_str()
+        } else {
+            url
+        };
+        view.address_len = copy(&mut view.address, address) as u16;
+        view.title_len = copy(&mut view.title, title) as u8;
+        view.page = page;
+        if matches!(self.mode, 1 | 2) {
+            let first = self.cursor.saturating_sub(2);
+            let mut height = 0;
+            for line in self.layout.lines.iter().skip(first) {
+                if view.rows_len >= 8 || height + line.height() > 160 {
+                    break;
+                }
+                let index = view.rows_len as usize;
+                view.rows[index] = Row {
+                    kind: line.kind,
+                    indent: line.indent,
+                    selected: first + index == self.cursor,
+                    height: line.height(),
+                    ..Row::default()
+                };
+                view.rows[index].len = copy(&mut view.rows[index].text, &line.text) as u8;
+                view.rows_len += 1;
+                height += line.height();
+            }
+        } else if self.mode == 5 {
+            view.cursor = self.menu as u16;
+            view.total = self.history.len() as u16;
+            for (i, visit) in self
+                .history
+                .iter()
+                .skip(self.menu.saturating_sub(1))
+                .take(4)
+                .enumerate()
+            {
+                view.rows[i].len = copy(&mut view.rows[i].text, &visit.title) as u8;
+                view.rows[i].selected = self.menu.saturating_sub(1) + i == self.menu;
+                view.rows_len += 1;
+            }
+        } else {
+            view.cursor = self.menu as u16;
+        }
+        view
+    }
+}
+fn copy(out: &mut [u8], text: &str) -> usize {
+    let mut size = 0;
+    for c in text.chars() {
+        if size + c.len_utf8() > out.len() {
+            break;
+        }
+        size += c.encode_utf8(&mut out[size..]).len();
+    }
+    size
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn open(browser: &mut Controller, url: &str, html: &str) {
+        browser.navigate(serde_json::json!({"url":url}), Pending::New);
+        let r = web::take_request().unwrap();
+        assert_eq!(r.url.as_string(), url);
+        web::tests::html_reply(r.id, html);
+        browser.poll();
+    }
+    #[test]
+    fn local_links_history_cancel_and_memory_pages() {
+        web::tests::setup();
+        let mut browser = Controller::default();
+        browser.open();
+        open(
+            &mut browser,
+            "https://example.org/first",
+            "<a href='/next'>Next</a>",
+        );
+        browser.event(RuntimeEvent::Press);
+        let r = web::take_request().unwrap();
+        assert_eq!(r.url.path, "/next");
+        web::tests::html_reply(r.id, "<p>Second</p>");
+        browser.poll();
+        assert_eq!(browser.history.len(), 2);
+        assert!(browser.back());
+        assert!(web::take_request().is_none());
+        browser.poll();
+        assert_eq!(browser.current, 0);
+        let source = (0..40)
+            .map(|i| alloc::format!("<p>Line {i}</p>"))
+            .collect::<String>();
+        open(&mut browser, "https://example.org/long", &source);
+        assert_eq!(browser.pages, 3);
+        browser.page(1, false);
+        assert!(web::take_request().is_none());
+        browser.poll();
+        assert_eq!(browser.history[browser.current].page, 1);
+        browser.navigate(
+            serde_json::json!({"url":"https://example.org/cancel"}),
+            Pending::New,
+        );
+        let r = web::take_request().unwrap();
+        assert!(browser.back());
+        web::tests::html_reply(r.id, "<p>Late</p>");
+        browser.poll();
+        assert_eq!(browser.history.len(), 2);
+        browser.close();
+        assert_eq!(browser.history.capacity(), 0);
+        assert_eq!(browser.layout.lines.capacity(), 0);
+        web::tests::reset();
+    }
+    #[test]
+    fn failed_navigation_never_reuses_the_previous_document_as_a_new_visit() {
+        web::tests::setup();
+        let mut browser = Controller::default();
+        browser.open();
+        open(&mut browser, "https://example.org/good", "<p>Good</p>");
+        browser.navigate(
+            serde_json::json!({"url":"https://example.org/bad"}),
+            Pending::New,
+        );
+        let r = web::take_request().unwrap();
+        web::fail(r.id, "Нет ответа");
+        browser.poll();
+        assert_eq!(browser.history.len(), 1);
+        assert_eq!(browser.message, "Нет ответа");
+        browser.close();
+        web::tests::reset();
+    }
+    #[test]
+    fn dock_switches_immediately_and_typing_keeps_tab() {
+        web::tests::setup();
+        let mut b = Controller::default();
+        b.open();
+        b.event(RuntimeEvent::Rotate(1));
+        assert_eq!((b.view().tab, b.view().mode), (1, 6));
+        b.event(RuntimeEvent::Click(1));
+        assert_eq!(b.search_view().mode, 1);
+        b.event(RuntimeEvent::Rotate(2));
+        assert_eq!(b.view().tab, 1);
+        b.back();
+        b.event(RuntimeEvent::Rotate(1));
+        assert_eq!((b.view().tab, b.view().mode), (2, 5));
+        b.close();
+        web::tests::reset();
+    }
+}

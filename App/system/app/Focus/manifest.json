@@ -1,0 +1,16 @@
+{
+  "package": "com.xopilot.focus",
+  "label": "Фокус",
+  "runtime": "native-rust",
+  "api": 37,
+  "system": true,
+  "characteristics": "watch",
+  "launcher": true,
+  "nativeApp": 21,
+  "entry": "main.rs",
+  "sources": [
+    "main.rs",
+    "organizer.rs"
+  ],
+  "sharedSources": []
+}

@@ -1,0 +1,5 @@
+# WearLauncher
+
+Код приложения: [main.rs](./main.rs).
+
+[Архитектура](../../../../ARCHITECTURE.md).

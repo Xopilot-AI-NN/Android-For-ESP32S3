@@ -1,0 +1,15 @@
+{
+  "package": "com.xopilot.flashlight",
+  "label": "Фонарик",
+  "runtime": "native-rust",
+  "api": 37,
+  "system": true,
+  "characteristics": "watch",
+  "launcher": true,
+  "nativeApp": 10,
+  "entry": "main.rs",
+  "sources": [
+    "main.rs"
+  ],
+  "sharedSources": []
+}

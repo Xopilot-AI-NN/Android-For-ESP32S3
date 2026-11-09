@@ -1,0 +1,18 @@
+{
+  "package": "com.android.systemui",
+  "label": "SystemUI",
+  "runtime": "native-rust",
+  "api": 37,
+  "system": true,
+  "characteristics": "watch",
+  "launcher": false,
+  "entry": "main.rs",
+  "sources": [
+    "30_activity_manager.rhai",
+    "40_input_manager.rhai",
+    "50_surfaceflinger_systemui.rhai",
+    "activity_manager.rs",
+    "main.rs"
+  ],
+  "sharedSources": []
+}

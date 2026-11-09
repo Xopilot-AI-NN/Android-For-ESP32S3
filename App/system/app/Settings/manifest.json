@@ -1,0 +1,28 @@
+{
+  "package": "com.android.settings",
+  "label": "Настройки",
+  "runtime": "native-rust",
+  "api": 37,
+  "system": true,
+  "characteristics": "watch",
+  "launcher": true,
+  "nativeApp": 2,
+  "entry": "main.rs",
+  "sources": [
+    "activity.rs",
+    "bluetooth.rs",
+    "diagnostics_page.rs",
+    "main.rs",
+    "memory_page.rs",
+    "preferences.rs",
+    "system.rs",
+    "wifi.rs"
+  ],
+  "sharedSources": [],
+  "components": [
+    3,
+    4,
+    9,
+    11
+  ]
+}

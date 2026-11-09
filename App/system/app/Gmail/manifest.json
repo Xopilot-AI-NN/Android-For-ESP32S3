@@ -1,0 +1,18 @@
+{
+  "package": "com.xopilot.gmail",
+  "label": "Gmail",
+  "runtime": "native-rust",
+  "api": 37,
+  "system": true,
+  "characteristics": "watch",
+  "launcher": true,
+  "nativeApp": 27,
+  "entry": "main.rs",
+  "sharedSources": [
+    "../../../shared/remote.rs",
+    "../../../shared/remote_view.rs"
+  ],
+  "sources": [
+    "main.rs"
+  ]
+}

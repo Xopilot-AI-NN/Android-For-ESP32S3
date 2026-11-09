@@ -1,0 +1,16 @@
+{
+  "package": "com.android.wear.media",
+  "label": "Медиа",
+  "runtime": "native-rust",
+  "api": 37,
+  "system": true,
+  "characteristics": "watch",
+  "launcher": true,
+  "nativeApp": 1,
+  "entry": "main.rs",
+  "sources": [
+    "controller.rs",
+    "main.rs"
+  ],
+  "sharedSources": []
+}

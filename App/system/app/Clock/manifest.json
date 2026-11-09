@@ -1,0 +1,22 @@
+{
+  "package": "com.android.deskclock",
+  "label": "Часы",
+  "runtime": "native-rust",
+  "api": 37,
+  "system": true,
+  "characteristics": "watch",
+  "launcher": true,
+  "nativeApp": 0,
+  "entry": "main.rs",
+  "sources": [
+    "controller.rs",
+    "faces.rs",
+    "main.rs",
+    "weather.rs",
+    "dock.rs"
+  ],
+  "sharedSources": [],
+  "components": [
+    13
+  ]
+}

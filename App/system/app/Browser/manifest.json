@@ -1,0 +1,17 @@
+{
+  "package": "com.xopilot.browser",
+  "label": "Браузер",
+  "runtime": "native-rust",
+  "api": 37,
+  "system": true,
+  "characteristics": "watch",
+  "launcher": true,
+  "nativeApp": 31,
+  "entry": "main.rs",
+  "sources": [
+    "main.rs",
+    "engine.rs",
+    "view.rs",
+    "search.rs"
+  ]
+}

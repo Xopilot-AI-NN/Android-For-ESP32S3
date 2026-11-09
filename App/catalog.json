@@ -1,0 +1,202 @@
+[
+  {
+    "directory": "system/app/Clock",
+    "package": "com.android.deskclock",
+    "label": "Часы",
+    "id": 0,
+    "screen": 6,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/WearMedia",
+    "package": "com.android.wear.media",
+    "label": "Медиа",
+    "id": 1,
+    "screen": 10,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Settings",
+    "package": "com.android.settings",
+    "label": "Настройки",
+    "id": 2,
+    "screen": 5,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Calculator",
+    "package": "com.xopilot.calculator",
+    "label": "Калькулятор",
+    "id": 6,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Files",
+    "package": "com.xopilot.files",
+    "label": "Файлы",
+    "id": 7,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Share",
+    "package": "com.xopilot.share",
+    "label": "Передача файлов",
+    "id": 8,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Flashlight",
+    "package": "com.xopilot.flashlight",
+    "label": "Фонарик",
+    "id": 10,
+    "screen": 29,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Weather",
+    "package": "com.xopilot.weather",
+    "label": "Погода",
+    "id": 12,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Calendar",
+    "package": "com.xopilot.calendar",
+    "label": "Календарь",
+    "id": 15,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/TextEditor",
+    "package": "com.xopilot.editor",
+    "label": "Текстовый редактор",
+    "id": 18,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Tasks",
+    "package": "com.xopilot.tasks",
+    "label": "Задачи",
+    "id": 19,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Focus",
+    "package": "com.xopilot.focus",
+    "label": "Фокус",
+    "id": 21,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Phone",
+    "package": "com.xopilot.phone",
+    "label": "Телефон",
+    "id": 22,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Gallery",
+    "package": "com.xopilot.gallery",
+    "label": "Галерея",
+    "id": 23,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/BluetoothKeyboard",
+    "package": "com.xopilot.btkeyboard",
+    "label": "BT-клавиатура",
+    "id": 24,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/GoogleSearch",
+    "package": "com.xopilot.google",
+    "label": "Google",
+    "id": 25,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/GoogleCalendar",
+    "package": "com.xopilot.googlecalendar",
+    "label": "Google Calendar",
+    "id": 26,
+    "screen": null,
+    "launcher": false
+  },
+  {
+    "directory": "system/app/Gmail",
+    "package": "com.xopilot.gmail",
+    "label": "Gmail",
+    "id": 27,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Translator",
+    "package": "com.xopilot.translator",
+    "label": "Переводчик",
+    "id": 28,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Contacts",
+    "package": "com.xopilot.contacts",
+    "label": "Контакты Google",
+    "id": 29,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Messages",
+    "package": "com.xopilot.messages",
+    "label": "Сообщения",
+    "id": 30,
+    "screen": null,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/Browser",
+    "package": "com.xopilot.browser",
+    "label": "Браузер",
+    "id": 31,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/AirKeyboard",
+    "package": "com.xopilot.airkeyboard",
+    "label": "Air Keyboard",
+    "id": 32,
+    "launcher": true
+  },
+  {
+    "directory": "system/app/WearLauncher",
+    "package": "com.android.wear.launcher",
+    "label": "WearLauncher",
+    "launcher": false
+  },
+  {
+    "directory": "system/app/WearWidgets",
+    "package": "com.android.wear.widgets",
+    "label": "WearWidgets",
+    "launcher": false
+  },
+  {
+    "directory": "system/priv-app/SystemUI",
+    "package": "com.android.systemui",
+    "label": "SystemUI",
+    "launcher": false
+  }
+]

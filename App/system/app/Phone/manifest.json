@@ -1,0 +1,15 @@
+{
+  "package": "com.xopilot.phone",
+  "label": "Телефон",
+  "runtime": "native-rust",
+  "api": 37,
+  "system": true,
+  "characteristics": "watch",
+  "launcher": true,
+  "nativeApp": 22,
+  "entry": "main.rs",
+  "sources": [
+    "main.rs"
+  ],
+  "sharedSources": []
+}
